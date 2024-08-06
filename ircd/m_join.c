@@ -104,7 +104,7 @@ last0(struct Client *cptr, struct Client *sptr, char *chanlist)
  */
 static int check_target_join(struct Client *cptr, struct Channel *chptr)
 {
-  if (check_target_limit(cptr, NULL, chptr, 0))
+  if (check_target_limit(cptr, NULL, chptr))
   {
     return feature_bool(FEAT_JOIN_TARGET) ? 1 : CHFL_DELAYED_TARGET;
   }

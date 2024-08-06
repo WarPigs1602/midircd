@@ -243,11 +243,7 @@ int server_estab(struct Client *cptr, struct ConfItem *aconf)
     if (IsUser(acptr))
     {
       char xxx_buf[25];
-      char *s;
-      if (IsSendOperName(cptr))
-        s = umode_str(acptr, 1);
-      else
-        s = umode_str(acptr, 0);
+      char *s = umode_str(acptr);
       sendcmdto_one(cli_user(acptr)->server, CMD_NICK, cptr,
 		    "%s %d %Tu %s %s %s%s%s%s %s%s :%s",
 		    cli_name(acptr), cli_hopcount(acptr) + 1, cli_lastnick(acptr),

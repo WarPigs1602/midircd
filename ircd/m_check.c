@@ -406,7 +406,7 @@ void checkClient(struct Client *sptr, struct Client *acptr) {
    * (and breaks if the user is +r) so we won't do that either.
    */
 
-  umodes = umode_str(acptr, 1);
+  umodes = umode_str(acptr);
   if (umodes[0] == '+')
     strcpy(outbuf, "       Umode(s):: <none>");
   else
