@@ -98,7 +98,6 @@
 #include "s_user.h"
 #include "send.h"
 #include "sys.h"
-#include "gline.h"
 
 /* #include <assert.h> -- Now using assert in ircd_log.h */
 #include <stdlib.h>
@@ -186,7 +185,7 @@ int m_nick(struct Client* cptr, struct Client* sptr, int parc, char* parv[])
     send_reply(sptr, ERR_ERRONEUSNICKNAME, nick);
     return 0;
   }
-
+  
   /* 
    * Check if this is a LOCAL user trying to use a reserved (Juped)
    * nick, if so tell him that it's a nick in use...

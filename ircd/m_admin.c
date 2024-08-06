@@ -20,7 +20,7 @@
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
  *
- * $Id: m_admin.c,v 1.13.2.1 2007/05/20 13:02:51 entrope Exp $
+ * $Id$
  */
 
 /*
@@ -137,7 +137,7 @@ int mo_admin(struct Client* cptr, struct Client* sptr, int parc, char* parv[])
   assert(0 != cptr);
   assert(cptr == sptr);
 
-  if (hunt_server_cmd(sptr, CMD_ADMIN, cptr, feature_int(FEAT_HIS_REMOTE), 
+  if (hunt_server_cmd(sptr, CMD_ADMIN, cptr, feature_bool(FEAT_HIS_REMOTE),
                       ":%C", 1, parc, parv) != HUNTED_ISME)
     return 0;
   return send_admin_info(sptr);
@@ -162,3 +162,4 @@ int ms_admin(struct Client* cptr, struct Client* sptr, int parc, char* parv[])
 
   return send_admin_info(sptr);
 }
+

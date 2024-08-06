@@ -687,6 +687,7 @@ struct Message msgtab[] = {
   { 0 }
 };
 
+
 /** Array of command parameters. */
 static char *para[MAXPARA + 2]; /* leave room for prefix and null */
 

@@ -19,7 +19,7 @@
  */
 /** @file
  * @brief Singly and doubly linked list manipulation implementation.
- * @version $Id: list.c,v 1.34.2.4 2007/03/18 01:33:02 entrope Exp $
+ * @version $Id$
  */
 #include "config.h"
 
@@ -227,7 +227,7 @@ struct Client* make_client(struct Client *from, int status)
   cli_magic(cptr) = CLIENT_MAGIC;
   cli_status(cptr) = status;
   cli_hnext(cptr) = cptr;
-  strcpy(cli_username(cptr), "unknown");
+  strcpy(cli_username(cptr), "");
 
   return cptr;
 }
