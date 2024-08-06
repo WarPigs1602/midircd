@@ -18,7 +18,7 @@
  */
 /** @file
  * @brief Functions to match strings against IRC mask strings.
- * @version $Id$
+ * @version $Id: match.c,v 1.20.2.1 2006/02/16 03:16:19 entrope Exp $
  */
 #include "config.h"
 
@@ -201,8 +201,6 @@ int match(const char *mask, const char *name)
       return 1;
     m = m_tmp;
     n = ++n_tmp;
-    if (*n == '\0')
-      return 1;
     break;
   case '\\':
     m++;
@@ -227,14 +225,12 @@ int match(const char *mask, const char *name)
         if (!*m)
           return 1;
         for (n_tmp = n; *n && *n != *m; n++) ;
-        if (!*n || *n++ != *m++)
-          return 1;
       } else {
         m_tmp = m;
         for (n_tmp = n; *n && ToLower(*n) != ToLower(*m); n++) ;
       }
     }
-    continue;
+    /* and fall through */
   default:
     if (!*n)
       return *m != '\0';
@@ -419,7 +415,6 @@ int matchcomp(char *cmask, int *minlen, int *charset, const char *mask)
         case '\\':
           if ((*m == '?') || (*m == '*'))
             ch = *m++;
-          /* fall through */
         default:
           if (star)
           {
@@ -538,7 +533,7 @@ trychunk:
       return 0;
     if (*b == 'Z')
     {
-      --s;
+      bs = --s;
       bb = b;
       continue;
     };
@@ -615,7 +610,6 @@ int matchdecomp(char *mask, const char *cmask)
         case '*':
         case '?':
           *rtb++ = '\\';
-          /* fall through */
         default:
           *rtb++ = *rcm;
       };

@@ -602,19 +602,19 @@ static Numeric replyTable[] = {
 /* 284 */
   { RPL_FEATURE, 0, "284" },
 /* 285 */
-  { 0 },
+  { RPL_NEWHOSTIS, "%s: %s host %s - [%s@%s]" },
 /* 286 */
-  { 0 },
+  { RPL_CHKHEAD, ":Information for %s %s", "286" },
 /* 287 */
-  { 0 },
+  { RPL_CHANUSER, ":    %s%s (%s@%s) %s  (%s) %s", "287" },
 /* 288 */
   { 0 },
 /* 289 */
   { 0 },
 /* 290 */
-  { 0 },
+  { RPL_DATASTR, ":%s", "290" },
 /* 291 */
-  { 0 },
+  { RPL_ENDOFCHECK, ":%s", "291" },
 /* 292 */
   { 0 },
 /* 293 */
@@ -640,7 +640,7 @@ static Numeric replyTable[] = {
 /* 303 */
   { RPL_ISON, ":", "303" },
 /* 304 */
-  { 0 },
+  { RPL_TEXT, "%s", "304" },
 /* 305 */
   { RPL_UNAWAY, ":You are no longer marked as being away", "305" },
 /* 306 */
@@ -718,7 +718,7 @@ static Numeric replyTable[] = {
 /* 342 */
   { 0 },
 /* 343 */
-  { 0 },
+  { RPL_WHOISOPERNAME, "%s %s :is opered as", "343" },
 /* 344 */
   { 0 },
 /* 345 */
@@ -828,9 +828,9 @@ static Numeric replyTable[] = {
 /* 397 */
   { 0 },
 /* 398 */
-  { 0 },
+  { RPL_STATSSLINE, "%d %s %s %s %s", "398" },
 /* 399 */
-  { 0 },
+  { RPL_USINGSLINE, ":Using S-line privilege", "399" },
 /* 400 */
   { 0 },
 /* 401 */
@@ -848,7 +848,7 @@ static Numeric replyTable[] = {
 /* 407 */
   { ERR_TOOMANYTARGETS, "%s :Duplicate recipients. No message delivered", "407" },
 /* 408 */
-  { 0 },
+  { ERR_SEARCHNOMATCH, ":%s %s No matching record(s) found", "408" },
 /* 409 */
   { ERR_NOORIGIN, ":No origin specified", "409" },
 /* 410 */
@@ -1002,9 +1002,9 @@ static Numeric replyTable[] = {
 /* 484 */
   { ERR_ISCHANSERVICE, "%s %s :Cannot kill, kick or deop a network service", "484" },
 /* 485 */
-  { 0 },
+  { ERR_ISREALSERVICE, "%s %s :Cannot kill, kick or deop a network service", "485" },
 /* 486 */
-  { 0 },
+  { ERR_ACCOUNTONLY, "%s :You must be authed in order to message this user -- For details of how to obtain an account visit %s", "486" },
 /* 487 */
   { 0 },
 /* 488 */
@@ -1092,9 +1092,9 @@ static Numeric replyTable[] = {
 /* 529 */
   { 0 },
 /* 530 */
-  { 0 },
+  { ERR_BADHOSTMASK, "%s :Invalid username/hostmask", "530" },
 /* 531 */
-  { 0 },
+  { ERR_HOSTUNAVAIL, "%s :sethost not found", "531" },
 /* 532 */
   { 0 },
 /* 533 */

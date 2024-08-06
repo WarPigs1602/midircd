@@ -118,6 +118,7 @@ IRCD_SRC = \
 	m_away.c \
 	m_burst.c \
 	m_cap.c \
+	m_check.c \
 	m_clearmode.c \
 	m_close.c \
 	m_connect.c \
@@ -166,6 +167,7 @@ IRCD_SRC = \
 	m_rpong.c \
 	m_server.c \
 	m_set.c \
+	m_sethost.c \
 	m_settime.c \
 	m_silence.c \
 	m_squit.c \

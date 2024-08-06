@@ -105,7 +105,7 @@ void relay_channel_message(struct Client* sptr, const char* name, const char* te
     return;
   }
   if ((chptr->mode.mode & MODE_NOPRIVMSGS) &&
-      check_target_limit(sptr, NULL, chptr))
+      check_target_limit(sptr, NULL, chptr, 0))
     return;
   memb = find_member_link(chptr, sptr);
   if (memb && IsDelayedTarget(memb))
@@ -159,7 +159,7 @@ void relay_channel_notice(struct Client* sptr, const char* name, const char* tex
     return;
 
   if ((chptr->mode.mode & MODE_NOPRIVMSGS) &&
-      check_target_limit(sptr, NULL, chptr))
+      check_target_limit(sptr, NULL, chptr, 0))
     return;
   memb = find_member_link(chptr, sptr);
   if (memb && IsDelayedTarget(memb))
@@ -400,10 +400,20 @@ void relay_private_message(struct Client* sptr, const char* name, const char* te
   }
   /* Note: X does silence users who flood it. */
   if ((!IsChannelService(acptr) &&
-       check_target_limit(sptr, acptr, NULL)) ||
+       check_target_limit(sptr, acptr, NULL, 0)) ||
       is_silenced(sptr, acptr))
     return;
+	
+  /* ASUKA -- slug
+   * +R check, if target is +R and we're not +r (or opered) then
+   * deny the message
+   */
 
+  if (IsAccountOnly(acptr) && !IsAccount(sptr) && !IsOper(sptr)) {
+    send_reply(sptr, ERR_ACCOUNTONLY, cli_name(acptr), feature_str(FEAT_URLREG));
+    return;
+  }
+  
   /*
    * send away message if user away
    */
@@ -436,9 +446,19 @@ void relay_private_notice(struct Client* sptr, const char* name, const char* tex
   if (0 == (acptr = FindUser(name)))
     return;
   if ((!IsChannelService(acptr) && 
-       check_target_limit(sptr, acptr, NULL)) ||
+       check_target_limit(sptr, acptr, NULL, 0)) ||
       is_silenced(sptr, acptr))
     return;
+
+
+  /* ASUKA -- slug
+   * +R check, if target is +R and we're not +r (or opered) then
+   * deny the message
+   */
+
+  if (IsAccountOnly(acptr) && !IsAccount(sptr) && !IsOper(sptr))
+    return;
+
   /*
    * deliver the message
    */

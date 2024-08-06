@@ -84,6 +84,7 @@
   struct DenyConf *dconf;
   struct ServerConf *sconf;
   struct s_map *smap;
+  struct sline *spoof;
   struct Privs privs;
   struct Privs privs_dirty;
 
@@ -108,6 +109,7 @@ enum ConfigBlock
   BLOCK_UWORLD,
   BLOCK_WEBIRC,
   BLOCK_IPCHECK,
+  BLOCK_SPOOFHOST,
   BLOCK_LAST_BLOCK
 };
 
@@ -126,7 +128,7 @@ permitted(enum ConfigBlock type)
   static const char *block_names[BLOCK_LAST_BLOCK+1] = {
     "Admin", "Class", "Client", "Connect", "CRule", "Features",
     "General", "IAuth", "Include", "Jupe", "Kill", "Motd", "Oper",
-    "Port", "Pseudo", "Quarantine", "UWorld", "IAuth", "IPCheck",
+    "Port", "Pseudo", "Quarantine", "UWorld", "IAuth", "IPCheck", "Spoofhost",
     NULL
   };
 
@@ -214,6 +216,7 @@ static void free_slist(struct SLink **link) {
 %token FAST
 %token AUTOCONNECT
 %token PROGRAM
+%token SPOOFHOST
 %token TOK_IPV4 TOK_IPV6
 %token DNS
 %token WEBIRC
@@ -231,6 +234,8 @@ static void free_slist(struct SLink **link) {
 %token TPRIV_SEE_CHAN TPRIV_SHOW_INVIS TPRIV_SHOW_ALL_INVIS TPRIV_PROPAGATE
 %token TPRIV_UNLIMIT_QUERY TPRIV_DISPLAY TPRIV_SEE_OPERS TPRIV_WIDE_GLINE
 %token TPRIV_FORCE_OPMODE TPRIV_FORCE_LOCAL_OPMODE TPRIV_APASS_OPMODE
+%token TPRIV_CHANSERV TPRIV_XTRA_OPER TPRIV_NOIDLE TPRIV_FREEFORM TPRIV_PARANOID
+%token TPRIV_CHECK
 %token TPRIV_LIST_CHAN
 /* and some types... */
 %type <num> sizespec
@@ -252,7 +257,7 @@ blocks: blocks block | block;
 block: adminblock | generalblock | classblock | connectblock |
        uworldblock | operblock | portblock | jupeblock | clientblock |
        killblock | cruleblock | motdblock | featuresblock | quarantineblock |
-       pseudoblock | iauthblock | webircblock | ipcheckblock |
+       pseudoblock | iauthblock | webircblock | ipcheckblock | spoofblock |
        includeblock | error '}' ';' { yyerrok; };
 
 /* The timespec, sizespec and expr was ripped straight from
@@ -740,7 +745,13 @@ privtype: TPRIV_CHAN_LIMIT { $$ = PRIV_CHAN_LIMIT; } |
           LOCAL { $$ = PRIV_PROPAGATE; invert = 1; } |
           TPRIV_FORCE_OPMODE { $$ = PRIV_FORCE_OPMODE; } |
           TPRIV_FORCE_LOCAL_OPMODE { $$ = PRIV_FORCE_LOCAL_OPMODE; } |
-          TPRIV_APASS_OPMODE { $$ = PRIV_APASS_OPMODE; } ;
+          TPRIV_APASS_OPMODE { $$ = PRIV_APASS_OPMODE; } | 
+          TPRIV_CHANSERV { $$ = PRIV_CHANSERV; } |
+          TPRIV_XTRA_OPER { $$ = PRIV_XTRA_OPER; } |
+          TPRIV_NOIDLE { $$ = PRIV_NOIDLE; } |
+          TPRIV_FREEFORM { $$ = PRIV_FREEFORM; } |
+          TPRIV_CHECK { $$ = PRIV_CHECK; } |
+          TPRIV_PARANOID { $$ = PRIV_PARANOID; } ;
 
 yesorno: YES { $$ = 1; } | NO { $$ = 0; };
 
@@ -1321,6 +1332,73 @@ ipcheck_except_ip_mask: QSTRING
   MyFree($1);
 };
 
+spoofblock: SPOOFHOST QSTRING '{'
+{
+  spoof = MyCalloc(1, sizeof(struct sline));
+  spoof->spoofhost = $2;
+  spoof->passwd = NULL;
+  spoof->realhost = NULL;
+  spoof->username = NULL;
+}
+spoofitems '}' ';'
+{
+  struct irc_in_addr ip;
+  char bits;
+  int valid = 0;
+
+  if (spoof->username == NULL && spoof->realhost) {
+    parse_error("Username missing in spoofhost.");
+  } else if (spoof->realhost == NULL && spoof->username) {
+    parse_error("Realhost missing in spoofhost.");
+  } else 
+    valid = 1;
+
+  if (valid) {
+    if (spoof->realhost) {
+      if (!string_has_wildcards(spoof->realhost)) {
+        if (ipmask_parse(spoof->realhost, &ip, &bits) != 0) {
+          spoof->address = ip;
+          spoof->bits = bits;
+          spoof->flags = SLINE_FLAGS_IP;
+        } else {
+          Debug((DEBUG_DEBUG, "S-Line: \"%s\" appears not to be a valid IP address, might be wildcarded.", spoof->realhost));
+          spoof->flags = SLINE_FLAGS_HOSTNAME;
+        }
+      } else
+        spoof->flags = SLINE_FLAGS_HOSTNAME;
+    } else
+      spoof->flags = 0;
+
+    spoof->next = GlobalSList;
+    GlobalSList = spoof;
+  } else {
+    MyFree(spoof->spoofhost);
+    MyFree(spoof->passwd);
+    MyFree(spoof->realhost);
+    MyFree(spoof->username);
+    MyFree(spoof);
+  }
+  spoof = NULL;
+};
+
+spoofitems: spoofitem spoofitems | spoofitem;
+spoofitem: spoofpassword | spoofrealhost | spoofrealident;
+spoofpassword: PASS '=' QSTRING ';'
+{
+  MyFree(spoof->passwd);
+  spoof->passwd = $3;
+};
+spoofrealhost: HOST '=' QSTRING ';'
+{
+  MyFree(spoof->realhost);
+  spoof->realhost = $3;
+};
+spoofrealident: USERNAME '=' QSTRING ';'
+{
+  MyFree(spoof->username);
+  spoof->username = $3;
+};
+
 includeblock: INCLUDE {
   if (!permitted(BLOCK_INCLUDE)) YYERROR;
   flags = 0;
@@ -1353,4 +1431,5 @@ blocktype: ALL { $$ = ~0; }
   | UWORLD { $$ = 1 << BLOCK_UWORLD; }
   | WEBIRC { $$ = 1 << BLOCK_WEBIRC; }
   | IPCHECK { $$ = 1 << BLOCK_IPCHECK; }
+  | SPOOFHOST { $$ = 1 << BLOCK_SPOOFHOST; }
   ;

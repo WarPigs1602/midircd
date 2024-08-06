@@ -260,6 +260,9 @@ struct Client;
 #define TOK_SERVSET             "SERVSET"
 #define CMD_SERVSET		MSG_SERVSET, TOK_SERVSET
 
+#define MSG_CHECK       "CHECK"
+#define TOK_CHECK       "CC"
+
 #define MSG_REHASH              "REHASH"        /* REHA */
 #define TOK_REHASH              "REHASH"
 #define CMD_REHASH		MSG_REHASH, TOK_REHASH
@@ -359,6 +362,10 @@ struct Client;
 #define MSG_WEBIRC	        "WEBIRC"	/* WEBI */
 #define TOK_WEBIRC		"WEBIRC"
 #define CMD_WEBIRC		MSG_WEBIRC, TOK_WEBIRC
+
+#define MSG_SETHOST		"SETHOST"	/* SETHOST */
+#define TOK_SETHOST		"SH"
+#define CMD_SETHOST		MSG_SETHOST, TOK_SETHOST
 
 #define MSG_CAP			"CAP"
 #define TOK_CAP			"CAP"

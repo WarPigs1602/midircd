@@ -1,6 +1,6 @@
 /** @file s_user.h
  * @brief Miscellaneous user-related helper functions.
- * @version $Id$
+ * @version $Id: s_user.h,v 1.20.2.2 2007/07/14 02:40:00 isomer Exp $
  */
 #ifndef INCLUDED_s_user_h
 #define INCLUDED_s_user_h
@@ -80,6 +80,8 @@ extern void send_user_info(struct Client* to, char* names, int rpl,
                            InfoFormatter fmt);
 
 extern int hide_hostmask(struct Client *cptr, unsigned int flags);
+extern int set_hostmask(struct Client *cptr, char *hostmask, char *password);
+extern int is_hostmask(char *word);
 extern int set_user_mode(struct Client *cptr, struct Client *sptr,
                          int parc, char *parv[], int allow_modes);
 extern int is_silenced(struct Client *sptr, struct Client *acptr);
@@ -92,13 +94,13 @@ extern int hunt_server_prio_cmd(struct Client *from, const char *cmd,
 				int MustBeOper, const char *pattern,
 				int server, int parc, char *parv[]);
 extern struct Client* next_client(struct Client* next, const char* ch);
-extern char *umode_str(struct Client *cptr);
+extern char *umode_str(struct Client *cptr, int opernames);
 extern void send_umode(struct Client *cptr, struct Client *sptr,
-                       struct Flags *old, int sendset);
+                       struct Flags *old, int sendset, int opernames);
 extern void set_snomask(struct Client *, unsigned int, int);
 extern int is_snomask(char *);
-extern int check_target_limit(struct Client *sptr, struct Client *acptr,
-                              struct Channel *chptr);
+extern int check_target_limit(struct Client *sptr, void *target, const char *name,
+    int created);
 extern void add_target(struct Client *sptr, void *target);
 extern unsigned int umode_make_snomask(unsigned int oldmask, char *arg,
                                        int what);

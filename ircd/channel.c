@@ -3087,21 +3087,33 @@ mode_process_clients(struct ParseState *state)
     if ((state->cli_change[i].flag & (MODE_DEL | MODE_CHANOP)) ==
 	(MODE_DEL | MODE_CHANOP)) {
       /* prevent +k users from being deopped */
-      if (IsChannelService(state->cli_change[i].client)) {
+      /*
+       * ASUKA_X:
+       * Allow +X'ed users to mess with +k'ed.
+       * --Bigfoot
+       */
+      if ((IsChannelService(state->cli_change[i].client) && IsService(cli_user(state->cli_change[i].client)->server)) || (IsChannelService(state->cli_change[i].client) && !IsXtraOp(state->sptr))) {
 	if (state->flags & MODE_PARSE_FORCE) /* it was forced */
 	  sendto_opmask_butone(0, SNO_HACK4, "Deop of +k user on %H by %s",
 			       state->chptr,
 			       (IsServer(state->sptr) ? cli_name(state->sptr) :
 				cli_name((cli_user(state->sptr))->server)));
 
-	else if (MyUser(state->sptr) && state->flags & MODE_PARSE_SET) {
-	  send_reply(state->sptr, ERR_ISCHANSERVICE,
-		     cli_name(state->cli_change[i].client),
-		     state->chptr->chname);
+        else if (MyUser(state->sptr) && state->flags & MODE_PARSE_SET && (state->sptr != state->cli_change[i].client)) {
+          if(IsService(cli_user(state->cli_change[i].client)->server) && IsChannelService(state->cli_change[i].client)){
+            send_reply(state->sptr, ERR_ISREALSERVICE,
+                     cli_name(state->cli_change[i].client),
+                     state->chptr->chname);
+          }else{
+            send_reply(state->sptr, ERR_ISCHANSERVICE,
+                     cli_name(state->cli_change[i].client),
+                     state->chptr->chname);
+          }
+
 	  continue;
 	}
       }
-
+	  
       /* check deop for local user */
       if (MyUser(state->sptr)) {
 

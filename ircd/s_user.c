@@ -22,7 +22,7 @@
  */
 /** @file
  * @brief Miscellaneous user-related helper functions.
- * @version $Id$
+ * @version $Id: s_user.c,v 1.99.2.11 2007/08/21 01:13:15 entrope Exp $
  */
 #include "config.h"
 
@@ -73,6 +73,9 @@
 #include <string.h>
 #include <sys/stat.h>
 
+static char *IsVhost(char *hostmask, int oper);
+static char *IsVhostPass(char *hostmask);
+
 /** Count of allocated User structures. */
 static int userCount = 0;
 
@@ -110,6 +113,8 @@ void free_user(struct User* user)
   if (--user->refcnt == 0) {
     if (user->away)
       MyFree(user->away);
+    if (user->opername)
+      MyFree(user->opername);
     /*
      * sanity check
      */
@@ -355,14 +360,14 @@ int register_user(struct Client *cptr, struct Client *sptr)
 
     Count_unknownbecomesclient(sptr, UserStats);
 
-    /*
-     * Set user's initial modes
-     */
-    tmpstr = (char*)client_get_default_umode(sptr);
-    if (tmpstr) {
-      char *umodev[] = { NULL, NULL, NULL, NULL };
-      umodev[2] = tmpstr;
-      set_user_mode(cptr, sptr, 3, umodev, ALLOWMODES_ANY);
+    if (MyConnect(sptr) && feature_bool(FEAT_AUTOINVISIBLE))
+      SetInvisible(sptr);
+    
+    if(MyConnect(sptr) && feature_bool(FEAT_SETHOST_AUTO)) {
+      if (conf_check_slines(sptr)) {
+        send_reply(sptr, RPL_USINGSLINE);
+        SetSetHost(sptr);
+      }
     }
 
     SetUser(sptr);
@@ -395,6 +400,16 @@ int register_user(struct Client *cptr, struct Client *sptr)
                            cli_info(sptr), NumNick(cptr) /* two %s's */);
 
     IPcheck_connect_succeeded(sptr);
+    /*
+     * Set user's initial modes
+     */
+    tmpstr = (char*)client_get_default_umode(sptr);
+    if (tmpstr) {
+      char *umodev[] = { NULL, NULL, NULL, NULL };
+      umodev[2] = tmpstr;
+      set_user_mode(cptr, sptr, 1, umodev, ALLOWMODES_ANY);
+    }
+
   }
   else {
     struct Client *acptr = user->server;
@@ -430,6 +445,14 @@ int register_user(struct Client *cptr, struct Client *sptr)
                     sptr, cli_name(&me));
       return exit_client(cptr, sptr, &me,"Too many connections from your host -- throttled");
     }
+
+    if(MyConnect(sptr) && feature_bool(FEAT_SETHOST_AUTO)) {
+      if (conf_check_slines(sptr)) {
+        send_reply(sptr, RPL_USINGSLINE);
+        SetSetHost(sptr);
+      }
+    }
+
     SetUser(sptr);
   }
 
@@ -444,24 +467,48 @@ int register_user(struct Client *cptr, struct Client *sptr)
   if (IsOper(sptr))
     ++UserStats.opers;
 
-  tmpstr = umode_str(sptr);
-  /* Send full IP address to IPv6-grokking servers. */
+  tmpstr = umode_str(sptr, 0);
+  int ipv6andopername[] = {FLAG_IPV6,FLAG_OPERNAME};
+
+  /* Do not send oper name and send full IP address to IPv6-grokking servers. */
   sendcmdto_flag_serv_butone(user->server, CMD_NICK, cptr,
-                             FLAG_IPV6, FLAG_LAST_FLAG,
+                             FLAG_IPV6, FLAG_OPERNAME,
                              "%s %d %Tu %s %s %s%s%s%s %s%s :%s",
                              cli_name(sptr), cli_hopcount(sptr) + 1,
                              cli_lastnick(sptr),
-                             user->username, user->realhost,
+                             user->realusername, user->realhost,
                              *tmpstr ? "+" : "", tmpstr, *tmpstr ? " " : "",
                              iptobase64(ip_base64, &cli_ip(sptr), sizeof(ip_base64), 1),
                              NumNick(sptr), cli_info(sptr));
-  /* Send fake IPv6 addresses to pre-IPv6 servers. */
-  sendcmdto_flag_serv_butone(user->server, CMD_NICK, cptr,
-                             FLAG_LAST_FLAG, FLAG_IPV6,
+  /* Do not send oper name and send fake IPv6 addresses to pre-IPv6 servers. */
+  sendcmdto_flagarray_serv_butone(user->server, CMD_NICK, cptr,
+                             NULL, 0, ipv6andopername, 2,
                              "%s %d %Tu %s %s %s%s%s%s %s%s :%s",
                              cli_name(sptr), cli_hopcount(sptr) + 1,
                              cli_lastnick(sptr),
-                             user->username, user->realhost,
+                             user->realusername, user->realhost,
+                             *tmpstr ? "+" : "", tmpstr, *tmpstr ? " " : "",
+                             iptobase64(ip_base64, &cli_ip(sptr), sizeof(ip_base64), 0),
+                             NumNick(sptr), cli_info(sptr));
+
+  tmpstr = umode_str(sptr, 1);
+  /* Send oper name and full IP address to IPv6-grokking servers. */
+  sendcmdto_flagarray_serv_butone(user->server, CMD_NICK, cptr,
+                             ipv6andopername, 2, NULL, 0,
+                             "%s %d %Tu %s %s %s%s%s%s %s%s :%s",
+                             cli_name(sptr), cli_hopcount(sptr) + 1,
+                             cli_lastnick(sptr),
+                             user->realusername, user->realhost,
+                             *tmpstr ? "+" : "", tmpstr, *tmpstr ? " " : "",
+                             iptobase64(ip_base64, &cli_ip(sptr), sizeof(ip_base64), 1),
+                             NumNick(sptr), cli_info(sptr));
+  /* Send oper name and fake IPv6 addresses to pre-IPv6 servers. */
+  sendcmdto_flag_serv_butone(user->server, CMD_NICK, cptr,
+                             FLAG_OPERNAME, FLAG_IPV6,
+                             "%s %d %Tu %s %s %s%s%s%s %s%s :%s",
+                             cli_name(sptr), cli_hopcount(sptr) + 1,
+                             cli_lastnick(sptr),
+                             user->realusername, user->realhost,
                              *tmpstr ? "+" : "", tmpstr, *tmpstr ? " " : "",
                              iptobase64(ip_base64, &cli_ip(sptr), sizeof(ip_base64), 0),
                              NumNick(sptr), cli_info(sptr));
@@ -478,7 +525,7 @@ int register_user(struct Client *cptr, struct Client *sptr)
     else
       FlagClr(&flags, FLAG_ACCOUNT);
     client_set_privs(sptr, NULL, 0);
-    send_umode(cptr, sptr, &flags, ALL_UMODES);
+    send_umode(cptr, sptr, &flags, ALL_UMODES, 0);
     if ((cli_snomask(sptr) != SNO_DEFAULT) && HasFlag(sptr, FLAG_SERVNOTICE))
       send_reply(sptr, RPL_SNOMASK, cli_snomask(sptr), cli_snomask(sptr));
   }
@@ -499,7 +546,13 @@ static const struct UserMode {
   { FLAG_CHSERV,      'k' },
   { FLAG_DEBUG,       'g' },
   { FLAG_ACCOUNT,     'r' },
-  { FLAG_HIDDENHOST,  'x' }
+  { FLAG_HIDDENHOST,  'x' },
+  { FLAG_ACCOUNTONLY, 'R' },
+  { FLAG_XTRAOP,      'X' },
+  { FLAG_NOCHAN,      'n' },
+  { FLAG_NOIDLE,      'I' },
+  { FLAG_SETHOST,     'h' },
+  { FLAG_PARANOID,    'P' }
 };
 
 /** Length of #userModeList. */
@@ -524,7 +577,6 @@ int set_nick_name(struct Client* cptr, struct Client* sptr,
                   const char* nick, int parc, char* parv[])
 {
   if (IsServer(sptr)) {
-
     /*
      * A server introducing a new client, change source
      */
@@ -552,6 +604,7 @@ int set_nick_name(struct Client* cptr, struct Client* sptr,
     cli_serv(sptr)->ghost = 0;        /* :server NICK means end of net.burst */
     ircd_strncpy(cli_username(new_client), parv[4], USERLEN);
     ircd_strncpy(cli_user(new_client)->username, parv[4], USERLEN);
+    ircd_strncpy(cli_user(new_client)->realusername, parv[4], USERLEN);
     ircd_strncpy(cli_user(new_client)->host, parv[5], HOSTLEN);
     ircd_strncpy(cli_user(new_client)->realhost, parv[5], HOSTLEN);
     ircd_strncpy(cli_info(new_client), parv[parc - 1], REALLEN);
@@ -576,7 +629,7 @@ int set_nick_name(struct Client* cptr, struct Client* sptr,
     if (MyUser(sptr)) {
       const char* channel_name;
       struct Membership *member;
-      if ((channel_name = find_no_nickchange_channel(sptr))) {
+      if ((channel_name = find_no_nickchange_channel(sptr)) && !IsXtraOp(sptr)) {
         return send_reply(cptr, ERR_BANNICKCHANGE, channel_name);
       }
       /*
@@ -644,13 +697,12 @@ int set_nick_name(struct Client* cptr, struct Client* sptr,
 }
 
 /** Calculate the hash value for a target.
- * @param[in] target Pointer to target.
+ * @param[in] target Pointer to target, cast to unsigned int.
  * @return Hash value constructed from the pointer.
  */
-static unsigned char hash_target(void *target)
+static unsigned char hash_target(unsigned int target)
 {
-  unsigned long value = (unsigned long) target;
-  return (unsigned char) (value >> 16) ^ (value >> 8);
+  return (unsigned char) (target >> 16) ^ (target >> 8);
 }
 
 /** Records \a target as a recent target for \a sptr.
@@ -662,7 +714,7 @@ add_target(struct Client *sptr, void *target)
 {
   /* Ok, this shouldn't work esp on alpha
   */
-  unsigned char  hash = hash_target(target);
+  unsigned char  hash = hash_target((unsigned long) target);
   unsigned char* targets;
   int            i;
   assert(0 != sptr);
@@ -687,21 +739,29 @@ add_target(struct Client *sptr, void *target)
 
 /** Check whether \a sptr can send to or join \a target yet.
  * @param[in] sptr User trying to join a channel or send a message.
- * @param[in] acptr Destination client (NULL if sending to a channel).
- * @param[in] chptr Destination channel (NULL if sending to a client).
- * @return Non-zero if too many target changes (after sending
- *   ERR_TARGETTOOFAST); zero if okay to send.
+ * @param[in] target Target of the join or message.
+ * @param[in] name Name of the target.
+ * @param[in] created If non-zero, trying to join a new channel.
+ * @return Non-zero if too many target changes; zero if okay to send.
  */
-int check_target_limit(struct Client *sptr, struct Client *acptr,
-                       struct Channel *chptr)
+int check_target_limit(struct Client *sptr, void *target, const char *name,
+    int created)
 {
-  unsigned char hash = hash_target(acptr ? (void *)acptr : chptr);
+  unsigned char hash = hash_target((unsigned long) target);
   int            i;
   unsigned char* targets;
 
   assert(0 != sptr);
   assert(cli_local(sptr));
   targets = cli_targets(sptr);
+
+  /* If user is invited to channel, give him/her a free target */
+  if (IsChannelName(name) && IsInvited(sptr, target))
+    return 0;
+
+  /* opers always have a free target */
+  if (IsAnOper(sptr))
+    return 0;
 
   /*
    * Same target as last time?
@@ -715,32 +775,27 @@ int check_target_limit(struct Client *sptr, struct Client *acptr,
       return 0;
     }
   }
-
   /*
    * New target
    */
-  if (CurrentTime < cli_nexttarget(sptr)) {
-    /* If user is invited to channel, give him/her a free target */
-    if (chptr && IsInvited(sptr, chptr))
-      return 0;
-    if (cli_nexttarget(sptr) - CurrentTime < TARGET_DELAY + 8) {
-      const char *name;
-      /*
-       * No server flooding
-       */
-      cli_nexttarget(sptr) += 2;
-      name = acptr ? cli_name(acptr) : chptr->chname;
-      send_reply(sptr, ERR_TARGETTOOFAST, name,
-                 cli_nexttarget(sptr) - CurrentTime);
+  if (!created) {
+    if (CurrentTime < cli_nexttarget(sptr)) {
+      if (cli_nexttarget(sptr) - CurrentTime < TARGET_DELAY + 8) {
+        /*
+         * No server flooding
+         */
+        cli_nexttarget(sptr) += 2;
+        send_reply(sptr, ERR_TARGETTOOFAST, name,
+                   cli_nexttarget(sptr) - CurrentTime);
+      }
+      return 1;
     }
-    return 1;
+    else {
+      cli_nexttarget(sptr) += TARGET_DELAY;
+      if (cli_nexttarget(sptr) < CurrentTime - (TARGET_DELAY * (MAXTARGETS - 1)))
+        cli_nexttarget(sptr) = CurrentTime - (TARGET_DELAY * (MAXTARGETS - 1));
+    }
   }
-  else {
-    cli_nexttarget(sptr) += TARGET_DELAY;
-    if (cli_nexttarget(sptr) < CurrentTime - (TARGET_DELAY * (MAXTARGETS - 1)))
-      cli_nexttarget(sptr) = CurrentTime - (TARGET_DELAY * (MAXTARGETS - 1));
-  }
-
   memmove(&targets[1], &targets[0], MAXTARGETS - 1);
   targets[0] = hash;
   return 0;
@@ -801,6 +856,12 @@ int whisper(struct Client* source, const char* nick, const char* channel,
   }
   if (is_silenced(source, dest))
     return 0;
+
+  if (IsAccountOnly(dest) && !IsAccount(source) && !IsOper(source)) {
+    if(!is_notice)
+      send_reply(source, ERR_ACCOUNTONLY, cli_name(source), feature_str(FEAT_URLREG));
+    return 0;
+  }
           
   if (is_notice)
     sendcmdto_one(source, CMD_NOTICE, dest, "%C :%s", dest, text);
@@ -826,16 +887,26 @@ void send_umode_out(struct Client *cptr, struct Client *sptr,
   int i;
   struct Client *acptr;
 
-  send_umode(NULL, sptr, old, prop ? SEND_UMODES : SEND_UMODES_BUT_OPER);
+  send_umode(NULL, sptr, old, prop ? SEND_UMODES : SEND_UMODES_BUT_OPER, 0);
 
   for (i = HighestFd; i >= 0; i--)
   {
     if ((acptr = LocalClientArray[i]) && IsServer(acptr) &&
-        (acptr != cptr) && (acptr != sptr) && *umodeBuf)
-      sendcmdto_one(sptr, CMD_MODE, acptr, "%s :%s", cli_name(sptr), umodeBuf);
+        (acptr != cptr) && (acptr != sptr) && !IsSendOperName(acptr) && *umodeBuf)
+        sendcmdto_one(sptr, CMD_MODE, acptr, "%s %s", cli_name(sptr), umodeBuf);
   }
+
+  send_umode(NULL, sptr, old, prop ? SEND_UMODES : SEND_UMODES_BUT_OPER, 1);
+
+  for (i = HighestFd; i >= 0; i--)
+  {
+    if ((acptr = LocalClientArray[i]) && IsServer(acptr) &&
+        (acptr != cptr) && (acptr != sptr) && IsSendOperName(acptr) && *umodeBuf)
+        sendcmdto_one(sptr, CMD_MODE, acptr, "%s %s", cli_name(sptr), umodeBuf);
+  }
+
   if (cptr && MyUser(cptr))
-    send_umode(cptr, sptr, old, ALL_UMODES);
+    send_umode(cptr, sptr, old, ALL_UMODES, 0);
 }
 
 
@@ -900,7 +971,7 @@ hide_hostmask(struct Client *cptr, unsigned int flag)
   }
 
   SetFlag(cptr, flag);
-  if (!HasFlag(cptr, FLAG_HIDDENHOST) || !HasFlag(cptr, FLAG_ACCOUNT))
+  if (!HasFlag(cptr, FLAG_HIDDENHOST) || !HasFlag(cptr, FLAG_ACCOUNT) || HasSetHost(cptr))
     return 0;
 
   sendcmdto_common_channels_butone(cptr, CMD_QUIT, cptr, ":Registered");
@@ -934,12 +1005,210 @@ hide_hostmask(struct Client *cptr, unsigned int flag)
   return 0;
 }
 
-/** Set a user's mode.  This function prevents local users from setting
- * unauthorized modes and applies any other side effects of
+/*
+ * set_hostmask() - derived from hide_hostmask()
+ *
+ */
+int set_hostmask(struct Client *cptr, char *hostmask, char *password)
+{
+  int restore = 0;
+  int freeform = 0;
+  char *host, *new_vhost, *vhost_pass;
+  char hiddenhost[USERLEN + HOSTLEN + 2];
+  struct Membership *chan;
+
+  Debug((DEBUG_INFO, "set_hostmask() %C, %s, %s", cptr, hostmask, password));
+
+  /* sethost enabled? */
+  if (MyConnect(cptr) && !feature_bool(FEAT_SETHOST)) {
+    send_reply(cptr, ERR_DISABLED, "SETHOST");
+    return 0;
+  }
+
+  /* sethost enabled for users? */
+  if (MyConnect(cptr) && !IsAnOper(cptr) && !feature_bool(FEAT_SETHOST_USER)) {
+    send_reply(cptr, ERR_NOPRIVILEGES);
+    return 0;
+  }
+ 
+  /* MODE_DEL: restore original hostmask */
+  if (EmptyString(hostmask)) {
+    /* is already sethost'ed? and only opers can remove a sethost */
+    if (IsSetHost(cptr) && IsAnOper(cptr)) {
+      restore = 1;
+      sendcmdto_common_channels_butone(cptr, CMD_QUIT, cptr, ":Host change");
+      /* If they are +rx, we need to return to their +x host, not their "real" host */
+      if (HasHiddenHost(cptr))
+        ircd_snprintf(0, cli_user(cptr)->host, HOSTLEN, "%s.%s",
+          cli_user(cptr)->account, feature_str(FEAT_HIDDEN_HOST));
+      else
+        strncpy(cli_user(cptr)->host, cli_user(cptr)->realhost, HOSTLEN);
+      strncpy(cli_user(cptr)->username, cli_user(cptr)->realusername, USERLEN);
+      /* log it */
+      if (MyConnect(cptr))
+        log_write(LS_SETHOST, L_INFO, LOG_NOSNOTICE,
+            "SETHOST (%s@%s) by (%#R): restoring real hostmask",
+            cli_user(cptr)->username, cli_user(cptr)->host, cptr);
+    } else
+      return 0;
+  /* MODE_ADD: set a new hostmask */
+  } else {
+    /* chop up ident and host.cc */
+    if ((host = strrchr(hostmask, '@'))) { /* oper can specifiy ident@host.cc */
+      *host++ = '\0';
+      if ( MyConnect(cptr) && (0 == strcmp(host, cli_user(cptr)->host)) && (0 == strcmp(hostmask, cli_user(cptr)->username))) {
+        ircd_snprintf(0, hiddenhost, HOSTLEN + USERLEN + 2, "%s@%s",
+            cli_user(cptr)->username, cli_user(cptr)->host);
+        send_reply(cptr, RPL_HOSTHIDDEN, hiddenhost);
+        return 0;
+      }
+    } else { /* user can only specifiy host.cc [password] */
+      host = hostmask;
+      if ( MyConnect(cptr) && (0 == strcmp(host, cli_user(cptr)->host))) {
+        ircd_snprintf(0, hiddenhost, HOSTLEN + USERLEN + 2, "%s@%s",
+            cli_user(cptr)->username, cli_user(cptr)->host);
+        send_reply(cptr, RPL_HOSTHIDDEN, hiddenhost);
+        return 0;
+      }
+    }
+    /*
+     * Oper sethost
+     */
+    if (MyConnect(cptr)) {
+      if (IsAnOper(cptr)) {
+        if ((new_vhost = IsVhost(host, 1)) == NULL) {
+          if (!HasPriv(cptr, PRIV_FREEFORM)) {
+            send_reply(cptr, ERR_HOSTUNAVAIL, hostmask);
+            log_write(LS_SETHOST, L_INFO, LOG_NOSNOTICE,
+                "SETHOST (%s@%s) by (%#R): no such s-line",
+                (host != hostmask) ? hostmask : cli_user(cptr)->username, host, cptr);
+            return 0;
+          } else /* freeform active, log and go */
+            freeform = 1;
+        }
+        sendcmdto_common_channels_butone(cptr, CMD_QUIT, cptr, ":Host change");
+        /* set the new ident and host */
+        if (host != hostmask) /* oper only specified host.cc */
+          strncpy(cli_user(cptr)->username, hostmask, USERLEN);
+        strncpy(cli_user(cptr)->host, host, HOSTLEN);
+        /* log it */
+        log_write(LS_SETHOST, (freeform) ? L_NOTICE : L_INFO,
+            (freeform) ? 0 : LOG_NOSNOTICE, "SETHOST (%s@%s) by (%#R)%s",
+            cli_user(cptr)->username, cli_user(cptr)->host, cptr,
+            (freeform) ? ": using freeform" : "");
+      /*
+       * plain user sethost, handled here
+       */
+      } else {
+        /* empty password? */
+        if (EmptyString(password)) {
+          send_reply(cptr, ERR_NEEDMOREPARAMS, "MODE");
+          return 0;
+        }
+        /* no such s-line */
+        if ((new_vhost = IsVhost(host, 0)) == NULL) {
+          send_reply(cptr, ERR_HOSTUNAVAIL, hostmask);
+          log_write(LS_SETHOST, L_INFO, LOG_NOSNOTICE, "SETHOST (%s@%s %s) by (%#R): no such s-line",
+              cli_user(cptr)->username, host, password, cptr);
+          return 0;
+        }
+        /* no password */
+        if ((vhost_pass = IsVhostPass(new_vhost)) == NULL) {
+          send_reply(cptr, ERR_PASSWDMISMATCH);
+          log_write(LS_SETHOST, L_INFO, 0, "SETHOST (%s@%s %s) by (%#R): trying to use an oper s-line",
+              cli_user(cptr)->username, host, password, cptr);
+          return 0;
+        }
+        /* incorrect password */
+        if (strCasediff(vhost_pass, password)) {
+          send_reply(cptr, ERR_PASSWDMISMATCH);
+          log_write(LS_SETHOST, L_NOTICE, 0, "SETHOST (%s@%s %s) by (%#R): incorrect password",
+              cli_user(cptr)->username, host, password, cptr);
+          return 0;
+        }
+        sendcmdto_common_channels_butone(cptr, CMD_QUIT, cptr, ":Host change");
+        /* set the new host */
+        strncpy(cli_user(cptr)->host, new_vhost, HOSTLEN);
+        /* log it */
+        log_write(LS_SETHOST, L_INFO, LOG_NOSNOTICE, "SETHOST (%s@%s) by (%#R)",
+            cli_user(cptr)->username, cli_user(cptr)->host, cptr);
+      }
+    } else { /* remote user */
+        sendcmdto_common_channels_butone(cptr, CMD_QUIT, cptr, ":Host change");
+        if (host != hostmask) /* oper only specified host.cc */
+          strncpy(cli_user(cptr)->username, hostmask, USERLEN);
+        strncpy(cli_user(cptr)->host, host, HOSTLEN);
+    }
+  }
+
+  if (restore)
+    ClearSetHost(cptr);
+  else
+    SetSetHost(cptr);
+
+  if (MyConnect(cptr)) {
+    ircd_snprintf(0, hiddenhost, HOSTLEN + USERLEN + 2, "%s@%s",
+      cli_user(cptr)->username, cli_user(cptr)->host);
+    send_reply(cptr, RPL_HOSTHIDDEN, hiddenhost);
+  }
+
+#if 0
+  /* Code copied from hide_hostmask().  This is the old (pre-delayedjoin) 
+   * version.  Switch this in if you're not using the delayed join patch. */
+  /*
+   * Go through all channels the client was on, rejoin him
+   * and set the modes, if any
+   */
+  for (chan = cli_user(cptr)->channel; chan; chan = chan->next_channel) {
+    if (IsZombie(chan))
+      continue;
+    sendcmdto_channel_butserv_butone(cptr, CMD_JOIN, chan->channel, cptr,
+      "%H", chan->channel);
+    if (IsChanOp(chan) && HasVoice(chan)) {
+      sendcmdto_channel_butserv_butone(&me, CMD_MODE, chan->channel, cptr,
+        "%H +ov %C %C", chan->channel, cptr, cptr);
+    } else if (IsChanOp(chan) || HasVoice(chan)) {
+      sendcmdto_channel_butserv_butone(&me, CMD_MODE, chan->channel, cptr,
+        "%H +%c %C", chan->channel, IsChanOp(chan) ? 'o' : 'v', cptr);
+    }
+  }
+#endif
+
+  /*
+   * Go through all channels the client was on, rejoin him
+   * and set the modes, if any
+   */
+  for (chan = cli_user(cptr)->channel; chan; chan = chan->next_channel) {
+    if (IsZombie(chan))
+      continue;
+    /* If this channel has delayed joins and the user has no modes, just set
+     * the delayed join flag rather than showing the join, even if the user
+     * was visible before */
+    if (!IsChanOp(chan) && !HasVoice(chan)
+        && (chan->channel->mode.mode & MODE_DELJOINS)) {
+      SetDelayedJoin(chan);
+    } else {
+      sendcmdto_channel_butserv_butone(cptr, CMD_JOIN, chan->channel, cptr, 0,
+        "%H", chan->channel);
+    }
+    if (IsChanOp(chan) && HasVoice(chan)) {
+      sendcmdto_channel_butserv_butone(&his, CMD_MODE, chan->channel, cptr, 0,
+        "%H +ov %C %C", chan->channel, cptr, cptr);
+    } else if (IsChanOp(chan) || HasVoice(chan)) {
+      sendcmdto_channel_butserv_butone(&his, CMD_MODE, chan->channel, cptr, 0,
+        "%H +%c %C", chan->channel, IsChanOp(chan) ? 'o' : 'v', cptr);
+    }
+  }
+  return 1;
+}
+
+/** Set a user's mode.  This function checks that \a cptr is trying to
+ * set his own mode, prevents local users from setting inappropriate
+ * modes through this function, and applies any other side effects of
  * a successful mode change.
  *
- * @param[in] cptr Neighbor that sent the mode change message.
- * @param[in] sptr Source (originator) of the mode change.
+ * @param[in,out] cptr User setting someone's mode.
+ * @param[in] sptr Client who sent the mode change message.
  * @param[in] parc Number of parameters in \a parv.
  * @param[in] parv Parameters to MODE.
  * @param[in] allow_modes ALLOWMODES_ANY for any mode, ALLOWMODES_DEFAULT for 
@@ -957,10 +1226,15 @@ int set_user_mode(struct Client *cptr, struct Client *sptr, int parc,
   unsigned int tmpmask = 0;
   int snomask_given = 0;
   char buf[BUFSIZE];
+  char *hostmask, *password;
   int prop = 0;
   int do_host_hiding = 0;
+  int do_set_host = 0;
+  size_t opernamelen;
+  char *opername = 0;
   char* account = NULL;
 
+  hostmask = password = NULL;
   what = MODE_ADD;
 
   if (parc < 3)
@@ -970,7 +1244,8 @@ int set_user_mode(struct Client *cptr, struct Client *sptr, int parc,
     for (i = 0; i < USERMODELIST_SIZE; i++)
     {
       if (HasFlag(sptr, userModeList[i].flag) &&
-          userModeList[i].flag != FLAG_ACCOUNT)
+          ((userModeList[i].flag != FLAG_ACCOUNT) &&
+          (userModeList[i].flag != FLAG_SETHOST)))
         *m++ = userModeList[i].c;
     }
     *m = '\0';
@@ -1024,13 +1299,36 @@ int set_user_mode(struct Client *cptr, struct Client *sptr, int parc,
           ClearWallops(sptr);
         break;
       case 'o':
-        if (what == MODE_ADD)
+        if (what == MODE_ADD) {
           SetOper(sptr);
-        else {
+          if (IsServer(cptr) && IsSendOperName(cptr)) {
+            if (*(p + 1)) {
+              opername = *++p;
+              if (cli_user(sptr)->opername)
+                MyFree(cli_user(sptr)->opername);
+              if ((opername[0] == NOOPERNAMECHARACTER) && (opername[1] == '\0')) {
+                cli_user(sptr)->opername = NULL;
+              } else {
+                opernamelen = strlen(opername);
+                if (opernamelen > ACCOUNTLEN) {
+                  protocol_violation(cptr, "Received opername (%s) longer than %d for %s; ignoring.", opername, ACCOUNTLEN, cli_name(sptr));
+                  cli_user(sptr)->opername = NULL;
+                } else {
+                  cli_user(sptr)->opername = (char*) MyMalloc(opernamelen + 1);
+                  assert(0 != cli_user(sptr)->opername);
+                  ircd_strncpy(cli_user(sptr)->opername,opername,ACCOUNTLEN);
+                }
+              }
+            }
+          }
+        } else {
           ClrFlag(sptr, FLAG_OPER);
           ClrFlag(sptr, FLAG_LOCOP);
           if (MyConnect(sptr))
+          {
             tmpmask = cli_snomask(sptr) & ~SNO_OPER;
+            cli_handler(sptr) = CLIENT_HANDLER;
+          }
         }
         break;
       case 'O':
@@ -1041,14 +1339,18 @@ int set_user_mode(struct Client *cptr, struct Client *sptr, int parc,
           ClrFlag(sptr, FLAG_OPER);
           ClrFlag(sptr, FLAG_LOCOP);
           if (MyConnect(sptr))
+          {
             tmpmask = cli_snomask(sptr) & ~SNO_OPER;
+            cli_handler(sptr) = CLIENT_HANDLER;
+          }
         }
         break;
       case 'i':
         if (what == MODE_ADD)
           SetInvisible(sptr);
         else
-          ClearInvisible(sptr);
+          if (!feature_bool(FEAT_AUTOINVISIBLE) || IsOper(sptr)) /* Don't allow non-opers to -i if FEAT_AUTOINVISIBLE is set */
+            ClearInvisible(sptr);
         break;
       case 'd':
         if (what == MODE_ADD)
@@ -1062,6 +1364,24 @@ int set_user_mode(struct Client *cptr, struct Client *sptr, int parc,
         else
           ClearChannelService(sptr);
         break;
+      case 'X':
+        if (what == MODE_ADD)
+          SetXtraOp(sptr);
+        else
+          ClearXtraOp(sptr);
+        break;
+      case 'n':
+        if (what == MODE_ADD)
+          SetNoChan(sptr);
+        else
+          ClearNoChan(sptr);
+        break;
+      case 'I':
+        if (what == MODE_ADD)
+          SetNoIdle(sptr);
+        else
+          ClearNoIdle(sptr);
+        break;
       case 'g':
         if (what == MODE_ADD)
           SetDebug(sptr);
@@ -1070,10 +1390,46 @@ int set_user_mode(struct Client *cptr, struct Client *sptr, int parc,
         break;
       case 'x':
         if (what == MODE_ADD)
-	  do_host_hiding = 1;
+          do_host_hiding = 1;
+         break;
+      case 'h':
+         if (what == MODE_ADD) {
+           if (*(p + 1) && is_hostmask(*(p + 1))) {
+             do_set_host = 1;
+             hostmask = *++p;
+             /* DON'T step p onto the trailing NULL in the parameter array! - splidge */
+             if (*(p+1))
+               password = *++p;
+             else
+               password = NULL;
+           } else {
+             if (!*(p+1))
+               send_reply(sptr, ERR_NEEDMOREPARAMS, "SETHOST");
+             else {
+               send_reply(sptr, ERR_BADHOSTMASK, *(p+1));
+               p++; /* Swallow the arg anyway */
+             }
+           }
+         } else { /* MODE_DEL */
+           do_set_host = 1;
+           hostmask = NULL;
+           password = NULL;
+         }
+         break;
+      case 'R':
+        if (what == MODE_ADD)
+          SetAccountOnly(sptr);
+        else
+          ClearAccountOnly(sptr);
+        break;
+      case 'P':
+	if (what == MODE_ADD)
+          SetParanoid(sptr);
+        else
+          ClearParanoid(sptr);
 	break;
       case 'r':
-	if (*(p + 1) && (what == MODE_ADD)) {
+	if ((what == MODE_ADD) && *(p + 1)) {
 	  account = *(++p);
 	  SetAccount(sptr);
 	}
@@ -1101,8 +1457,17 @@ int set_user_mode(struct Client *cptr, struct Client *sptr, int parc,
      * new umode; servers can set it, local users cannot;
      * prevents users from /kick'ing or /mode -o'ing
      */
-    if (!FlagHas(&setflags, FLAG_CHSERV))
+    if (!FlagHas(&setflags, FLAG_CHSERV) && !(IsOper(sptr) && HasPriv(sptr, PRIV_CHANSERV)))
       ClearChannelService(sptr);
+    if (!FlagHas(&setflags, FLAG_XTRAOP) && !(IsOper(sptr) && HasPriv(sptr, PRIV_XTRA_OPER)))
+      ClearXtraOp(sptr);
+    if (!FlagHas(&setflags, FLAG_NOCHAN) && !(IsOper(sptr) || feature_bool(FEAT_USER_HIDECHANS)))
+      ClearNoChan(sptr);
+    if (!FlagHas(&setflags, FLAG_NOIDLE) && !((IsOper(sptr) && HasPriv(sptr, PRIV_NOIDLE)) || feature_bool(FEAT_USER_HIDEIDLETIME)))
+      ClearNoIdle(sptr);
+    if (!FlagHas(&setflags, FLAG_PARANOID) && !(IsOper(sptr) && HasPriv(sptr, PRIV_PARANOID)))
+      ClearParanoid(sptr);
+
     /*
      * only send wallops to opers
      */
@@ -1123,10 +1488,7 @@ int set_user_mode(struct Client *cptr, struct Client *sptr, int parc,
   {
     if ((FlagHas(&setflags, FLAG_OPER) || FlagHas(&setflags, FLAG_LOCOP)) &&
         !IsAnOper(sptr))
-    {
-      cli_handler(sptr) = CLIENT_HANDLER;
       det_confs_butmask(sptr, CONF_CLIENT & ~CONF_OPERATOR);
-    }
 
     if (SendServNotice(sptr))
     {
@@ -1144,18 +1506,27 @@ int set_user_mode(struct Client *cptr, struct Client *sptr, int parc,
    */
   if (!FlagHas(&setflags, FLAG_ACCOUNT) && IsAccount(sptr)) {
       int len = ACCOUNTLEN;
-      char *ts;
+      char *pts, *ts;
       if ((ts = strchr(account, ':'))) {
 	len = (ts++) - account;
 	cli_user(sptr)->acc_create = atoi(ts);
-	Debug((DEBUG_DEBUG, "Received timestamped account in user mode; "
-	      "account \"%s\", timestamp %Tu", account,
-	      cli_user(sptr)->acc_create));
+        if ((pts = strchr(ts, ':')))
+	  cli_user(sptr)->acc_id = strtoul(pts + 1, NULL, 10);
+        Debug((DEBUG_DEBUG, "Received timestamped account in user mode; "
+	      "account \"%s\", timestamp %Tu, id %lu", account,
+	      cli_user(sptr)->acc_create,
+	      cli_user(sptr)->acc_id));
       }
       ircd_strncpy(cli_user(sptr)->account, account, len);
   }
   if (!FlagHas(&setflags, FLAG_HIDDENHOST) && do_host_hiding && allow_modes != ALLOWMODES_DEFAULT)
     hide_hostmask(sptr, FLAG_HIDDENHOST);
+  if (do_set_host) {
+    /* We clear the flag in the old mask, so that the +h will be sent */
+    /* Only do this if we're SETTING +h and it succeeded */
+    if (set_hostmask(sptr, hostmask, password) && hostmask)
+      FlagClr(&setflags, FLAG_SETHOST);
+  }
 
   if (IsRegistered(sptr)) {
     if (!FlagHas(&setflags, FLAG_OPER) && IsOper(sptr)) {
@@ -1167,14 +1538,15 @@ int set_user_mode(struct Client *cptr, struct Client *sptr, int parc,
     if (HasPriv(sptr, PRIV_PROPAGATE)) {
       prop = 1;
     }
-    if ((FlagHas(&setflags, FLAG_OPER) || FlagHas(&setflags, FLAG_LOCOP))
-        && !IsAnOper(sptr)) {
-      if (FlagHas(&setflags, FLAG_OPER)) {
-        /* user no longer (global) oper */
-        assert(UserStats.opers > 0);
-        --UserStats.opers;
-      }
+    if (FlagHas(&setflags, FLAG_OPER) && !IsOper(sptr)) {
+      /* user no longer oper */
+      assert(UserStats.opers > 0);
+      --UserStats.opers;
       client_set_privs(sptr, NULL, 0); /* will clear propagate privilege */
+      if (cli_user(sptr)->opername) {
+        MyFree(cli_user(sptr)->opername);
+        cli_user(sptr)->opername = NULL;
+      }
     }
     if (FlagHas(&setflags, FLAG_INVISIBLE) && !IsInvisible(sptr)) {
       assert(UserStats.inv_clients > 0);
@@ -1195,7 +1567,7 @@ int set_user_mode(struct Client *cptr, struct Client *sptr, int parc,
  * @param[in] cptr Some user.
  * @return Pointer to a static buffer.
  */
-char *umode_str(struct Client *cptr)
+char *umode_str(struct Client *cptr, int opernames)
 {
   /* Maximum string size: "owidgrx\0" */
   char *m = umodeBuf;
@@ -1212,6 +1584,19 @@ char *umode_str(struct Client *cptr)
       *m++ = userModeList[i].c;
   }
 
+  if (opernames && IsOper(cptr))
+  {
+    *m++ = ' ';
+    if (cli_user(cptr)->opername) {
+      char* t = cli_user(cptr)->opername;
+      while ((*m++ = *t++))
+        ; /* Empty loop */
+      m--; /* Step back over the '\0' */
+    } else {
+      *m++ = NOOPERNAMECHARACTER;
+    }
+  }
+
   if (IsAccount(cptr))
   {
     char* t = cli_user(cptr)->account;
@@ -1221,20 +1606,30 @@ char *umode_str(struct Client *cptr)
       ; /* Empty loop */
 
     if (cli_user(cptr)->acc_create) {
-      char nbuf[20];
+      char nbuf[30];
       Debug((DEBUG_DEBUG, "Sending timestamped account in user mode for "
 	     "account \"%s\"; timestamp %Tu", cli_user(cptr)->account,
 	     cli_user(cptr)->acc_create));
-      ircd_snprintf(0, t = nbuf, sizeof(nbuf), ":%Tu",
-		    cli_user(cptr)->acc_create);
+      if(cli_user(cptr)->acc_id) {
+        ircd_snprintf(0, t = nbuf, sizeof(nbuf), ":%Tu:%lu",
+                      cli_user(cptr)->acc_create, cli_user(cptr)->acc_id);
+      } else {
+        ircd_snprintf(0, t = nbuf, sizeof(nbuf), ":%Tu",
+                      cli_user(cptr)->acc_create);
+      }
       m--; /* back up over previous nul-termination */
       while ((*m++ = *t++))
 	; /* Empty loop */
     }
+    m--; /* Step back over the '\0' */
   }
 
-  *m = '\0';
-
+  if (IsSetHost(cptr)) {
+    *m++ = ' ';
+    ircd_snprintf(0, m, USERLEN + HOSTLEN + 2, "%s@%s", cli_user(cptr)->username,
+         cli_user(cptr)->host);
+  } else
+    *m = '\0';
   return umodeBuf;                /* Note: static buffer, gets
                                    overwritten by send_umode() */
 }
@@ -1247,10 +1642,12 @@ char *umode_str(struct Client *cptr)
  * SEND_UMODES, to select which changed user modes to send.
  */
 void send_umode(struct Client *cptr, struct Client *sptr, struct Flags *old,
-                int sendset)
+                int sendset, int opernames)
 {
   int i;
   int flag;
+  int needhost = 0;
+  int needoper = 0;
   char *m;
   int what = MODE_NULL;
 
@@ -1280,6 +1677,22 @@ void send_umode(struct Client *cptr, struct Client *sptr, struct Flags *old,
         continue;
       break;      
     }
+    /* Special case for OPER.. */
+    if (flag == FLAG_OPER) {
+      /* If we're setting +o, add the opername later */
+      if (!FlagHas(old, flag))
+      	needoper++;
+    }
+    /* Special case for SETHOST.. */
+    if (flag == FLAG_SETHOST) {
+      /* Don't send to users */
+      if (cptr && MyUser(cptr))
+      	continue;
+      
+      /* If we're setting +h, add the parameter later */
+      if (!FlagHas(old, flag))	
+      	needhost++;    
+    }
     if (FlagHas(old, flag))
     {
       if (what == MODE_DEL)
@@ -1303,9 +1716,25 @@ void send_umode(struct Client *cptr, struct Client *sptr, struct Flags *old,
       }
     }
   }
-  *m = '\0';
+  if (opernames && needoper) {
+    *m++ = ' ';
+    if (cli_user(sptr)->opername) {
+      char* t = cli_user(sptr)->opername;
+      while ((*m++ = *t++))
+        ; /* Empty loop */
+      m--; /* Step back over the '\0' */
+    } else {
+      *m++ = NOOPERNAMECHARACTER;
+    }
+  }
+  if (needhost) {
+    *m++ = ' ';
+    ircd_snprintf(0, m, USERLEN + HOSTLEN + 1, "%s@%s", cli_user(sptr)->username,
+         cli_user(sptr)->host);
+  } else
+    *m = '\0';
   if (*umodeBuf && cptr)
-    sendcmdto_one(sptr, CMD_MODE, cptr, "%s :%s", cli_name(sptr), umodeBuf);
+    sendcmdto_one(sptr, CMD_MODE, cptr, "%s %s", cli_name(sptr), umodeBuf);
 }
 
 /**
@@ -1326,6 +1755,110 @@ int is_snomask(char *word)
         return 0;
   }
   return 0;
+}
+
+ /*
+  * Check to see if it resembles a valid hostmask.
+  */
+int is_hostmask(char *word)
+{
+  int i = 0;
+  char *host;
+
+  Debug((DEBUG_INFO, "is_hostmask() %s", word));
+
+  if (strlen(word) > (HOSTLEN + USERLEN + 1) || strlen(word) <= 0)
+    return 0;
+
+  /* if a host is specified, make sure it's valid */
+  host = strrchr(word, '@');
+  if (host) {
+     if (strlen(++host) < 1)
+       return 0;
+     if (strlen(host) > HOSTLEN)
+       return 0;
+  }
+
+  if (word) {
+    if ('@' == *word)	/* no leading @'s */
+        return 0;
+
+    if ('#' == *word) {	/* numeric index given? */
+      for (word++; *word; word++) {
+        if (!IsDigit(*word))
+          return 0;
+      }
+      return 1;
+    }
+
+    /* normal hostmask, account for at most one '@' */
+    for (; *word; word++) {
+      if ('@' == *word) {
+        i++;
+        continue;
+      }
+      if (!IsHostChar(*word))
+        return 0;
+    }
+    return (1 < i) ? 0 : 1; /* no more than on '@' */
+  }
+  return 0;
+}
+
+ /*
+  * IsVhost() - Check if given host is a valid spoofhost
+  * (ie: configured thru a S:line)
+  */
+static char *IsVhost(char *hostmask, int oper)
+{
+  unsigned int i = 0, y = 0;
+  struct sline *sconf;
+
+  Debug((DEBUG_INFO, "IsVhost() %s", hostmask));
+
+  if (EmptyString(hostmask))
+    return NULL;
+
+  /* spoofhost specified as index, ie: #27 */
+  if ('#' == hostmask[0]) {
+    y = atoi(hostmask + 1);
+    for (i = 0, sconf = GlobalSList; sconf; sconf = sconf->next) {
+      if (!oper && EmptyString(sconf->passwd))
+        continue;
+      if (y == ++i)
+        return sconf->spoofhost;
+    }
+    return NULL;
+  }
+
+  /* spoofhost specified as host, ie: host.cc */
+  for (sconf = GlobalSList; sconf; sconf = sconf->next)
+    if (strCasediff(hostmask, sconf->spoofhost) == 0)
+      return sconf->spoofhost;
+
+  return NULL;
+}
+
+ /*
+  * IsVhostPass() - Check if given spoofhost has a password
+  * associated with it, and if, return the password (cleartext)
+  */
+static char *IsVhostPass(char *hostmask)
+{
+  struct sline *sconf;
+
+  Debug((DEBUG_INFO, "IsVhostPass() %s", hostmask));
+
+  if (EmptyString(hostmask))
+    return NULL;
+
+  for (sconf = GlobalSList; sconf; sconf = sconf->next)
+    if (strCasediff(hostmask, sconf->spoofhost) == 0) {
+      Debug((DEBUG_INFO, "sconf->passwd %s", sconf->passwd));
+      return EmptyString(sconf->passwd) ? NULL : sconf->passwd;
+    }
+
+  return NULL;
 }
 
 /** Update snomask \a oldmask according to \a arg and \a what.
@@ -1495,6 +2028,3 @@ send_supported(struct Client *cptr)
 
   return 0; /* convenience return, if it's ever needed */
 }
-
-/* vim: shiftwidth=2 
- */ 

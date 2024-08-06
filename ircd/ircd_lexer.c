@@ -172,7 +172,13 @@ static const struct lexer_token tokens[] = {
   { "whox", TPRIV_WHOX },
   { "wide_gline", TPRIV_WIDE_GLINE },
   { "years", YEARS },
-  { "yes", YES },
+  { "yes", YES },  
+  { "chanserv", TPRIV_CHANSERV },
+  { "xtraoper", TPRIV_XTRA_OPER },
+  { "noidle", TPRIV_NOIDLE },
+  { "freeform", TPRIV_FREEFORM },
+  { "paranoid", TPRIV_PARANOID },
+  { "check", TPRIV_CHECK },
   { NULL, 0 }
 };
 static const int ntokens = sizeof(tokens) / sizeof(tokens[0]) - 1;

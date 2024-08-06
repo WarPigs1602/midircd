@@ -154,7 +154,7 @@ int m_part(struct Client* cptr, struct Client* sptr, int parc, char* parv[])
 
     if (!member_can_send_to_channel(member, 0)
         || ((member->channel->mode.mode & MODE_NOCOLOR) && colors)
-        || (IsDelayedTarget(member) && check_target_limit(sptr, NULL, chptr)))
+        || (IsDelayedTarget(member) && check_target_limit(sptr, NULL, chptr, 0)))
     {
       flags |= CHFL_BANNED;
     }

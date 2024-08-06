@@ -98,6 +98,7 @@
 #include "s_user.h"
 #include "send.h"
 #include "sys.h"
+#include "gline.h"
 
 /* #include <assert.h> -- Now using assert in ircd_log.h */
 #include <stdlib.h>
@@ -178,6 +179,11 @@ int m_nick(struct Client* cptr, struct Client* sptr, int parc, char* parv[])
    */
   if (0 == do_nick_name(nick)) {
     send_reply(sptr, ERR_ERRONEUSNICKNAME, arg);
+    return 0;
+  }
+
+  if (IsRegistered(sptr) && !IsAnOper(sptr) && IsNickGlined(sptr, nick)) {
+    send_reply(sptr, ERR_ERRONEUSNICKNAME, nick);
     return 0;
   }
 

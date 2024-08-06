@@ -104,7 +104,7 @@ last0(struct Client *cptr, struct Client *sptr, char *chanlist)
  */
 static int check_target_join(struct Client *cptr, struct Channel *chptr)
 {
-  if (check_target_limit(cptr, NULL, chptr))
+  if (check_target_limit(cptr, NULL, chptr, 0))
   {
     return feature_bool(FEAT_JOIN_TARGET) ? 1 : CHFL_DELAYED_TARGET;
   }
@@ -223,7 +223,15 @@ int m_join(struct Client *cptr, struct Client *sptr, int parc, char *parv[])
         err = ERR_BANNEDFROMCHAN;
       else if (*chptr->mode.key && (!key || strcmp(key, chptr->mode.key)))
         err = ERR_BADCHANNELKEY;
-
+    
+      /*
+       * ASUKA_X:
+       * Allow XtraOpers to join all channels.
+       * --Bigfoot
+       */
+      if (IsXtraOp(sptr))
+        err = 0;
+	
       /* An oper with WALK_LCHAN privilege can join a local channel
        * he otherwise could not join by using "OVERRIDE" as the key.
        * This will generate a HACK(4) notice, but fails if the oper
