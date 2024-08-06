@@ -72,6 +72,7 @@
   extern struct s_map*      GlobalServiceMapList;
   extern struct qline*      GlobalQuarantineList;
   extern struct wline*      GlobalWebircList;
+  extern struct sline*      GlobalSList;
 
   int yylex(void);
   /* Now all the globals we need :/... */
@@ -159,6 +160,7 @@ static void free_slist(struct SLink **link) {
 %token CONTACT
 %token CONNECT
 %token CLASS
+%token CHANNEL
 %token PINGFREQ
 %token CONNECTFREQ
 %token MAXLINKS

@@ -403,6 +403,44 @@ stats_quarantine(struct Client* to, const struct StatDesc* sd, char* param)
   }
 }
 
+static void
+stats_sline(struct Client* to, const struct StatDesc* sd, char* param)
+{
+  int y = 1, i = 1;
+  struct sline *sline;
+
+  if (IsAnOper(to))
+    send_reply(to, SND_EXPLICIT | RPL_TEXT, "# Type Spoofhost Realhost Ident");
+  else
+    send_reply(to, SND_EXPLICIT | RPL_TEXT, "# Type Spoofhost");
+
+  for (sline = GlobalSList; sline; sline = sline->next) {
+    if (param && match(param, sline->spoofhost)) { /* narrow search */
+      if (IsAnOper(to))
+          y++;
+      else
+        if (!EmptyString(sline->passwd))
+          y++;
+      continue;
+    }
+
+    if (IsAnOper(to)) {
+      send_reply(to, RPL_STATSSLINE, (param) ? y : i, 
+         (EmptyString(sline->passwd)) ? "oper" : "user",
+         sline->spoofhost, 
+         (EmptyString(sline->realhost)) ? "" : sline->realhost,
+         (EmptyString(sline->username)) ? "" : sline->username);
+      i++;
+    } else {
+      if (!EmptyString(sline->passwd)) {
+        send_reply(to, RPL_STATSSLINE, (param) ? y : i, "user", sline->spoofhost,
+           "", "", "");
+        i++;
+      }
+    }
+  }
+}
+
 /** List service pseudo-command mappings.
  * @param[in] to Client requesting statistics.
  * @param[in] sd Stats descriptor for request (ignored).
