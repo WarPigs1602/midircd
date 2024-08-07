@@ -357,6 +357,9 @@ int register_user(struct Client *cptr, struct Client *sptr)
 
     Count_unknownbecomesclient(sptr, UserStats);
 
+    if (MyConnect(sptr) && feature_bool(FEAT_AUTOINVISIBLE))
+      SetInvisible(sptr);
+    
     if(MyConnect(sptr) && feature_bool(FEAT_SETHOST_AUTO)) {
       if (conf_check_slines(sptr)) {
         send_reply(sptr, RPL_USINGSLINE);
@@ -444,7 +447,8 @@ int register_user(struct Client *cptr, struct Client *sptr)
         send_reply(sptr, RPL_USINGSLINE);
         SetSetHost(sptr);
       }
-    }	
+    }
+
     SetUser(sptr);
   }
 
@@ -460,29 +464,26 @@ int register_user(struct Client *cptr, struct Client *sptr)
     ++UserStats.opers;
 
   tmpstr = umode_str(sptr);
- int ipv6andopername[] = {FLAG_IPV6,FLAG_OPERNAME};
-
-  /* Do not send oper name and send full IP address to IPv6-grokking servers. */
+  /* Send full IP address to IPv6-grokking servers. */
   sendcmdto_flag_serv_butone(user->server, CMD_NICK, cptr,
-                             FLAG_IPV6, FLAG_OPERNAME,
+                             FLAG_IPV6, FLAG_LAST_FLAG,
                              "%s %d %Tu %s %s %s%s%s%s %s%s :%s",
                              cli_name(sptr), cli_hopcount(sptr) + 1,
                              cli_lastnick(sptr),
-                             user->realusername, user->realhost,
+                             user->username, user->realhost,
                              *tmpstr ? "+" : "", tmpstr, *tmpstr ? " " : "",
                              iptobase64(ip_base64, &cli_ip(sptr), sizeof(ip_base64), 1),
                              NumNick(sptr), cli_info(sptr));
-   /* Send oper name and fake IPv6 addresses to pre-IPv6 servers. */
+  /* Send fake IPv6 addresses to pre-IPv6 servers. */
   sendcmdto_flag_serv_butone(user->server, CMD_NICK, cptr,
-                             FLAG_OPERNAME, FLAG_IPV6,
+                             FLAG_LAST_FLAG, FLAG_IPV6,
                              "%s %d %Tu %s %s %s%s%s%s %s%s :%s",
                              cli_name(sptr), cli_hopcount(sptr) + 1,
                              cli_lastnick(sptr),
-                             user->realusername, user->realhost,
+                             user->username, user->realhost,
                              *tmpstr ? "+" : "", tmpstr, *tmpstr ? " " : "",
                              iptobase64(ip_base64, &cli_ip(sptr), sizeof(ip_base64), 0),
                              NumNick(sptr), cli_info(sptr));
-
 
   /* Send user mode to client */
   if (MyUser(sptr))
@@ -518,12 +519,7 @@ static const struct UserMode {
   { FLAG_DEBUG,       'g' },
   { FLAG_ACCOUNT,     'r' },
   { FLAG_HIDDENHOST,  'x' },
-  { FLAG_ACCOUNTONLY, 'R' },
-  { FLAG_XTRAOP,      'X' },
-  { FLAG_NOCHAN,      'n' },
-  { FLAG_NOIDLE,      'I' },
-  { FLAG_SETHOST,     'h' },
-  { FLAG_PARANOID,    'P' }
+  { FLAG_SETHOST,     'h' }
 };
 
 /** Length of #userModeList. */
@@ -1444,54 +1440,6 @@ int set_user_mode(struct Client *cptr, struct Client *sptr, int parc,
   return 0;
 }
 
- /*
-  * Check to see if it resembles a valid hostmask.
-  */
-int is_hostmask(char *word)
-{
-  int i = 0;
-  char *host;
-
-  Debug((DEBUG_INFO, "is_hostmask() %s", word));
-
-  if (strlen(word) > (HOSTLEN + USERLEN + 1) || strlen(word) <= 0)
-    return 0;
-
-  /* if a host is specified, make sure it's valid */
-  host = strrchr(word, '@');
-  if (host) {
-     if (strlen(++host) < 1)
-       return 0;
-     if (strlen(host) > HOSTLEN)
-       return 0;
-  }
-
-  if (word) {
-    if ('@' == *word)	/* no leading @'s */
-        return 0;
-
-    if ('#' == *word) {	/* numeric index given? */
-      for (word++; *word; word++) {
-        if (!IsDigit(*word))
-          return 0;
-      }
-      return 1;
-    }
-
-    /* normal hostmask, account for at most one '@' */
-    for (; *word; word++) {
-      if ('@' == *word) {
-        i++;
-        continue;
-      }
-      if (!IsHostChar(*word))
-        return 0;
-    }
-    return (1 < i) ? 0 : 1; /* no more than on '@' */
-  }
-  return 0;
-}
-
 /** Build a mode string to describe modes for \a cptr.
  * @param[in] cptr Some user.
  * @return Pointer to a static buffer.
@@ -1557,10 +1505,11 @@ void send_umode(struct Client *cptr, struct Client *sptr, struct Flags *old,
 {
   int i;
   int flag;
-  int needhost = 0;
-  int needoper = 0;  
   char *m;
   int what = MODE_NULL;
+  int needhost = 0;
+  int needoper = 0;  
+  int opernames = 0;
 
   /*
    * Build a string in umodeBuf to represent the change in the user's
@@ -1627,9 +1576,25 @@ void send_umode(struct Client *cptr, struct Client *sptr, struct Flags *old,
       }
     }
   }
-  *m = '\0';
+  if (opernames && needoper) {
+    *m++ = ' ';
+    if (cli_user(sptr)->opername) {
+      char* t = cli_user(sptr)->opername;
+      while ((*m++ = *t++))
+        ; /* Empty loop */
+      m--; /* Step back over the '\0' */
+    } else {
+      *m++ = NOOPERNAMECHARACTER;
+    }
+  }
+  if (needhost) {
+    *m++ = ' ';
+    ircd_snprintf(0, m, USERLEN + HOSTLEN + 1, "%s@%s", cli_user(sptr)->username,
+         cli_user(sptr)->host);
+  } else
+    *m = '\0';
   if (*umodeBuf && cptr)
-    sendcmdto_one(sptr, CMD_MODE, cptr, "%s :%s", cli_name(sptr), umodeBuf);
+    sendcmdto_one(sptr, CMD_MODE, cptr, "%s %s", cli_name(sptr), umodeBuf);
 }
 
 /**
@@ -1650,62 +1615,6 @@ int is_snomask(char *word)
         return 0;
   }
   return 0;
-}
-
-/*
-  * IsVhost() - Check if given host is a valid spoofhost
-  * (ie: configured thru a S:line)
-  */
-static char *IsVhost(char *hostmask, int oper)
-{
-  unsigned int i = 0, y = 0;
-  struct sline *sconf;
-
-  Debug((DEBUG_INFO, "IsVhost() %s", hostmask));
-
-  if (EmptyString(hostmask))
-    return NULL;
-
-  /* spoofhost specified as index, ie: #27 */
-  if ('#' == hostmask[0]) {
-    y = atoi(hostmask + 1);
-    for (i = 0, sconf = GlobalSList; sconf; sconf = sconf->next) {
-      if (!oper && EmptyString(sconf->passwd))
-        continue;
-      if (y == ++i)
-        return sconf->spoofhost;
-    }
-    return NULL;
-  }
-
-  /* spoofhost specified as host, ie: host.cc */
-  for (sconf = GlobalSList; sconf; sconf = sconf->next)
-    if (strCasediff(hostmask, sconf->spoofhost) == 0)
-      return sconf->spoofhost;
-
-  return NULL;
-}
-
- /*
-  * IsVhostPass() - Check if given spoofhost has a password
-  * associated with it, and if, return the password (cleartext)
-  */
-static char *IsVhostPass(char *hostmask)
-{
-  struct sline *sconf;
-
-  Debug((DEBUG_INFO, "IsVhostPass() %s", hostmask));
-
-  if (EmptyString(hostmask))
-    return NULL;
-
-  for (sconf = GlobalSList; sconf; sconf = sconf->next)
-    if (strCasediff(hostmask, sconf->spoofhost) == 0) {
-      Debug((DEBUG_INFO, "sconf->passwd %s", sconf->passwd));
-      return EmptyString(sconf->passwd) ? NULL : sconf->passwd;
-    }
-
-  return NULL;
 }
 
 /** Update snomask \a oldmask according to \a arg and \a what.
@@ -1876,5 +1785,106 @@ send_supported(struct Client *cptr)
   return 0; /* convenience return, if it's ever needed */
 }
 
-/* vim: shiftwidth=2 
- */ 
+/*
+  * IsVhost() - Check if given host is a valid spoofhost
+  * (ie: configured thru a S:line)
+  */
+static char *IsVhost(char *hostmask, int oper)
+{
+  unsigned int i = 0, y = 0;
+  struct sline *sconf;
+
+  Debug((DEBUG_INFO, "IsVhost() %s", hostmask));
+
+  if (EmptyString(hostmask))
+    return NULL;
+
+  /* spoofhost specified as index, ie: #27 */
+  if ('#' == hostmask[0]) {
+    y = atoi(hostmask + 1);
+    for (i = 0, sconf = GlobalSList; sconf; sconf = sconf->next) {
+      if (!oper && EmptyString(sconf->passwd))
+        continue;
+      if (y == ++i)
+        return sconf->spoofhost;
+    }
+    return NULL;
+  }
+
+  /* spoofhost specified as host, ie: host.cc */
+  for (sconf = GlobalSList; sconf; sconf = sconf->next)
+    if (strCasediff(hostmask, sconf->spoofhost) == 0)
+      return sconf->spoofhost;
+
+  return NULL;
+}
+
+ /*
+  * IsVhostPass() - Check if given spoofhost has a password
+  * associated with it, and if, return the password (cleartext)
+  */
+static char *IsVhostPass(char *hostmask)
+{
+  struct sline *sconf;
+
+  Debug((DEBUG_INFO, "IsVhostPass() %s", hostmask));
+
+  if (EmptyString(hostmask))
+    return NULL;
+
+  for (sconf = GlobalSList; sconf; sconf = sconf->next)
+    if (strCasediff(hostmask, sconf->spoofhost) == 0) {
+      Debug((DEBUG_INFO, "sconf->passwd %s", sconf->passwd));
+      return EmptyString(sconf->passwd) ? NULL : sconf->passwd;
+    }
+
+  return NULL;
+}
+
+ /*
+  * Check to see if it resembles a valid hostmask.
+  */
+int is_hostmask(char *word)
+{
+  int i = 0;
+  char *host;
+
+  Debug((DEBUG_INFO, "is_hostmask() %s", word));
+
+  if (strlen(word) > (HOSTLEN + USERLEN + 1) || strlen(word) <= 0)
+    return 0;
+
+  /* if a host is specified, make sure it's valid */
+  host = strrchr(word, '@');
+  if (host) {
+     if (strlen(++host) < 1)
+       return 0;
+     if (strlen(host) > HOSTLEN)
+       return 0;
+  }
+
+  if (word) {
+    if ('@' == *word)	/* no leading @'s */
+        return 0;
+
+    if ('#' == *word) {	/* numeric index given? */
+      for (word++; *word; word++) {
+        if (!IsDigit(*word))
+          return 0;
+      }
+      return 1;
+    }
+
+    /* normal hostmask, account for at most one '@' */
+    for (; *word; word++) {
+      if ('@' == *word) {
+        i++;
+        continue;
+      }
+      if (!IsHostChar(*word))
+        return 0;
+    }
+    return (1 < i) ? 0 : 1; /* no more than on '@' */
+  }
+  return 0;
+}
