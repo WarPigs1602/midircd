@@ -1,6 +1,6 @@
 /** @file s_user.h
  * @brief Miscellaneous user-related helper functions.
- * @version $Id: s_user.h,v 1.20.2.2 2007/07/14 02:40:00 isomer Exp $
+ * @version $Id$
  */
 #ifndef INCLUDED_s_user_h
 #define INCLUDED_s_user_h
@@ -80,11 +80,11 @@ extern void send_user_info(struct Client* to, char* names, int rpl,
                            InfoFormatter fmt);
 
 extern int hide_hostmask(struct Client *cptr, unsigned int flags);
-extern int set_hostmask(struct Client *cptr, char *hostmask, char *password);
-extern int is_hostmask(char *word);
 extern int set_user_mode(struct Client *cptr, struct Client *sptr,
                          int parc, char *parv[], int allow_modes);
 extern int is_silenced(struct Client *sptr, struct Client *acptr);
+extern int is_hostmask(char *word);
+extern int set_hostmask(struct Client *cptr, char *hostmask, char *password);
 extern int hunt_server_cmd(struct Client *from, const char *cmd,
 			   const char *tok, struct Client *one,
 			   int MustBeOper, const char *pattern, int server,

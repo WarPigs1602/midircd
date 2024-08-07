@@ -464,23 +464,46 @@ int register_user(struct Client *cptr, struct Client *sptr)
     ++UserStats.opers;
 
   tmpstr = umode_str(sptr);
-  /* Send full IP address to IPv6-grokking servers. */
+  int ipv6andopername[] = {FLAG_IPV6,FLAG_OPERNAME};
+  /* Do not send oper name and send full IP address to IPv6-grokking servers. */
   sendcmdto_flag_serv_butone(user->server, CMD_NICK, cptr,
-                             FLAG_IPV6, FLAG_LAST_FLAG,
+                             FLAG_IPV6, FLAG_OPERNAME,
                              "%s %d %Tu %s %s %s%s%s%s %s%s :%s",
                              cli_name(sptr), cli_hopcount(sptr) + 1,
                              cli_lastnick(sptr),
-                             user->username, user->realhost,
+                             user->realusername, user->realhost,
                              *tmpstr ? "+" : "", tmpstr, *tmpstr ? " " : "",
                              iptobase64(ip_base64, &cli_ip(sptr), sizeof(ip_base64), 1),
                              NumNick(sptr), cli_info(sptr));
-  /* Send fake IPv6 addresses to pre-IPv6 servers. */
-  sendcmdto_flag_serv_butone(user->server, CMD_NICK, cptr,
-                             FLAG_LAST_FLAG, FLAG_IPV6,
+  /* Do not send oper name and send fake IPv6 addresses to pre-IPv6 servers. */
+  sendcmdto_flagarray_serv_butone(user->server, CMD_NICK, cptr,
+                             NULL, 0, ipv6andopername, 2,
                              "%s %d %Tu %s %s %s%s%s%s %s%s :%s",
                              cli_name(sptr), cli_hopcount(sptr) + 1,
                              cli_lastnick(sptr),
-                             user->username, user->realhost,
+                             user->realusername, user->realhost,
+                             *tmpstr ? "+" : "", tmpstr, *tmpstr ? " " : "",
+                             iptobase64(ip_base64, &cli_ip(sptr), sizeof(ip_base64), 0),
+                             NumNick(sptr), cli_info(sptr));
+
+  tmpstr = umode_str(sptr);
+  /* Send oper name and full IP address to IPv6-grokking servers. */
+  sendcmdto_flagarray_serv_butone(user->server, CMD_NICK, cptr,
+                             ipv6andopername, 2, NULL, 0,
+                             "%s %d %Tu %s %s %s%s%s%s %s%s :%s",
+                             cli_name(sptr), cli_hopcount(sptr) + 1,
+                             cli_lastnick(sptr),
+                             user->realusername, user->realhost,
+                             *tmpstr ? "+" : "", tmpstr, *tmpstr ? " " : "",
+                             iptobase64(ip_base64, &cli_ip(sptr), sizeof(ip_base64), 1),
+                             NumNick(sptr), cli_info(sptr));
+  /* Send oper name and fake IPv6 addresses to pre-IPv6 servers. */
+  sendcmdto_flag_serv_butone(user->server, CMD_NICK, cptr,
+                             FLAG_OPERNAME, FLAG_IPV6,
+                             "%s %d %Tu %s %s %s%s%s%s %s%s :%s",
+                             cli_name(sptr), cli_hopcount(sptr) + 1,
+                             cli_lastnick(sptr),
+                             user->realusername, user->realhost,
                              *tmpstr ? "+" : "", tmpstr, *tmpstr ? " " : "",
                              iptobase64(ip_base64, &cli_ip(sptr), sizeof(ip_base64), 0),
                              NumNick(sptr), cli_info(sptr));
@@ -1316,8 +1339,20 @@ int set_user_mode(struct Client *cptr, struct Client *sptr, int parc,
            password = NULL;
          }
          break;
+      case 'R':
+        if (what == MODE_ADD)
+          SetAccountOnly(sptr);
+        else
+          ClearAccountOnly(sptr);
+        break;
+      case 'P':
+	if (what == MODE_ADD)
+          SetParanoid(sptr);
+        else
+          ClearParanoid(sptr);
+	break;
       case 'r':
-	if (*(p + 1) && (what == MODE_ADD)) {
+	if ((what == MODE_ADD) && *(p + 1)) {
 	  account = *(++p);
 	  SetAccount(sptr);
 	}
@@ -1345,8 +1380,17 @@ int set_user_mode(struct Client *cptr, struct Client *sptr, int parc,
      * new umode; servers can set it, local users cannot;
      * prevents users from /kick'ing or /mode -o'ing
      */
-    if (!FlagHas(&setflags, FLAG_CHSERV))
+    if (!FlagHas(&setflags, FLAG_CHSERV) && !(IsOper(sptr) && HasPriv(sptr, PRIV_CHANSERV)))
       ClearChannelService(sptr);
+    if (!FlagHas(&setflags, FLAG_XTRAOP) && !(IsOper(sptr) && HasPriv(sptr, PRIV_XTRA_OPER)))
+      ClearXtraOp(sptr);
+    if (!FlagHas(&setflags, FLAG_NOCHAN) && !(IsOper(sptr) || feature_bool(FEAT_USER_HIDECHANS)))
+      ClearNoChan(sptr);
+    if (!FlagHas(&setflags, FLAG_NOIDLE) && !((IsOper(sptr) && HasPriv(sptr, PRIV_NOIDLE)) || feature_bool(FEAT_USER_HIDEIDLETIME)))
+      ClearNoIdle(sptr);
+    if (!FlagHas(&setflags, FLAG_PARANOID) && !(IsOper(sptr) && HasPriv(sptr, PRIV_PARANOID)))
+      ClearParanoid(sptr);
+  
     /*
      * only send wallops to opers
      */
