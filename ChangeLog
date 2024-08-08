@@ -1,3 +1,9 @@
+2024-08-08  Andreas Pschorn <source@midiandmore.de>
+
+        * Added snircd usermodes
+
+        * fixed some issues with the server
+
 2024-08-05  Andreas Pschorn <source@midiandmore.de>
 
         * Changed to current IRCU.
@@ -6,7 +12,7 @@
 
         * Added SETHOST command from snircd.
 
-        * Fixed registration, it works now with NEWSERV correctly.
+        * Fixed registration, it works now with NEWSERV partly correctly.
 
 2024-08-04  Andreas Pschorn <source@midiandmore.de>
 
