@@ -517,7 +517,7 @@ static int check_auth_finished(struct AuthRequest *auth, int bitclr)
 
     /* Do we need to tell IAuth to hurry up? */
     if (hurry_up && IAuthHas(iauth, IAUTH_UNDERNET))
-        sendto_iauth(auth->client, "H %s", get_client_class(auth->client));
+        sendto_iauth(auth->client, "H");
 
     Debug((DEBUG_INFO, "Auth %p [%d] still has flag %d", auth,
            cli_fd(auth->client), AR_IAUTH_PENDING));

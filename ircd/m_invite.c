@@ -166,6 +166,11 @@ int m_invite(struct Client* cptr, struct Client* sptr, int parc, char* parv[])
 
   /* If we get here, it was a VALID and meaningful INVITE */
 
+  if (IsAccountOnly(acptr) && !IsAccount(sptr) && !IsOper(sptr)) {
+    send_reply(sptr, ERR_ACCOUNTONLY, cli_name(acptr), feature_str(FEAT_URLREG));
+    return 0;
+  }
+
   if (check_target_limit(sptr, acptr, NULL))
     return 0;
 

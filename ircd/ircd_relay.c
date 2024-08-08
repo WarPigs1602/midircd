@@ -404,6 +404,16 @@ void relay_private_message(struct Client* sptr, const char* name, const char* te
       is_silenced(sptr, acptr))
     return;
 
+  /* ASUKA -- slug
+   * +R check, if target is +R and we're not +r (or opered) then
+   * deny the message
+   */
+
+  if (IsAccountOnly(acptr) && !IsAccount(sptr) && !IsOper(sptr)) {
+    send_reply(sptr, ERR_ACCOUNTONLY, cli_name(acptr), feature_str(FEAT_URLREG));
+    return;
+  }
+  
   /*
    * send away message if user away
    */
@@ -439,6 +449,15 @@ void relay_private_notice(struct Client* sptr, const char* name, const char* tex
        check_target_limit(sptr, acptr, NULL)) ||
       is_silenced(sptr, acptr))
     return;
+
+  /* ASUKA -- slug
+   * +R check, if target is +R and we're not +r (or opered) then
+   * deny the message
+   */
+
+  if (IsAccountOnly(acptr) && !IsAccount(sptr) && !IsOper(sptr))
+    return;
+
   /*
    * deliver the message
    */
