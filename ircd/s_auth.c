@@ -265,9 +265,9 @@ static int auth_set_username(struct AuthRequest *auth)
   char  ch;
   char  last;
 
-  if (FlagHas(&auth->flags, AR_IAUTH_USERNAME))
+  if (FlagHas(&auth->flags, AR_IAUTH_FUSERNAME))
   {
-      ircd_strncpy(cli_user(sptr)->username, cli_username(sptr), USERLEN);
+    ircd_strncpy(user->username, cli_username(sptr), USERLEN);
   }
   else if (IsGotId(sptr))
   {
@@ -517,7 +517,7 @@ static int check_auth_finished(struct AuthRequest *auth, int bitclr)
 
     /* Do we need to tell IAuth to hurry up? */
     if (hurry_up && IAuthHas(iauth, IAUTH_UNDERNET))
-        sendto_iauth(auth->client, "H");
+      sendto_iauth(auth->client, "H");
 
     Debug((DEBUG_INFO, "Auth %p [%d] still has flag %d", auth,
            cli_fd(auth->client), AR_IAUTH_PENDING));
@@ -809,8 +809,6 @@ static void read_auth_reply(struct AuthRequest* auth)
       ircd_strncpy(cli_username(auth->client), username, USERLEN);
       SetGotId(auth->client);
     }
-    if (IAuthHas(iauth, IAUTH_UNDERNET))
-      sendto_iauth(auth->client, "u %s", username);	
   }
 
   check_auth_finished(auth, AR_AUTH_PENDING);
@@ -913,7 +911,6 @@ int auth_ping_timeout(struct Client *cptr)
 
   /* Check for iauth timeout. */
   if (FlagHas(&auth->flags, AR_IAUTH_PENDING)) {
-    sendto_iauth(cptr, "T");	  
     if (IAuthHas(iauth, IAUTH_REQUIRED)
         && !FlagHas(&auth->flags, AR_IAUTH_SOFT_DONE)) {
       sendheader(cptr, REPORT_FAIL_IAUTH);
@@ -987,7 +984,6 @@ static void auth_dns_callback(void* vptr, const struct irc_in_addr *addr, const 
     /* DNS entry was missing for the IP. */
     if (IsUserPort(auth->client))
       sendheader(auth->client, REPORT_FAIL_DNS);
-    sendto_iauth(auth->client, "d");
   } else if (!irc_in_addr_valid(addr)
              || (irc_in_addr_cmp(&cli_ip(auth->client), addr)
                  && irc_in_addr_cmp(&auth->original, addr))) {
@@ -1017,7 +1013,6 @@ static void auth_dns_callback(void* vptr, const struct irc_in_addr *addr, const 
     if (IsUserPort(auth->client))
       sendheader(auth->client, REPORT_FIN_DNS);
     ircd_strncpy(cli_sockhost(auth->client), h_name, HOSTLEN);
-    sendto_iauth(auth->client, "N %s", h_name);
   }
   check_auth_finished(auth, AR_DNS_PENDING);
 }
@@ -1222,12 +1217,8 @@ int auth_set_user(struct AuthRequest *auth, const char *username, const char *ho
     return 0;
   cptr = auth->client;
   ircd_strncpy(cli_info(cptr), userinfo, REALLEN);
-  ircd_strncpy(cli_user(cptr)->username, username, USERLEN);
+  clean_username(cli_user(cptr)->username, username);
   ircd_strncpy(cli_user(cptr)->host, cli_sockhost(cptr), HOSTLEN);
-  if (IAuthHas(iauth, IAUTH_UNDERNET))
-    sendto_iauth(cptr, "U %s %s %s :%s", username, hostname, servername, userinfo);
-  else if (IAuthHas(iauth, IAUTH_ADDLINFO))
-    sendto_iauth(cptr, "U %s", username);
   return check_auth_finished(auth, AR_NEEDS_USER);
 }
 
@@ -1251,8 +1242,6 @@ int auth_set_nick(struct AuthRequest *auth, const char *nickname)
     sendrawto_one(auth->client, "PING :%u", auth->cookie);
     FlagSet(&auth->flags, AR_NEEDS_PONG);
   }
-  if (IAuthHas(iauth, IAUTH_UNDERNET))
-    sendto_iauth(auth->client, "n %s", nickname);  
   return check_auth_finished(auth, AR_NEEDS_NICK);
 }
 
@@ -2143,10 +2132,8 @@ static int iauth_cmd_done_account(struct IAuth *iauth, struct Client *cli,
   /* If account has a creation timestamp, use it. */
   assert(cli_user(cli) != NULL);
   if (params[0][len] == ':') {
-    char *end;
-    cli_user(cli)->acc_create = strtoul(params[0] + len + 1, &end, 10);
-    if (*end == ':')
-      cli_user(cli)->acc_id = strtoul(end + 1, NULL, 10);
+    cli_user(cli)->acc_create = strtoul(params[0] + len + 1, NULL, 10);
+    params[0][len] = '\0';
   }
 
   /* Copy account name to User structure. */

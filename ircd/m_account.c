@@ -117,26 +117,10 @@ int ms_account(struct Client* cptr, struct Client* sptr, int parc,
   if (!(acptr = findNUser(parv[1])))
     return 0; /* Ignore ACCOUNT for a user that QUIT; probably crossed */
 
-  if (IsAccount(acptr) && ((parc < 5) || (parc >= 5 && cli_user(acptr)->acc_id)))
+  if (IsAccount(acptr))
     return protocol_violation(cptr, "ACCOUNT for already registered user %s "
 			      "(%s -> %s)", cli_name(acptr),
 			      cli_user(acptr)->account, parv[2]);
-
-  /* special case for current snircd release only */
-  if (parc >= 5 && cli_user(acptr)->account[0]) {
-    if (strcmp(cli_user(acptr)->account, parv[2])) {
-      return protocol_violation(cptr, "ACCOUNT change for already registered user %s "
-                                "(%s -> %s)", cli_name(acptr),
-                                cli_user(acptr)->account, parv[2]);
-    }
-    cli_user(acptr)->acc_create = atoi(parv[3]);
-    cli_user(acptr)->acc_id = strtoul(parv[4], NULL, 10);      
-    sendcmdto_serv_butone(sptr, CMD_ACCOUNT, cptr, "%C %s %Tu %lu",
-                              acptr, cli_user(acptr)->account,
-                              cli_user(acptr)->acc_create,
-                              cli_user(acptr)->acc_id);
-    return 0;
-  }
 
   assert(0 == cli_user(acptr)->account[0]);
 
@@ -150,28 +134,15 @@ int ms_account(struct Client* cptr, struct Client* sptr, int parc,
     cli_user(acptr)->acc_create = atoi(parv[3]);
     Debug((DEBUG_DEBUG, "Received timestamped account: account \"%s\", "
            "timestamp %Tu", parv[2], cli_user(acptr)->acc_create));
-    if (parc > 4) {
-      cli_user(acptr)->acc_id = strtoul(parv[4], NULL, 10); 
-      Debug((DEBUG_DEBUG, "Received account id for account \"%s\": id %lu", parv[2], cli_user(acptr)->acc_id));
-    }
   }
 
   ircd_strncpy(cli_user(acptr)->account, parv[2], ACCOUNTLEN);
   hide_hostmask(acptr, FLAG_ACCOUNT);
 
-   if (cli_user(acptr)->acc_id) {
-     sendcmdto_serv_butone(sptr, CMD_ACCOUNT, cptr, "%C %s %Tu %lu",
-                           acptr, cli_user(acptr)->account,
-                           cli_user(acptr)->acc_create,
-                           cli_user(acptr)->acc_id);
-   } else if (cli_user(acptr)->acc_create) {
-     sendcmdto_serv_butone(sptr, CMD_ACCOUNT, cptr, "%C %s %Tu",
-                           acptr, cli_user(acptr)->account,
-                           cli_user(acptr)->acc_create);
-   } else {
-     sendcmdto_serv_butone(sptr, CMD_ACCOUNT, cptr, "%C %s",
-                           acptr, cli_user(acptr)->account);
-   }
+  sendcmdto_serv_butone(sptr, CMD_ACCOUNT, cptr,
+                        cli_user(acptr)->acc_create ? "%C %s %Tu" : "%C %s",
+                        acptr, cli_user(acptr)->account,
+                        cli_user(acptr)->acc_create);
 
   return 0;
 }
