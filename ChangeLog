@@ -4,6 +4,8 @@
 
         * fixed some issues with the server
 
+        * removed temporarly the NEWSERV features, that reduces stability issues
+
 2024-08-05  Andreas Pschorn <source@midiandmore.de>
 
         * Changed to current IRCU.
