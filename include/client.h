@@ -611,6 +611,9 @@ struct Client {
 #define HasSetHost(x)           (IsSetHost(x))
 /** Return non-zero if the client has set mode +x (hidden host). */
 #define IsHiddenHost(x)         HasFlag(x, FLAG_HIDDENHOST)
+/** Return non-zero if the client should receive notices when someone
+ * does a whois on it. */
+#define IsParanoid(x)           HasFlag(x, FLAG_PARANOID)
 /** Return non-zero if the client has an active PING request. */
 #define IsPingSent(x)           HasFlag(x, FLAG_PINGSENT)
 
@@ -659,6 +662,8 @@ struct Client {
 #define SetHiddenHost(x)        SetFlag(x, FLAG_HIDDENHOST)
 /** Mark a client as having mode +h (spoofhost). */
 #define SetSetHost(x)           SetFlag(x, FLAG_SETHOST)
+/** Mark a client as having mode +P (paranoid). */
+#define SetParanoid(x)          SetFlag(x, FLAG_PARANOID)
 /** Mark a client as having a pending PING. */
 #define SetPingSent(x)          SetFlag(x, FLAG_PINGSENT)
 
@@ -694,6 +699,8 @@ struct Client {
 #define ClearHiddenHost(x)      ClrFlag(x, FLAG_HIDDENHOST)
 /** Remove mode +h (spoofhost) from a client. */
 #define ClearSetHost(x)         ClrFlag(x, FLAG_SETHOST)
+/** Remove mode +P (paranoid) from a client */
+#define ClearParanoid(x)        ClrFlag(x, FLAG_PARANOID)
 /** Clear the client's pending PING flag. */
 #define ClearPingSent(x)        ClrFlag(x, FLAG_PINGSENT)
 /** Clear the client's HUB flag. */

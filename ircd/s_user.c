@@ -1004,6 +1004,7 @@ int set_user_mode(struct Client *cptr, struct Client *sptr, int parc,
   int do_set_host = 0;
   char* account = NULL;
 
+  hostmask = password = NULL;
   what = MODE_ADD;
 
   if (parc < 3)
@@ -1212,14 +1213,17 @@ int set_user_mode(struct Client *cptr, struct Client *sptr, int parc,
    * will cause servers to update correctly.
    */
   if (!FlagHas(&setflags, FLAG_ACCOUNT) && IsAccount(sptr)) {
-      int len = ACCOUNTLEN;
-      char *ts;
+     int len = ACCOUNTLEN;
+      char *pts, *ts;
       if ((ts = strchr(account, ':'))) {
 	len = (ts++) - account;
 	cli_user(sptr)->acc_create = atoi(ts);
-	Debug((DEBUG_DEBUG, "Received timestamped account in user mode; "
-	      "account \"%s\", timestamp %Tu", account,
-	      cli_user(sptr)->acc_create));
+        if ((pts = strchr(ts, ':')))
+	  cli_user(sptr)->acc_id = strtoul(pts + 1, NULL, 10);
+        Debug((DEBUG_DEBUG, "Received timestamped account in user mode; "
+	      "account \"%s\", timestamp %Tu, id %lu", account,
+	      cli_user(sptr)->acc_create,
+	      cli_user(sptr)->acc_id));
       }
       ircd_strncpy(cli_user(sptr)->account, account, len);
   }
@@ -1243,14 +1247,15 @@ int set_user_mode(struct Client *cptr, struct Client *sptr, int parc,
     if (HasPriv(sptr, PRIV_PROPAGATE)) {
       prop = 1;
     }
-    if ((FlagHas(&setflags, FLAG_OPER) || FlagHas(&setflags, FLAG_LOCOP))
-        && !IsAnOper(sptr)) {
-      if (FlagHas(&setflags, FLAG_OPER)) {
-        /* user no longer (global) oper */
-        assert(UserStats.opers > 0);
-        --UserStats.opers;
-      }
+    if (FlagHas(&setflags, FLAG_OPER) && !IsOper(sptr)) {
+      /* user no longer oper */
+      assert(UserStats.opers > 0);
+      --UserStats.opers;
       client_set_privs(sptr, NULL, 0); /* will clear propagate privilege */
+      if (cli_user(sptr)->opername) {
+        MyFree(cli_user(sptr)->opername);
+        cli_user(sptr)->opername = NULL;
+      }
     }
     if (FlagHas(&setflags, FLAG_INVISIBLE) && !IsInvisible(sptr)) {
       assert(UserStats.inv_clients > 0);
@@ -1297,16 +1302,22 @@ char *umode_str(struct Client *cptr)
       ; /* Empty loop */
 
     if (cli_user(cptr)->acc_create) {
-      char nbuf[20];
+      char nbuf[30];
       Debug((DEBUG_DEBUG, "Sending timestamped account in user mode for "
 	     "account \"%s\"; timestamp %Tu", cli_user(cptr)->account,
 	     cli_user(cptr)->acc_create));
-      ircd_snprintf(0, t = nbuf, sizeof(nbuf), ":%Tu",
-		    cli_user(cptr)->acc_create);
+      if(cli_user(cptr)->acc_id) {
+        ircd_snprintf(0, t = nbuf, sizeof(nbuf), ":%Tu:%lu",
+                      cli_user(cptr)->acc_create, cli_user(cptr)->acc_id);
+      } else {
+        ircd_snprintf(0, t = nbuf, sizeof(nbuf), ":%Tu",
+                      cli_user(cptr)->acc_create);
+      }
       m--; /* back up over previous nul-termination */
       while ((*m++ = *t++))
 	; /* Empty loop */
     }
+    m--; /* Step back over the '\0' */
   }
 
   if (IsSetHost(cptr)) {

@@ -177,6 +177,12 @@ int m_oper(struct Client* cptr, struct Client* sptr, int parc, char* parv[])
     }
     cli_handler(cptr) = OPER_HANDLER;
 
+    if (cli_user(sptr)->opername)
+      MyFree(cli_user(sptr)->opername);
+    cli_user(sptr)->opername = (char*) MyMalloc(strlen(name) + 1);
+    assert(0 != cli_user(sptr)->opername);
+    ircd_strncpy(cli_user(sptr)->opername,aconf->name,ACCOUNTLEN);
+	
     SetFlag(sptr, FLAG_WALLOP);
     SetFlag(sptr, FLAG_SERVNOTICE);
     SetFlag(sptr, FLAG_DEBUG);
