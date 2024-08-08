@@ -20,7 +20,7 @@
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
  *
- * $Id: m_user.c,v 1.9.2.5 2007/07/14 02:40:01 isomer Exp $
+ * $Id$
  */
 
 /*
@@ -122,6 +122,8 @@ int m_user(struct Client *cptr, struct Client *sptr, int parc, char *parv[])
 
   if (IsServerPort(cptr))
     return exit_client(cptr, cptr, &me, "Use a different port");
+  if (IsWebircPort(cptr) && !cli_wline(cptr))
+    return exit_client(cptr, cptr, &me, "WebIRC authorization required");
 
   if (parc < 5)
     return need_more_params(sptr, "USER");
@@ -166,3 +168,4 @@ int m_user(struct Client *cptr, struct Client *sptr, int parc, char *parv[])
 
   return auth_set_user(cli_auth(cptr), username, parv[2], parv[3], info);
 }
+

@@ -654,7 +654,6 @@ struct Message msgtab[] = {
     { m_cap, m_cap, m_ignore, m_cap, m_ignore }
   },
 #endif
-
   /*
    * - ASUKA ---------------------------------------------------------------------
    * Add the command for CHECK.
@@ -686,7 +685,6 @@ struct Message msgtab[] = {
   },
   { 0 }
 };
-
 
 /** Array of command parameters. */
 static char *para[MAXPARA + 2]; /* leave room for prefix and null */

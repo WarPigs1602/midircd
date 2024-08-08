@@ -88,7 +88,7 @@ struct Client;
 
 extern int m_admin(struct Client*, struct Client*, int, char*[]);
 extern int m_away(struct Client*, struct Client*, int, char*[]);
-
+extern int m_cap(struct Client*, struct Client*, int, char*[]);
 /*
   * - ASUKA ---------------------------------------------------------------------
   * Add the command for CHECK.
@@ -100,8 +100,6 @@ extern int m_away(struct Client*, struct Client*, int, char*[]);
   */
 
 extern int m_check(struct Client *cptr, struct Client *sptr, int parc, char *parv[]);
-
-extern int m_cap(struct Client*, struct Client*, int, char*[]);
 extern int m_cnotice(struct Client*, struct Client*, int, char*[]);
 extern int m_cprivmsg(struct Client*, struct Client*, int, char*[]);
 extern int m_gline(struct Client*, struct Client*, int, char*[]);
@@ -182,7 +180,6 @@ extern int mo_squit(struct Client*, struct Client*, int, char*[]);
 extern int mo_stats(struct Client*, struct Client*, int, char*[]);
 extern int mo_trace(struct Client*, struct Client*, int, char*[]);
 extern int mo_uping(struct Client*, struct Client*, int, char*[]);
-extern int mo_version(struct Client*, struct Client*, int, char*[]);
 extern int mo_wallops(struct Client*, struct Client*, int, char*[]);
 extern int mo_wallusers(struct Client*, struct Client*, int, char*[]);
 extern int mo_xquery(struct Client*, struct Client*, int, char*[]);
@@ -236,7 +233,6 @@ extern int ms_stats(struct Client*, struct Client*, int, char*[]);
 extern int ms_topic(struct Client*, struct Client*, int, char*[]);
 extern int ms_trace(struct Client*, struct Client*, int, char*[]);
 extern int ms_uping(struct Client*, struct Client*, int, char*[]);
-extern int ms_version(struct Client*, struct Client*, int, char*[]);
 extern int ms_wallchops(struct Client*, struct Client*, int, char*[]);
 extern int ms_wallops(struct Client*, struct Client*, int, char*[]);
 extern int ms_wallusers(struct Client*, struct Client*, int, char*[]);

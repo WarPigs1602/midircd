@@ -83,8 +83,6 @@ extern int hide_hostmask(struct Client *cptr, unsigned int flags);
 extern int set_user_mode(struct Client *cptr, struct Client *sptr,
                          int parc, char *parv[], int allow_modes);
 extern int is_silenced(struct Client *sptr, struct Client *acptr);
-extern int is_hostmask(char *word);
-extern int set_hostmask(struct Client *cptr, char *hostmask, char *password);
 extern int hunt_server_cmd(struct Client *from, const char *cmd,
 			   const char *tok, struct Client *one,
 			   int MustBeOper, const char *pattern, int server,
@@ -97,6 +95,8 @@ extern struct Client* next_client(struct Client* next, const char* ch);
 extern char *umode_str(struct Client *cptr);
 extern void send_umode(struct Client *cptr, struct Client *sptr,
                        struct Flags *old, int sendset);
+extern int set_hostmask(struct Client *cptr, char *hostmask, char *password);
+extern int is_hostmask(char *word);
 extern void set_snomask(struct Client *, unsigned int, int);
 extern int is_snomask(char *);
 extern int check_target_limit(struct Client *sptr, struct Client *acptr,

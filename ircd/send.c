@@ -281,7 +281,7 @@ static int match_it(struct Client *from, struct Client *one, const char *mask, i
   {
     case MATCH_HOST:
       return (match(mask, cli_user(one)->host) == 0 ||
-        (HasHiddenHost(one) && match(mask, cli_user(one)->realhost) == 0));
+        ((HasHiddenHost(one) || HasSetHost(one)) && match(mask, cli_user(one)->realhost) == 0));
     case MATCH_SERVER:
     default:
       return (match(mask, cli_name(cli_user(one)->server)) == 0);
@@ -370,47 +370,6 @@ void sendcmdto_prio_one(struct Client *from, const char *cmd, const char *tok,
  * @param[in] cmd Long name of command (ignored).
  * @param[in] tok Short name of command.
  * @param[in] one Client direction to skip (or NULL).
- * @param[in] require Only send to servers with this Flag bit set.
- * @param[in] forbid Do not send to servers with this Flag bit set.
- * @param[in] pattern Format string for command arguments.
- */
-void sendcmdto_flag_serv_butone(struct Client *from, const char *cmd,
-                                const char *tok, struct Client *one,
-                                int require, int forbid,
-                                const char *pattern, ...)
-{
-  struct VarData vd;
-  struct MsgBuf *mb;
-  struct DLink *lp;
-
-  vd.vd_format = pattern; /* set up the struct VarData for %v */
-  va_start(vd.vd_args, pattern);
-
-  /* use token */
-  mb = msgq_make(&me, "%C %s %v", from, tok, &vd);
-  va_end(vd.vd_args);
-
-  /* send it to our downlinks */
-  for (lp = cli_serv(&me)->down; lp; lp = lp->next) {
-    if (one && lp->value.cptr == cli_from(one))
-      continue;
-    if ((require < FLAG_LAST_FLAG) && !HasFlag(lp->value.cptr, require))
-      continue;
-    if ((forbid < FLAG_LAST_FLAG) && HasFlag(lp->value.cptr, forbid))
-      continue;
-    send_buffer(lp->value.cptr, mb, 0);
-  }
-
-  msgq_clean(mb);
-}
-
-/**
- * Send a (prefixed) command to all servers matching or not matching a
- * flag but one.
- * @param[in] from Client sending the command.
- * @param[in] cmd Long name of command (ignored).
- * @param[in] tok Short name of command.
- * @param[in] one Client direction to skip (or NULL).
  * @param[in] require Only send to servers with all Flag bits in the array set.
  * @param[in] requiresize Size of require flag array
  * @param[in] forbid Do not send to servers with any Flag bits in the array set.
@@ -462,6 +421,47 @@ void sendcmdto_flagarray_serv_butone(struct Client *from, const char *cmd,
     if (skip)
       continue;
 
+    send_buffer(lp->value.cptr, mb, 0);
+  }
+
+  msgq_clean(mb);
+}
+
+/**
+ * Send a (prefixed) command to all servers matching or not matching a
+ * flag but one.
+ * @param[in] from Client sending the command.
+ * @param[in] cmd Long name of command (ignored).
+ * @param[in] tok Short name of command.
+ * @param[in] one Client direction to skip (or NULL).
+ * @param[in] require Only send to servers with this Flag bit set.
+ * @param[in] forbid Do not send to servers with this Flag bit set.
+ * @param[in] pattern Format string for command arguments.
+ */
+void sendcmdto_flag_serv_butone(struct Client *from, const char *cmd,
+                                const char *tok, struct Client *one,
+                                int require, int forbid,
+                                const char *pattern, ...)
+{
+  struct VarData vd;
+  struct MsgBuf *mb;
+  struct DLink *lp;
+
+  vd.vd_format = pattern; /* set up the struct VarData for %v */
+  va_start(vd.vd_args, pattern);
+
+  /* use token */
+  mb = msgq_make(&me, "%C %s %v", from, tok, &vd);
+  va_end(vd.vd_args);
+
+  /* send it to our downlinks */
+  for (lp = cli_serv(&me)->down; lp; lp = lp->next) {
+    if (one && lp->value.cptr == cli_from(one))
+      continue;
+    if ((require < FLAG_LAST_FLAG) && !HasFlag(lp->value.cptr, require))
+      continue;
+    if ((forbid < FLAG_LAST_FLAG) && HasFlag(lp->value.cptr, forbid))
+      continue;
     send_buffer(lp->value.cptr, mb, 0);
   }
 

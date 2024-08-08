@@ -18,7 +18,7 @@
  * $Id$
  *
  */
-#define PATCHLEVEL "19+midircd(1.0.0a)"
+#define PATCHLEVEL "19"
 
 #define RELEASE ".12."
 

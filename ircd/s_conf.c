@@ -989,7 +989,6 @@ int rehash(struct Client *cptr, int sig)
   clear_quarantines();
   clear_slines();
 
-
   class_mark_delete();
   mark_listeners_closing();
   auth_mark_closing();

@@ -111,6 +111,7 @@ enum Priv
     PRIV_RESTART, /**< oper can RESTART */
     PRIV_DIE, /**< oper can DIE */
     PRIV_GLINE, /**< oper can GLINE */
+    FLAG_DOID,                      /**< I-lines say must use ident return */
     PRIV_LOCAL_GLINE, /**< oper can local GLINE */
     PRIV_JUPE, /**< oper can JUPE */
     PRIV_LOCAL_JUPE, /**< oper can local JUPE */
@@ -156,7 +157,6 @@ enum Flag
     FLAG_IPV6,                      /**< server understands P10 IPv6 addrs */
     FLAG_SERVICE,                   /**< server is a service */
     FLAG_GOTID,                     /**< successful ident lookup achieved */
-    FLAG_DOID,                      /**< I-lines say must use ident return */
     FLAG_NONL,                      /**< No \n in buffer */
     FLAG_TS8,                       /**< Why do you want to know? */
     FLAG_MAP,                       /**< Show server on the map */
@@ -175,8 +175,6 @@ enum Flag
                                        don't display channels in /whois */
     FLAG_DEBUG,                     /**< send global debug/anti-hack info */
     FLAG_ACCOUNT,                   /**< account name has been set */
-    FLAG_ACCOUNTONLY,               /**< ASUKA_R: hide privmsgs/notices if
-				      user is not authed or opered */
     FLAG_PARANOID,                  /**< ASUKA_P: sends notices on whois */
     FLAG_HIDDENHOST,                /**< user's host is hidden */
     FLAG_SETHOST,                   /**< ASUKA_h: oper's host is changed */
@@ -608,33 +606,18 @@ struct Client {
 #define IsService(x)            HasFlag(x, FLAG_SERVICE)
 /** Return non-zero if the client has an account stamp. */
 #define IsAccount(x)            HasFlag(x, FLAG_ACCOUNT)
+/** Return non-zero if the client is using a spoofhost */
+#define IsSetHost(x)            HasFlag(x, FLAG_SETHOST)
+#define HasSetHost(x)           (IsSetHost(x))
 /** Return non-zero if the client has set mode +x (hidden host). */
 #define IsHiddenHost(x)         HasFlag(x, FLAG_HIDDENHOST)
-/** Return non-zero if the client has set mode +X (xtraop) */
-#define IsXtraOp(x)             HasFlag(x, FLAG_XTRAOP)
-/** Return non-zero if the client has set mode +n (hide channels) */
-#define IsNoChan(x)             HasFlag(x, FLAG_NOCHAN)
-/** Return non-zero if the client has set mode +I (hide idletime) */
-#define IsNoIdle(x)             HasFlag(x, FLAG_NOIDLE)
 /** Return non-zero if the client has an active PING request. */
 #define IsPingSent(x)           HasFlag(x, FLAG_PINGSENT)
-/** Return non-zero if the client should not receive privmsgs/notices
- * from unauthed users */
-#define IsAccountOnly(x)        HasFlag(x, FLAG_ACCOUNTONLY)
-/** Return non-zero if the client should receive notices when someone
- * does a whois on it. */
-#define IsParanoid(x)           HasFlag(x, FLAG_PARANOID)
-/** Return non-zero if the server should send opername information */
-#define IsSendOperName(x)         HasFlag(x, FLAG_OPERNAME)
-
 
 /** Return non-zero if the client has operator or server privileges. */
 #define IsPrivileged(x)         (IsAnOper(x) || IsServer(x))
 /** Return non-zero if the client's host is hidden. */
 #define HasHiddenHost(x)        (IsHiddenHost(x) && IsAccount(x))
-/** Return non-zero if the client is using a spoofhost */
-#define IsSetHost(x)            HasFlag(x, FLAG_SETHOST)
-#define HasSetHost(x)           (IsSetHost(x))
 
 /** Mark a client as having an in-progress net.burst. */
 #define SetBurst(x)             SetFlag(x, FLAG_BURST)
@@ -676,18 +659,8 @@ struct Client {
 #define SetHiddenHost(x)        SetFlag(x, FLAG_HIDDENHOST)
 /** Mark a client as having mode +h (spoofhost). */
 #define SetSetHost(x)           SetFlag(x, FLAG_SETHOST)
-/** Mark a client as having mode +X (xtraop). */
-#define SetXtraOp(x)            SetFlag(x, FLAG_XTRAOP)
-/** Mark a client as having mode +n (hide channels). */
-#define SetNoChan(x)            SetFlag(x, FLAG_NOCHAN)
-/** Mark a client as having mode +I (hide idletime). */
-#define SetNoIdle(x)            SetFlag(x, FLAG_NOIDLE)
 /** Mark a client as having a pending PING. */
 #define SetPingSent(x)          SetFlag(x, FLAG_PINGSENT)
-/** Mark a client as having mode +R (account only). */
-#define SetAccountOnly(x)       SetFlag(x, FLAG_ACCOUNTONLY)
-/** Mark a client as having mode +P (paranoid). */
-#define SetParanoid(x)          SetFlag(x, FLAG_PARANOID)
 
 /** Return non-zero if \a sptr sees \a acptr as an operator. */
 #define SeeOper(sptr,acptr) (IsAnOper(acptr) && (HasPriv(acptr, PRIV_DISPLAY) \
@@ -721,18 +694,6 @@ struct Client {
 #define ClearHiddenHost(x)      ClrFlag(x, FLAG_HIDDENHOST)
 /** Remove mode +h (spoofhost) from a client. */
 #define ClearSetHost(x)         ClrFlag(x, FLAG_SETHOST)
-/** Remove mode +X (xtraop) from a client. */
-#define ClearXtraOp(x)          ClrFlag(x, FLAG_XTRAOP)
-/** Remove mode +n (hide channels) from a client. */
-#define ClearNoChan(x)          ClrFlag(x, FLAG_NOCHAN)
-/** Remove mode +I (hide idletime) from a client. */
-#define ClearNoIdle(x)          ClrFlag(x, FLAG_NOIDLE)
-/** Clear the client's pending PING flag. */
-#define ClearPingSent(x)        ClrFlag(x, FLAG_PINGSENT)
-/** Remove mode +R (account only) from a client */
-#define ClearAccountOnly(x)     ClrFlag(x, FLAG_ACCOUNTONLY)
-/** Remove mode +P (paranoid) from a client */
-#define ClearParanoid(x)        ClrFlag(x, FLAG_PARANOID)
 /** Clear the client's pending PING flag. */
 #define ClearPingSent(x)        ClrFlag(x, FLAG_PINGSENT)
 /** Clear the client's HUB flag. */

@@ -49,13 +49,7 @@ extern void sendcmdto_flag_serv_butone(struct Client *from, const char *cmd,
                                        const char *tok, struct Client *one,
                                        int require, int forbid,
                                        const char *pattern, ...);
-									   
-/* Send command to servers by flag arrays except one */
-void sendcmdto_flagarray_serv_butone(struct Client *from, const char *cmd,
-                                const char *tok, struct Client *one,
-                                int *require, unsigned int requiresize,
-                                int *forbid, unsigned int forbidsize,
-                                const char *pattern, ...);
+
 /* Send command to all servers except one */
 extern void sendcmdto_serv_butone(struct Client *from, const char *cmd,
 				  const char *tok, struct Client *one,
@@ -86,6 +80,13 @@ extern void sendcmdto_channel_servers_butone(struct Client *from,
                                              unsigned int skip,
                                              const char *pattern, ...);
 
+/* Send command to servers by flag arrays except one */
+void sendcmdto_flagarray_serv_butone(struct Client *from, const char *cmd,
+                                const char *tok, struct Client *one,
+                                int *require, unsigned int requiresize,
+                                int *forbid, unsigned int forbidsize,
+                                const char *pattern, ...);
+								
 /* Send command to all interested channel users */
 extern void sendcmdto_channel_butone(struct Client *from, const char *cmd,
 				     const char *tok, struct Channel *to,

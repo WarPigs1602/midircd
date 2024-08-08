@@ -50,7 +50,6 @@ struct Gline {
   struct Gline *gl_next;	/**< Next G-line in linked list. */
   struct Gline**gl_prev_p;	/**< Previous pointer to this G-line. */
   char	       *gl_user;	/**< Username mask (or channel/realname mask). */
-  char	       *gl_nick;      /**< Nickname mask. */
   char	       *gl_host;	/**< Host portion of mask. */
   char	       *gl_reason;	/**< Reason for G-line. */
   time_t	gl_expire;	/**< Expiration timestamp. */
@@ -144,6 +143,5 @@ extern int gline_list(struct Client *sptr, char *userhost);
 extern void gline_stats(struct Client *sptr, const struct StatDesc *sd,
                         char *param);
 extern int gline_memory_count(size_t *gl_size);
-extern struct Gline *IsNickGlined(struct Client *cptr, char *nick);
 
 #endif /* INCLUDED_gline_h */

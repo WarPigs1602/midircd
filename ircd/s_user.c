@@ -73,10 +73,10 @@
 #include <string.h>
 #include <sys/stat.h>
 
-/** Count of allocated User structures. */
-static int userCount = 0;
 static char *IsVhost(char *hostmask, int oper);
 static char *IsVhostPass(char *hostmask);
+/** Count of allocated User structures. */
+static int userCount = 0;
 
 /** Makes sure that \a cptr has a User information block.
  * If cli_user(cptr) != NULL, does nothing.
@@ -357,16 +357,6 @@ int register_user(struct Client *cptr, struct Client *sptr)
 
     Count_unknownbecomesclient(sptr, UserStats);
 
-    if (MyConnect(sptr) && feature_bool(FEAT_AUTOINVISIBLE))
-      SetInvisible(sptr);
-    
-    if(MyConnect(sptr) && feature_bool(FEAT_SETHOST_AUTO)) {
-      if (conf_check_slines(sptr)) {
-        send_reply(sptr, RPL_USINGSLINE);
-        SetSetHost(sptr);
-      }
-    }
-	
     /*
      * Set user's initial modes
      */
@@ -377,6 +367,13 @@ int register_user(struct Client *cptr, struct Client *sptr)
       set_user_mode(cptr, sptr, 3, umodev, ALLOWMODES_ANY);
     }
 
+    if(MyConnect(sptr) && feature_bool(FEAT_SETHOST_AUTO)) {
+      if (conf_check_slines(sptr)) {
+        send_reply(sptr, RPL_USINGSLINE);
+        SetSetHost(sptr);
+      }
+    }
+	
     SetUser(sptr);
     cli_handler(sptr) = CLIENT_HANDLER;
     SetLocalNumNick(sptr);
@@ -442,13 +439,13 @@ int register_user(struct Client *cptr, struct Client *sptr)
                     sptr, cli_name(&me));
       return exit_client(cptr, sptr, &me,"Too many connections from your host -- throttled");
     }
-    if(MyConnect(sptr) && feature_bool(FEAT_SETHOST_AUTO)) {
+    
+	if(MyConnect(sptr) && feature_bool(FEAT_SETHOST_AUTO)) {
       if (conf_check_slines(sptr)) {
         send_reply(sptr, RPL_USINGSLINE);
         SetSetHost(sptr);
       }
-    }
-
+    }	
     SetUser(sptr);
   }
 
@@ -465,7 +462,7 @@ int register_user(struct Client *cptr, struct Client *sptr)
 
   tmpstr = umode_str(sptr);
   int ipv6andopername[] = {FLAG_IPV6,FLAG_OPERNAME};
-  /* Do not send oper name and send full IP address to IPv6-grokking servers. */
+/* Do not send oper name and send full IP address to IPv6-grokking servers. */
   sendcmdto_flag_serv_butone(user->server, CMD_NICK, cptr,
                              FLAG_IPV6, FLAG_OPERNAME,
                              "%s %d %Tu %s %s %s%s%s%s %s%s :%s",
@@ -508,6 +505,7 @@ int register_user(struct Client *cptr, struct Client *sptr)
                              iptobase64(ip_base64, &cli_ip(sptr), sizeof(ip_base64), 0),
                              NumNick(sptr), cli_info(sptr));
 
+
   /* Send user mode to client */
   if (MyUser(sptr))
   {
@@ -541,8 +539,8 @@ static const struct UserMode {
   { FLAG_CHSERV,      'k' },
   { FLAG_DEBUG,       'g' },
   { FLAG_ACCOUNT,     'r' },
-  { FLAG_HIDDENHOST,  'x' },
-  { FLAG_SETHOST,     'h' }
+  { FLAG_SETHOST,     'h' },
+  { FLAG_HIDDENHOST,  'x' }
 };
 
 /** Length of #userModeList. */
@@ -977,6 +975,458 @@ hide_hostmask(struct Client *cptr, unsigned int flag)
   return 0;
 }
 
+/** Set a user's mode.  This function prevents local users from setting
+ * unauthorized modes and applies any other side effects of
+ * a successful mode change.
+ *
+ * @param[in] cptr Neighbor that sent the mode change message.
+ * @param[in] sptr Source (originator) of the mode change.
+ * @param[in] parc Number of parameters in \a parv.
+ * @param[in] parv Parameters to MODE.
+ * @param[in] allow_modes ALLOWMODES_ANY for any mode, ALLOWMODES_DEFAULT for 
+ *                        only permitting legitimate default user modes.
+ * @return Zero.
+ */
+int set_user_mode(struct Client *cptr, struct Client *sptr, int parc, 
+		char *parv[], int allow_modes)
+{
+  char** p;
+  char*  m;
+  int what;
+  int i;
+  struct Flags setflags;
+  unsigned int tmpmask = 0;
+  int snomask_given = 0;
+  char buf[BUFSIZE];
+  char *hostmask, *password;
+  int prop = 0;
+  int do_host_hiding = 0;
+  int do_set_host = 0;
+  char* account = NULL;
+
+  what = MODE_ADD;
+
+  if (parc < 3)
+  {
+    m = buf;
+    *m++ = '+';
+    for (i = 0; i < USERMODELIST_SIZE; i++)
+    {
+
+      if (HasFlag(sptr, userModeList[i].flag) &&
+          ((userModeList[i].flag != FLAG_ACCOUNT) &&
+          (userModeList[i].flag != FLAG_SETHOST)))
+        *m++ = userModeList[i].c;
+    }
+    *m = '\0';
+    send_reply(sptr, RPL_UMODEIS, buf);
+    if (HasFlag(sptr, FLAG_SERVNOTICE) && MyConnect(sptr)
+        && cli_snomask(sptr) !=
+        (unsigned int)(IsOper(sptr) ? SNO_OPERDEFAULT : SNO_DEFAULT))
+      send_reply(sptr, RPL_SNOMASK, cli_snomask(sptr), cli_snomask(sptr));
+    return 0;
+  }
+
+  /*
+   * find flags already set for user
+   * why not just copy them?
+   */
+  setflags = cli_flags(sptr);
+
+  if (MyConnect(sptr))
+    tmpmask = cli_snomask(sptr);
+
+  /*
+   * parse mode change string(s)
+   */
+  for (p = &parv[2]; *p && p<&parv[parc]; p++) {       /* p is changed in loop too */
+    for (m = *p; *m; m++) {
+      switch (*m) {
+      case '+':
+        what = MODE_ADD;
+        break;
+      case '-':
+        what = MODE_DEL;
+        break;
+      case 's':
+        if (*(p + 1) && is_snomask(*(p + 1))) {
+          snomask_given = 1;
+          tmpmask = umode_make_snomask(tmpmask, *++p, what);
+          tmpmask &= (IsAnOper(sptr) ? SNO_ALL : SNO_USER);
+        }
+        else
+          tmpmask = (what == MODE_ADD) ?
+              (IsAnOper(sptr) ? SNO_OPERDEFAULT : SNO_DEFAULT) : 0;
+        if (tmpmask)
+	  SetServNotice(sptr);
+        else
+	  ClearServNotice(sptr);
+        break;
+      case 'w':
+        if (what == MODE_ADD)
+          SetWallops(sptr);
+        else
+          ClearWallops(sptr);
+        break;
+      case 'o':
+        if (what == MODE_ADD)
+          SetOper(sptr);
+        else {
+          ClrFlag(sptr, FLAG_OPER);
+          ClrFlag(sptr, FLAG_LOCOP);
+          if (MyConnect(sptr))
+            tmpmask = cli_snomask(sptr) & ~SNO_OPER;
+        }
+        break;
+      case 'O':
+        if (what == MODE_ADD)
+          SetLocOp(sptr);
+        else
+        { 
+          ClrFlag(sptr, FLAG_OPER);
+          ClrFlag(sptr, FLAG_LOCOP);
+          if (MyConnect(sptr))
+            tmpmask = cli_snomask(sptr) & ~SNO_OPER;
+        }
+        break;
+      case 'i':
+        if (what == MODE_ADD)
+          SetInvisible(sptr);
+        else
+          ClearInvisible(sptr);
+        break;
+      case 'd':
+        if (what == MODE_ADD)
+          SetDeaf(sptr);
+        else
+          ClearDeaf(sptr);
+        break;
+      case 'k':
+        if (what == MODE_ADD)
+          SetChannelService(sptr);
+        else
+          ClearChannelService(sptr);
+        break;
+      case 'g':
+        if (what == MODE_ADD)
+          SetDebug(sptr);
+        else
+          ClearDebug(sptr);
+        break;
+      case 'x':
+        if (what == MODE_ADD)
+	  do_host_hiding = 1;
+	break;
+      case 'h':
+         if (what == MODE_ADD) {
+           if (*(p + 1) && is_hostmask(*(p + 1))) {
+             do_set_host = 1;
+             hostmask = *++p;
+             /* DON'T step p onto the trailing NULL in the parameter array! - splidge */
+             if (*(p+1))
+               password = *++p;
+             else
+               password = NULL;
+           } else {
+             if (!*(p+1))
+               send_reply(sptr, ERR_NEEDMOREPARAMS, "SETHOST");
+             else {
+               send_reply(sptr, ERR_BADHOSTMASK, *(p+1));
+               p++; /* Swallow the arg anyway */
+             }
+           }
+         } else { /* MODE_DEL */
+           do_set_host = 1;
+           hostmask = NULL;
+           password = NULL;
+         }
+         break;
+      case 'r':
+	if (*(p + 1) && (what == MODE_ADD)) {
+	  account = *(++p);
+	  SetAccount(sptr);
+	}
+	/* There is no -r */
+	break;
+      default:
+        send_reply(sptr, ERR_UMODEUNKNOWNFLAG, *m);
+        break;
+      }
+    }
+  }
+  /*
+   * Evaluate rules for new user mode
+   * Stop users making themselves operators too easily:
+   */
+  if (!IsServer(cptr))
+  {
+    if (!FlagHas(&setflags, FLAG_OPER) && IsOper(sptr))
+      ClearOper(sptr);
+    if (!FlagHas(&setflags, FLAG_LOCOP) && IsLocOp(sptr))
+      ClearLocOp(sptr);
+    if (!FlagHas(&setflags, FLAG_ACCOUNT) && IsAccount(sptr))
+      ClrFlag(sptr, FLAG_ACCOUNT);
+    /*
+     * new umode; servers can set it, local users cannot;
+     * prevents users from /kick'ing or /mode -o'ing
+     */
+    if (!FlagHas(&setflags, FLAG_CHSERV))
+      ClearChannelService(sptr);
+    /*
+     * only send wallops to opers
+     */
+    if (feature_bool(FEAT_WALLOPS_OPER_ONLY) && !IsAnOper(sptr) &&
+	!FlagHas(&setflags, FLAG_WALLOP))
+      ClearWallops(sptr);
+    if (feature_bool(FEAT_HIS_SNOTICES_OPER_ONLY) && MyConnect(sptr) &&
+        !IsAnOper(sptr) && !FlagHas(&setflags, FLAG_SERVNOTICE))
+    {
+      ClearServNotice(sptr);
+      set_snomask(sptr, 0, SNO_SET);
+    }
+    if (feature_bool(FEAT_HIS_DEBUG_OPER_ONLY) &&
+        !IsAnOper(sptr) && !FlagHas(&setflags, FLAG_DEBUG))
+      ClearDebug(sptr);
+  }
+  if (MyConnect(sptr))
+  {
+    if ((FlagHas(&setflags, FLAG_OPER) || FlagHas(&setflags, FLAG_LOCOP)) &&
+        !IsAnOper(sptr))
+    {
+      cli_handler(sptr) = CLIENT_HANDLER;
+      det_confs_butmask(sptr, CONF_CLIENT & ~CONF_OPERATOR);
+    }
+
+    if (SendServNotice(sptr))
+    {
+      if (tmpmask != cli_snomask(sptr))
+	set_snomask(sptr, tmpmask, SNO_SET);
+      if (cli_snomask(sptr) && snomask_given)
+	send_reply(sptr, RPL_SNOMASK, cli_snomask(sptr), cli_snomask(sptr));
+    }
+    else
+      set_snomask(sptr, 0, SNO_SET);
+  }
+  /*
+   * Compare new flags with old flags and send string which
+   * will cause servers to update correctly.
+   */
+  if (!FlagHas(&setflags, FLAG_ACCOUNT) && IsAccount(sptr)) {
+      int len = ACCOUNTLEN;
+      char *ts;
+      if ((ts = strchr(account, ':'))) {
+	len = (ts++) - account;
+	cli_user(sptr)->acc_create = atoi(ts);
+	Debug((DEBUG_DEBUG, "Received timestamped account in user mode; "
+	      "account \"%s\", timestamp %Tu", account,
+	      cli_user(sptr)->acc_create));
+      }
+      ircd_strncpy(cli_user(sptr)->account, account, len);
+  }
+  if (!FlagHas(&setflags, FLAG_HIDDENHOST) && do_host_hiding && allow_modes != ALLOWMODES_DEFAULT)
+    hide_hostmask(sptr, FLAG_HIDDENHOST);
+
+  if (do_set_host) {
+    /* We clear the flag in the old mask, so that the +h will be sent */
+    /* Only do this if we're SETTING +h and it succeeded */
+    if (set_hostmask(sptr, hostmask, password) && hostmask)
+      FlagClr(&setflags, FLAG_SETHOST);
+  }
+  
+  if (IsRegistered(sptr)) {
+    if (!FlagHas(&setflags, FLAG_OPER) && IsOper(sptr)) {
+      /* user now oper */
+      ++UserStats.opers;
+      client_set_privs(sptr, NULL, 0); /* may set propagate privilege */
+    }
+    /* remember propagate privilege setting */
+    if (HasPriv(sptr, PRIV_PROPAGATE)) {
+      prop = 1;
+    }
+    if ((FlagHas(&setflags, FLAG_OPER) || FlagHas(&setflags, FLAG_LOCOP))
+        && !IsAnOper(sptr)) {
+      if (FlagHas(&setflags, FLAG_OPER)) {
+        /* user no longer (global) oper */
+        assert(UserStats.opers > 0);
+        --UserStats.opers;
+      }
+      client_set_privs(sptr, NULL, 0); /* will clear propagate privilege */
+    }
+    if (FlagHas(&setflags, FLAG_INVISIBLE) && !IsInvisible(sptr)) {
+      assert(UserStats.inv_clients > 0);
+      --UserStats.inv_clients;
+    }
+    if (!FlagHas(&setflags, FLAG_INVISIBLE) && IsInvisible(sptr)) {
+      ++UserStats.inv_clients;
+    }
+    assert(UserStats.opers <= UserStats.clients + UserStats.unknowns);
+    assert(UserStats.inv_clients <= UserStats.clients + UserStats.unknowns);
+    send_umode_out(cptr, sptr, &setflags, prop);
+  }
+
+  return 0;
+}
+
+/** Build a mode string to describe modes for \a cptr.
+ * @param[in] cptr Some user.
+ * @return Pointer to a static buffer.
+ */
+char *umode_str(struct Client *cptr)
+{
+  /* Maximum string size: "owidgrx\0" */
+  char *m = umodeBuf;
+  int i;
+  struct Flags c_flags = cli_flags(cptr);
+
+  if (!HasPriv(cptr, PRIV_PROPAGATE))
+    FlagClr(&c_flags, FLAG_OPER);
+
+  for (i = 0; i < USERMODELIST_SIZE; ++i)
+  {
+    if (FlagHas(&c_flags, userModeList[i].flag) &&
+        userModeList[i].flag >= FLAG_GLOBAL_UMODES)
+      *m++ = userModeList[i].c;
+  }
+
+  if (IsAccount(cptr))
+  {
+    char* t = cli_user(cptr)->account;
+
+    *m++ = ' ';
+    while ((*m++ = *t++))
+      ; /* Empty loop */
+
+    if (cli_user(cptr)->acc_create) {
+      char nbuf[20];
+      Debug((DEBUG_DEBUG, "Sending timestamped account in user mode for "
+	     "account \"%s\"; timestamp %Tu", cli_user(cptr)->account,
+	     cli_user(cptr)->acc_create));
+      ircd_snprintf(0, t = nbuf, sizeof(nbuf), ":%Tu",
+		    cli_user(cptr)->acc_create);
+      m--; /* back up over previous nul-termination */
+      while ((*m++ = *t++))
+	; /* Empty loop */
+    }
+  }
+
+  if (IsSetHost(cptr)) {
+    *m++ = ' ';
+    ircd_snprintf(0, m, USERLEN + HOSTLEN + 2, "%s@%s", cli_user(cptr)->username,
+         cli_user(cptr)->host);
+  } else
+    *m = '\0';
+
+  return umodeBuf;                /* Note: static buffer, gets
+                                   overwritten by send_umode() */
+}
+
+/** Send a mode change string for \a sptr to \a cptr.
+ * @param[in] cptr Destination of mode change message.
+ * @param[in] sptr User whose mode has changed.
+ * @param[in] old Pre-change set of modes for \a sptr.
+ * @param[in] sendset One of ALL_UMODES, SEND_UMODES_BUT_OPER,
+ * SEND_UMODES, to select which changed user modes to send.
+ */
+void send_umode(struct Client *cptr, struct Client *sptr, struct Flags *old,
+                int sendset)
+{
+  int i;
+  int flag;
+  char *m;
+
+  int needhost = 0;
+  int needoper = 0;  
+  int what = MODE_NULL;
+
+  /*
+   * Build a string in umodeBuf to represent the change in the user's
+   * mode between the new (cli_flags(sptr)) and 'old', but skipping
+   * the modes indicated by sendset.
+   */
+  m = umodeBuf;
+  *m = '\0';
+  for (i = 0; i < USERMODELIST_SIZE; ++i)
+  {
+    flag = userModeList[i].flag;
+    if (FlagHas(old, flag)
+        == HasFlag(sptr, flag))
+      continue;
+    switch (sendset)
+    {
+    case ALL_UMODES:
+      break;
+    case SEND_UMODES_BUT_OPER:
+      if (flag == FLAG_OPER)
+        continue;
+      /* and fall through */
+    case SEND_UMODES:
+      if (flag < FLAG_GLOBAL_UMODES)
+        continue;
+      break;      
+    }
+    /* Special case for SETHOST.. */
+    if (flag == FLAG_SETHOST) {
+      /* Don't send to users */
+      if (cptr && MyUser(cptr))
+      	continue;
+      
+      /* If we're setting +h, add the parameter later */
+      if (!FlagHas(old, flag))	
+      	needhost++;    
+    }	
+    if (FlagHas(old, flag))
+    {
+      if (what == MODE_DEL)
+        *m++ = userModeList[i].c;
+      else
+      {
+        what = MODE_DEL;
+        *m++ = '-';
+        *m++ = userModeList[i].c;
+      }
+    }
+    else /* !FlagHas(old, flag) */
+    {
+      if (what == MODE_ADD)
+        *m++ = userModeList[i].c;
+      else
+      {
+        what = MODE_ADD;
+        *m++ = '+';
+        *m++ = userModeList[i].c;
+      }
+    }
+  }
+  if (needhost) {
+    *m++ = ' ';
+    ircd_snprintf(0, m, USERLEN + HOSTLEN + 1, "%s@%s", cli_user(sptr)->username,
+         cli_user(sptr)->host);
+  } else
+    *m = '\0';
+  if (*umodeBuf && cptr)
+    sendcmdto_one(sptr, CMD_MODE, cptr, "%s %s", cli_name(sptr), umodeBuf);
+}
+
+/**
+ * Check to see if this resembles a sno_mask.  It is if 1) there is
+ * at least one digit and 2) The first digit occurs before the first
+ * alphabetic character.
+ * @param[in] word Word to check for sno_mask-ness.
+ * @return Non-zero if \a word looks like a server notice mask; zero if not.
+ */
+int is_snomask(char *word)
+{
+  if (word)
+  {
+    for (; *word; word++)
+      if (IsDigit(*word))
+        return 1;
+      else if (IsAlpha(*word))
+        return 0;
+  }
+  return 0;
+}
+
 /*
  * set_hostmask() - derived from hide_hostmask()
  *
@@ -1174,493 +1624,6 @@ int set_hostmask(struct Client *cptr, char *hostmask, char *password)
   return 1;
 }
 
-/** Set a user's mode.  This function prevents local users from setting
- * unauthorized modes and applies any other side effects of
- * a successful mode change.
- *
- * @param[in] cptr Neighbor that sent the mode change message.
- * @param[in] sptr Source (originator) of the mode change.
- * @param[in] parc Number of parameters in \a parv.
- * @param[in] parv Parameters to MODE.
- * @param[in] allow_modes ALLOWMODES_ANY for any mode, ALLOWMODES_DEFAULT for 
- *                        only permitting legitimate default user modes.
- * @return Zero.
- */
-int set_user_mode(struct Client *cptr, struct Client *sptr, int parc, 
-		char *parv[], int allow_modes)
-{
-  char** p;
-  char*  m;
-  int what;
-  int i;
-  struct Flags setflags;
-  unsigned int tmpmask = 0;
-  int snomask_given = 0;
-  char buf[BUFSIZE];
-  char *hostmask, *password;
-  int prop = 0;
-  int do_host_hiding = 0;
-  int do_set_host = 0;
-  char* account = NULL;
-
-  what = MODE_ADD;
-
-  if (parc < 3)
-  {
-    m = buf;
-    *m++ = '+';
-    for (i = 0; i < USERMODELIST_SIZE; i++)
-    {
-      if (HasFlag(sptr, userModeList[i].flag) &&
-          ((userModeList[i].flag != FLAG_ACCOUNT) &&
-          (userModeList[i].flag != FLAG_SETHOST)))
-        *m++ = userModeList[i].c;
-    }
-    *m = '\0';
-    send_reply(sptr, RPL_UMODEIS, buf);
-    if (HasFlag(sptr, FLAG_SERVNOTICE) && MyConnect(sptr)
-        && cli_snomask(sptr) !=
-        (unsigned int)(IsOper(sptr) ? SNO_OPERDEFAULT : SNO_DEFAULT))
-      send_reply(sptr, RPL_SNOMASK, cli_snomask(sptr), cli_snomask(sptr));
-    return 0;
-  }
-
-  /*
-   * find flags already set for user
-   * why not just copy them?
-   */
-  setflags = cli_flags(sptr);
-
-  if (MyConnect(sptr))
-    tmpmask = cli_snomask(sptr);
-
-  /*
-   * parse mode change string(s)
-   */
-  for (p = &parv[2]; *p && p<&parv[parc]; p++) {       /* p is changed in loop too */
-    for (m = *p; *m; m++) {
-      switch (*m) {
-      case '+':
-        what = MODE_ADD;
-        break;
-      case '-':
-        what = MODE_DEL;
-        break;
-      case 's':
-        if (*(p + 1) && is_snomask(*(p + 1))) {
-          snomask_given = 1;
-          tmpmask = umode_make_snomask(tmpmask, *++p, what);
-          tmpmask &= (IsAnOper(sptr) ? SNO_ALL : SNO_USER);
-        }
-        else
-          tmpmask = (what == MODE_ADD) ?
-              (IsAnOper(sptr) ? SNO_OPERDEFAULT : SNO_DEFAULT) : 0;
-        if (tmpmask)
-	  SetServNotice(sptr);
-        else
-	  ClearServNotice(sptr);
-        break;
-      case 'w':
-        if (what == MODE_ADD)
-          SetWallops(sptr);
-        else
-          ClearWallops(sptr);
-        break;
-      case 'o':
-        if (what == MODE_ADD)
-          SetOper(sptr);
-        else {
-          ClrFlag(sptr, FLAG_OPER);
-          ClrFlag(sptr, FLAG_LOCOP);
-          if (MyConnect(sptr))
-            tmpmask = cli_snomask(sptr) & ~SNO_OPER;
-        }
-        break;
-      case 'O':
-        if (what == MODE_ADD)
-          SetLocOp(sptr);
-        else
-        { 
-          ClrFlag(sptr, FLAG_OPER);
-          ClrFlag(sptr, FLAG_LOCOP);
-          if (MyConnect(sptr))
-            tmpmask = cli_snomask(sptr) & ~SNO_OPER;
-        }
-        break;
-      case 'i':
-        if (what == MODE_ADD)
-          SetInvisible(sptr);
-        else
-          ClearInvisible(sptr);
-        break;
-      case 'd':
-        if (what == MODE_ADD)
-          SetDeaf(sptr);
-        else
-          ClearDeaf(sptr);
-        break;
-      case 'k':
-        if (what == MODE_ADD)
-          SetChannelService(sptr);
-        else
-          ClearChannelService(sptr);
-        break;
-      case 'g':
-        if (what == MODE_ADD)
-          SetDebug(sptr);
-        else
-          ClearDebug(sptr);
-        break;
-      case 'x':
-        if (what == MODE_ADD)
-	  do_host_hiding = 1;
-	break;
-      case 'h':
-         if (what == MODE_ADD) {
-           if (*(p + 1) && is_hostmask(*(p + 1))) {
-             do_set_host = 1;
-             hostmask = *++p;
-             /* DON'T step p onto the trailing NULL in the parameter array! - splidge */
-             if (*(p+1))
-               password = *++p;
-             else
-               password = NULL;
-           } else {
-             if (!*(p+1))
-               send_reply(sptr, ERR_NEEDMOREPARAMS, "SETHOST");
-             else {
-               send_reply(sptr, ERR_BADHOSTMASK, *(p+1));
-               p++; /* Swallow the arg anyway */
-             }
-           }
-         } else { /* MODE_DEL */
-           do_set_host = 1;
-           hostmask = NULL;
-           password = NULL;
-         }
-         break;
-      case 'R':
-        if (what == MODE_ADD)
-          SetAccountOnly(sptr);
-        else
-          ClearAccountOnly(sptr);
-        break;
-      case 'P':
-	if (what == MODE_ADD)
-          SetParanoid(sptr);
-        else
-          ClearParanoid(sptr);
-	break;
-      case 'r':
-	if ((what == MODE_ADD) && *(p + 1)) {
-	  account = *(++p);
-	  SetAccount(sptr);
-	}
-	/* There is no -r */
-	break;
-      default:
-        send_reply(sptr, ERR_UMODEUNKNOWNFLAG, *m);
-        break;
-      }
-    }
-  }
-  /*
-   * Evaluate rules for new user mode
-   * Stop users making themselves operators too easily:
-   */
-  if (!IsServer(cptr))
-  {
-    if (!FlagHas(&setflags, FLAG_OPER) && IsOper(sptr))
-      ClearOper(sptr);
-    if (!FlagHas(&setflags, FLAG_LOCOP) && IsLocOp(sptr))
-      ClearLocOp(sptr);
-    if (!FlagHas(&setflags, FLAG_ACCOUNT) && IsAccount(sptr))
-      ClrFlag(sptr, FLAG_ACCOUNT);
-    /*
-     * new umode; servers can set it, local users cannot;
-     * prevents users from /kick'ing or /mode -o'ing
-     */
-    if (!FlagHas(&setflags, FLAG_CHSERV) && !(IsOper(sptr) && HasPriv(sptr, PRIV_CHANSERV)))
-      ClearChannelService(sptr);
-    if (!FlagHas(&setflags, FLAG_XTRAOP) && !(IsOper(sptr) && HasPriv(sptr, PRIV_XTRA_OPER)))
-      ClearXtraOp(sptr);
-    if (!FlagHas(&setflags, FLAG_NOCHAN) && !(IsOper(sptr) || feature_bool(FEAT_USER_HIDECHANS)))
-      ClearNoChan(sptr);
-    if (!FlagHas(&setflags, FLAG_NOIDLE) && !((IsOper(sptr) && HasPriv(sptr, PRIV_NOIDLE)) || feature_bool(FEAT_USER_HIDEIDLETIME)))
-      ClearNoIdle(sptr);
-    if (!FlagHas(&setflags, FLAG_PARANOID) && !(IsOper(sptr) && HasPriv(sptr, PRIV_PARANOID)))
-      ClearParanoid(sptr);
-  
-    /*
-     * only send wallops to opers
-     */
-    if (feature_bool(FEAT_WALLOPS_OPER_ONLY) && !IsAnOper(sptr) &&
-	!FlagHas(&setflags, FLAG_WALLOP))
-      ClearWallops(sptr);
-    if (feature_bool(FEAT_HIS_SNOTICES_OPER_ONLY) && MyConnect(sptr) &&
-        !IsAnOper(sptr) && !FlagHas(&setflags, FLAG_SERVNOTICE))
-    {
-      ClearServNotice(sptr);
-      set_snomask(sptr, 0, SNO_SET);
-    }
-    if (feature_bool(FEAT_HIS_DEBUG_OPER_ONLY) &&
-        !IsAnOper(sptr) && !FlagHas(&setflags, FLAG_DEBUG))
-      ClearDebug(sptr);
-  }
-  if (MyConnect(sptr))
-  {
-    if ((FlagHas(&setflags, FLAG_OPER) || FlagHas(&setflags, FLAG_LOCOP)) &&
-        !IsAnOper(sptr))
-    {
-      cli_handler(sptr) = CLIENT_HANDLER;
-      det_confs_butmask(sptr, CONF_CLIENT & ~CONF_OPERATOR);
-    }
-
-    if (SendServNotice(sptr))
-    {
-      if (tmpmask != cli_snomask(sptr))
-	set_snomask(sptr, tmpmask, SNO_SET);
-      if (cli_snomask(sptr) && snomask_given)
-	send_reply(sptr, RPL_SNOMASK, cli_snomask(sptr), cli_snomask(sptr));
-    }
-    else
-      set_snomask(sptr, 0, SNO_SET);
-  }
-  /*
-   * Compare new flags with old flags and send string which
-   * will cause servers to update correctly.
-   */
-  if (!FlagHas(&setflags, FLAG_ACCOUNT) && IsAccount(sptr)) {
-      int len = ACCOUNTLEN;
-      char *ts;
-      if ((ts = strchr(account, ':'))) {
-	len = (ts++) - account;
-	cli_user(sptr)->acc_create = atoi(ts);
-	Debug((DEBUG_DEBUG, "Received timestamped account in user mode; "
-	      "account \"%s\", timestamp %Tu", account,
-	      cli_user(sptr)->acc_create));
-      }
-      ircd_strncpy(cli_user(sptr)->account, account, len);
-  }
-  if (!FlagHas(&setflags, FLAG_HIDDENHOST) && do_host_hiding && allow_modes != ALLOWMODES_DEFAULT)
-    hide_hostmask(sptr, FLAG_HIDDENHOST);
-  if (do_set_host) {
-    /* We clear the flag in the old mask, so that the +h will be sent */
-    /* Only do this if we're SETTING +h and it succeeded */
-    if (set_hostmask(sptr, hostmask, password) && hostmask)
-      FlagClr(&setflags, FLAG_SETHOST);
-  }
-  if (IsRegistered(sptr)) {
-    if (!FlagHas(&setflags, FLAG_OPER) && IsOper(sptr)) {
-      /* user now oper */
-      ++UserStats.opers;
-      client_set_privs(sptr, NULL, 0); /* may set propagate privilege */
-    }
-    /* remember propagate privilege setting */
-    if (HasPriv(sptr, PRIV_PROPAGATE)) {
-      prop = 1;
-    }
-    if ((FlagHas(&setflags, FLAG_OPER) || FlagHas(&setflags, FLAG_LOCOP))
-        && !IsAnOper(sptr)) {
-      if (FlagHas(&setflags, FLAG_OPER)) {
-        /* user no longer (global) oper */
-        assert(UserStats.opers > 0);
-        --UserStats.opers;
-      }
-      client_set_privs(sptr, NULL, 0); /* will clear propagate privilege */
-    }
-    if (FlagHas(&setflags, FLAG_INVISIBLE) && !IsInvisible(sptr)) {
-      assert(UserStats.inv_clients > 0);
-      --UserStats.inv_clients;
-    }
-    if (!FlagHas(&setflags, FLAG_INVISIBLE) && IsInvisible(sptr)) {
-      ++UserStats.inv_clients;
-    }
-    assert(UserStats.opers <= UserStats.clients + UserStats.unknowns);
-    assert(UserStats.inv_clients <= UserStats.clients + UserStats.unknowns);
-    send_umode_out(cptr, sptr, &setflags, prop);
-  }
-
-  return 0;
-}
-
-/** Build a mode string to describe modes for \a cptr.
- * @param[in] cptr Some user.
- * @return Pointer to a static buffer.
- */
-char *umode_str(struct Client *cptr)
-{
-  /* Maximum string size: "owidgrx\0" */
-  char *m = umodeBuf;
-  int i;
-  struct Flags c_flags = cli_flags(cptr);
-
-  if (!HasPriv(cptr, PRIV_PROPAGATE))
-    FlagClr(&c_flags, FLAG_OPER);
-
-  for (i = 0; i < USERMODELIST_SIZE; ++i)
-  {
-    if (FlagHas(&c_flags, userModeList[i].flag) &&
-        userModeList[i].flag >= FLAG_GLOBAL_UMODES)
-      *m++ = userModeList[i].c;
-  }
-
-  if (IsAccount(cptr))
-  {
-    char* t = cli_user(cptr)->account;
-
-    *m++ = ' ';
-    while ((*m++ = *t++))
-      ; /* Empty loop */
-
-    if (cli_user(cptr)->acc_create) {
-      char nbuf[20];
-      Debug((DEBUG_DEBUG, "Sending timestamped account in user mode for "
-	     "account \"%s\"; timestamp %Tu", cli_user(cptr)->account,
-	     cli_user(cptr)->acc_create));
-      ircd_snprintf(0, t = nbuf, sizeof(nbuf), ":%Tu",
-		    cli_user(cptr)->acc_create);
-      m--; /* back up over previous nul-termination */
-      while ((*m++ = *t++))
-	; /* Empty loop */
-    }
-  }
-
-  if (IsSetHost(cptr)) {
-    *m++ = ' ';
-    ircd_snprintf(0, m, USERLEN + HOSTLEN + 2, "%s@%s", cli_user(cptr)->username,
-         cli_user(cptr)->host);
-  } else
-    *m = '\0';
-
-  return umodeBuf;                /* Note: static buffer, gets
-                                   overwritten by send_umode() */
-}
-
-/** Send a mode change string for \a sptr to \a cptr.
- * @param[in] cptr Destination of mode change message.
- * @param[in] sptr User whose mode has changed.
- * @param[in] old Pre-change set of modes for \a sptr.
- * @param[in] sendset One of ALL_UMODES, SEND_UMODES_BUT_OPER,
- * SEND_UMODES, to select which changed user modes to send.
- */
-void send_umode(struct Client *cptr, struct Client *sptr, struct Flags *old,
-                int sendset)
-{
-  int i;
-  int flag;
-  char *m;
-  int what = MODE_NULL;
-  int needhost = 0;
-  int needoper = 0;  
-  int opernames = 0;
-
-  /*
-   * Build a string in umodeBuf to represent the change in the user's
-   * mode between the new (cli_flags(sptr)) and 'old', but skipping
-   * the modes indicated by sendset.
-   */
-  m = umodeBuf;
-  *m = '\0';
-  for (i = 0; i < USERMODELIST_SIZE; ++i)
-  {
-    flag = userModeList[i].flag;
-    if (FlagHas(old, flag)
-        == HasFlag(sptr, flag))
-      continue;
-    switch (sendset)
-    {
-    case ALL_UMODES:
-      break;
-    case SEND_UMODES_BUT_OPER:
-      if (flag == FLAG_OPER)
-        continue;
-      /* and fall through */
-    case SEND_UMODES:
-      if (flag < FLAG_GLOBAL_UMODES)
-        continue;
-      break;      
-    }
-    /* Special case for OPER.. */
-    if (flag == FLAG_OPER) {
-      /* If we're setting +o, add the opername later */
-      if (!FlagHas(old, flag))
-      	needoper++;
-    }
-    /* Special case for SETHOST.. */
-    if (flag == FLAG_SETHOST) {
-      /* Don't send to users */
-      if (cptr && MyUser(cptr))
-      	continue;
-      
-      /* If we're setting +h, add the parameter later */
-      if (!FlagHas(old, flag))	
-      	needhost++;    
-    }	
-    if (FlagHas(old, flag))
-    {
-      if (what == MODE_DEL)
-        *m++ = userModeList[i].c;
-      else
-      {
-        what = MODE_DEL;
-        *m++ = '-';
-        *m++ = userModeList[i].c;
-      }
-    }
-    else /* !FlagHas(old, flag) */
-    {
-      if (what == MODE_ADD)
-        *m++ = userModeList[i].c;
-      else
-      {
-        what = MODE_ADD;
-        *m++ = '+';
-        *m++ = userModeList[i].c;
-      }
-    }
-  }
-  if (opernames && needoper) {
-    *m++ = ' ';
-    if (cli_user(sptr)->opername) {
-      char* t = cli_user(sptr)->opername;
-      while ((*m++ = *t++))
-        ; /* Empty loop */
-      m--; /* Step back over the '\0' */
-    } else {
-      *m++ = NOOPERNAMECHARACTER;
-    }
-  }
-  if (needhost) {
-    *m++ = ' ';
-    ircd_snprintf(0, m, USERLEN + HOSTLEN + 1, "%s@%s", cli_user(sptr)->username,
-         cli_user(sptr)->host);
-  } else
-    *m = '\0';
-  if (*umodeBuf && cptr)
-    sendcmdto_one(sptr, CMD_MODE, cptr, "%s %s", cli_name(sptr), umodeBuf);
-}
-
-/**
- * Check to see if this resembles a sno_mask.  It is if 1) there is
- * at least one digit and 2) The first digit occurs before the first
- * alphabetic character.
- * @param[in] word Word to check for sno_mask-ness.
- * @return Non-zero if \a word looks like a server notice mask; zero if not.
- */
-int is_snomask(char *word)
-{
-  if (word)
-  {
-    for (; *word; word++)
-      if (IsDigit(*word))
-        return 1;
-      else if (IsAlpha(*word))
-        return 0;
-  }
-  return 0;
-}
-
 /** Update snomask \a oldmask according to \a arg and \a what.
  * @param[in] oldmask Original user mask.
  * @param[in] arg Update string (either a number or '+'/'-' followed by a number).
@@ -1829,7 +1792,55 @@ send_supported(struct Client *cptr)
   return 0; /* convenience return, if it's ever needed */
 }
 
-/*
+ /*
+  * Check to see if it resembles a valid hostmask.
+  */
+int is_hostmask(char *word)
+{
+  int i = 0;
+  char *host;
+
+  Debug((DEBUG_INFO, "is_hostmask() %s", word));
+
+  if (strlen(word) > (HOSTLEN + USERLEN + 1) || strlen(word) <= 0)
+    return 0;
+
+  /* if a host is specified, make sure it's valid */
+  host = strrchr(word, '@');
+  if (host) {
+     if (strlen(++host) < 1)
+       return 0;
+     if (strlen(host) > HOSTLEN)
+       return 0;
+  }
+
+  if (word) {
+    if ('@' == *word)	/* no leading @'s */
+        return 0;
+
+    if ('#' == *word) {	/* numeric index given? */
+      for (word++; *word; word++) {
+        if (!IsDigit(*word))
+          return 0;
+      }
+      return 1;
+    }
+
+    /* normal hostmask, account for at most one '@' */
+    for (; *word; word++) {
+      if ('@' == *word) {
+        i++;
+        continue;
+      }
+      if (!IsHostChar(*word))
+        return 0;
+    }
+    return (1 < i) ? 0 : 1; /* no more than on '@' */
+  }
+  return 0;
+}
+
+ /*
   * IsVhost() - Check if given host is a valid spoofhost
   * (ie: configured thru a S:line)
   */
@@ -1883,52 +1894,4 @@ static char *IsVhostPass(char *hostmask)
     }
 
   return NULL;
-}
-
- /*
-  * Check to see if it resembles a valid hostmask.
-  */
-int is_hostmask(char *word)
-{
-  int i = 0;
-  char *host;
-
-  Debug((DEBUG_INFO, "is_hostmask() %s", word));
-
-  if (strlen(word) > (HOSTLEN + USERLEN + 1) || strlen(word) <= 0)
-    return 0;
-
-  /* if a host is specified, make sure it's valid */
-  host = strrchr(word, '@');
-  if (host) {
-     if (strlen(++host) < 1)
-       return 0;
-     if (strlen(host) > HOSTLEN)
-       return 0;
-  }
-
-  if (word) {
-    if ('@' == *word)	/* no leading @'s */
-        return 0;
-
-    if ('#' == *word) {	/* numeric index given? */
-      for (word++; *word; word++) {
-        if (!IsDigit(*word))
-          return 0;
-      }
-      return 1;
-    }
-
-    /* normal hostmask, account for at most one '@' */
-    for (; *word; word++) {
-      if ('@' == *word) {
-        i++;
-        continue;
-      }
-      if (!IsHostChar(*word))
-        return 0;
-    }
-    return (1 < i) ? 0 : 1; /* no more than on '@' */
-  }
-  return 0;
 }
