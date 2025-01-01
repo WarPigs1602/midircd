@@ -68,6 +68,11 @@ struct Client;
 #define TOK_USER                "USER"
 #define CMD_USER		MSG_USER, TOK_USER
 
+#define MSG_WEBIRC              "WEBIRC"        /* WEBI */
+#define TOK_WEBIRC              "WEBIRC"
+#define CMD_WEBIRC              MSG_WEBIRC, TOK_WEBIRC
+
+
 #define MSG_NICK                "NICK"          /* NICK */
 #define TOK_NICK                "N"
 #define CMD_NICK		MSG_NICK, TOK_NICK
