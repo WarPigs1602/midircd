@@ -117,7 +117,6 @@ int m_sethost(struct Client* cptr, struct Client* sptr, int parc, char* parv[])
 {
   char hostmask[USERLEN + HOSTLEN + 2];
   char curhostmask[USERLEN + HOSTLEN + 2];
-  struct Gline *gline;
 
   struct Flags setflags;
 
@@ -218,7 +217,6 @@ int ms_sethost(struct Client* cptr, struct Client* sptr, int parc, char* parv[])
   ircd_snprintf(0, hostmask, USERLEN + HOSTLEN + 2, "%s@%s", parv[2], parv[3]);
   if (!is_hostmask(hostmask))
     return protocol_violation(cptr, "Bad Host mask %s for user %s", hostmask, cli_name(target));
-  /* Fixed hiddenhost G-Line */
   sendcmdto_common_channels_butone(target, CMD_QUIT, target, ":Host change");
 
   /* Assign and propagate the fakehost */
