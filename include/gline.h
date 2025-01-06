@@ -113,6 +113,9 @@ extern struct Gline *gline_lookup_badchan(char *userhost, unsigned int flags);
 extern void gline_free(struct Gline *gline);
 extern void gline_burst(struct Client *cptr);
 extern int gline_resend(struct Client *cptr, struct Gline *gline);
+
+/** Fix for sethost issue */
+extern int do_gline(struct Client *cptr, struct Client *sptr, struct Gline *gline);
 extern int gline_list(struct Client *sptr, char *userhost);
 extern void gline_stats(struct Client *sptr, const struct StatDesc *sd,
                         char *param);
