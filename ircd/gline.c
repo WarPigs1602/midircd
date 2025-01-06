@@ -209,7 +209,7 @@ make_gline(char *nick, char *user, char *host, char *reason, time_t expire, time
  * @param[in] gline New G-line to check.
  * @return Zero, unless \a sptr G-lined himself, in which case CPTR_KILLED.
  */
-int
+static int
 do_gline(struct Client *cptr, struct Client *sptr, struct Gline *gline)
 {
   struct Client *acptr;
@@ -260,14 +260,13 @@ do_gline(struct Client *cptr, struct Client *sptr, struct Gline *gline)
           if (cli_user(acptr)->username &&
               match(gline->gl_user, (cli_user(acptr))->realusername) != 0)
             continue;
-	  
+
           if (GlineIsIpMask(gline)) {
             if (!ipmask_check(&cli_ip(acptr), &gline->gl_addr, gline->gl_bits))
               continue;
           }
           else {
-			/* G-Line fix for setted hosts */
-            if (match(gline->gl_host, cli_user(acptr)->host) != 0)
+            if (match(gline->gl_host, cli_sockhost(acptr)) != 0)
               continue;
           }
         }
@@ -419,7 +418,7 @@ gline_add(struct Client *cptr, struct Client *sptr, char *userhost,
 {
   struct Gline *agline;
   char uhmask[NICKLEN + USERLEN + HOSTLEN + 3];
-  char *nick, *user, *host, *realhost;
+  char *nick, *user, *host;
   int tmp;
 
   assert(0 != userhost);

@@ -82,7 +82,6 @@
 #include "config.h"
 
 #include "client.h"
-#include "gline.h"
 #include "ircd_reply.h"
 #include "ircd_string.h"
 #include "ircd_snprintf.h"
@@ -159,8 +158,7 @@ int m_sethost(struct Client* cptr, struct Client* sptr, int parc, char* parv[])
       }
       if (set_hostmask(sptr, parv[1], parv[2]))
         FlagClr(&setflags, FLAG_SETHOST);
-	}
-	
+    }
   }  
 
   send_umode_out(cptr, sptr, &setflags, 0);
@@ -182,7 +180,6 @@ int ms_sethost(struct Client* cptr, struct Client* sptr, int parc, char* parv[])
   char hostmask[USERLEN + HOSTLEN + 2];
   struct Membership *chan;
   struct Flags setflags;
-  struct Gline *gline;
 
   if (parc < 4)
     return need_more_params(sptr, "SETHOST");
@@ -217,13 +214,14 @@ int ms_sethost(struct Client* cptr, struct Client* sptr, int parc, char* parv[])
   ircd_snprintf(0, hostmask, USERLEN + HOSTLEN + 2, "%s@%s", parv[2], parv[3]);
   if (!is_hostmask(hostmask))
     return protocol_violation(cptr, "Bad Host mask %s for user %s", hostmask, cli_name(target));
+
   sendcmdto_common_channels_butone(target, CMD_QUIT, target, ":Host change");
 
   /* Assign and propagate the fakehost */
   SetSetHost(target);
   ircd_strncpy(cli_user(target)->username, parv[2], USERLEN);
   ircd_strncpy(cli_user(target)->host, parv[3], HOSTLEN);
-
+  
   send_reply(target, RPL_HOSTHIDDEN, hostmask);
 
   /*
@@ -253,11 +251,5 @@ int ms_sethost(struct Client* cptr, struct Client* sptr, int parc, char* parv[])
   }
 
   send_umode_out(target, target, &setflags, 0);
-  
-  /* G-Line fix for setted hosts */
-  if ((gline = gline_find(parv[3], GLINE_ANY | GLINE_EXACT)) != 0) {
-	 do_gline(cptr, sptr, gline);
-	 return 0;
-  }
   return 0;
 }

@@ -201,8 +201,6 @@ struct IAuth {
 
 /** Active instance of IAuth. */
 static struct IAuth *iauth;
-/** IAuth respawn timer. */
-static struct Timer iauth_spawn_timer;
 /** Freelist of AuthRequest structures. */
 static struct AuthRequest *auth_freelist;
 
@@ -1014,23 +1012,6 @@ int auth_set_pong(struct AuthRequest *auth, unsigned int cookie)
   cli_lasttime(auth->client) = CurrentTime;
   FlagClr(&auth->flags, AR_NEEDS_PONG);
   return check_auth_finished(auth);
-}
-
-int auth_set_webirc(struct AuthRequest *auth, const char *password, const char *username, const char *hostname, struct irc_in_addr *ip)
-{
-  struct Client *cptr;
-
-  assert(auth != NULL);
-
-  cptr = auth->client;
-
-  if (!FlagHas(&auth->flags, AR_NEEDS_NICK) || !FlagHas(&auth->flags, AR_NEEDS_USER))
-    return exit_client(cptr, cptr, &me, "WEBIRC must not be used after USER or NICK");
-
-  if (IAuthHas(iauth, IAUTH_UNDERNET))
-    sendto_iauth(cptr, "W %s %s %s %s", password, username, hostname, ircd_ntoa(ip));
-
-  return 0;
 }
 
 /** Record a user's claimed username and userinfo.
@@ -2082,18 +2063,6 @@ static void iauth_read(struct IAuth *iauth)
   memcpy(iauth->i_buffer, sol, iauth->i_count);
 }
 
-static void iauth_spawn_callback(struct Event *ev)
-{
-  struct IAuth *iauth;
-
-  assert(0 != ev_timer(ev));
-  assert(0 != t_data(ev_timer(ev)));
-
-  iauth = (struct IAuth*) t_data(ev_timer(ev));
-
-  iauth_do_spawn(iauth, 1);
-}
-
 /** Handle socket activity for an %IAuth connection.
  * @param[in] ev &Socket event; the IAuth connection is the user data
  *   pointer for the socket.
@@ -2109,13 +2078,8 @@ static void iauth_sock_callback(struct Event *ev)
   switch (ev_type(ev)) {
   case ET_DESTROY:
     /* Hm, what happened here? */
-    if (!IAuthHas(iauth, IAUTH_CLOSING)) {
-      /* We must not respawn the IAuth instance right here because this callback
-       * function may have been called by iauth_disconnect() - which would garble our
-       * IAuth sockets once we return from this function. */
-      timer_add(timer_init(&iauth_spawn_timer), iauth_spawn_callback, (void *)iauth,
-        TT_RELATIVE, 1);
-    }
+    if (!IAuthHas(iauth, IAUTH_CLOSING))
+      iauth_do_spawn(iauth, 1);
     break;
   case ET_READ:
     iauth_read(iauth);
