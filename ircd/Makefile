@@ -21,7 +21,7 @@
 
 # Output variables of the 'configure' script:
 
-prefix = /home/warpigs
+prefix = /home/chat
 exec_prefix = ${prefix}
 top_srcdir = ..
 srcdir = .
@@ -48,9 +48,9 @@ BINDIR = ${exec_prefix}/bin
 INSTALL_RULE = install-with-symlink
 SYMLINK = ircd
 IRCDMODE = 711
-IRCDOWN = warpigs
-IRCDGRP = warpigs
-DPATH = /home/warpigs/lib
+IRCDOWN = chat
+IRCDGRP = chat
+DPATH = /home/chat/lib
 MPATH = ${DPATH}/ircd.motd
 RPATH = ${DPATH}/remote.motd
 
@@ -58,7 +58,7 @@ CC = gcc
 CFLAGS = -g -O2
 CPPFLAGS = -I. -I.. -I${top_srcdir}/include 
 LDFLAGS = 
-LIBS = -ll -lcrypt 
+LIBS = -ll  -lcrypt 
 
 #### End of system configuration section. ####
 PURIFY =
