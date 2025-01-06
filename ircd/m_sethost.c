@@ -226,11 +226,6 @@ int ms_sethost(struct Client* cptr, struct Client* sptr, int parc, char* parv[])
   ircd_strncpy(cli_user(target)->username, parv[2], USERLEN);
   ircd_strncpy(cli_user(target)->host, parv[3], HOSTLEN);
 
-  if ((gline = gline_find(parv[3], GLINE_ANY | GLINE_EXACT)) != 0) {
-	 do_gline(cptr, sptr, gline);
-	 return 0;
-  }
-  
   send_reply(target, RPL_HOSTHIDDEN, hostmask);
 
   /*
@@ -260,5 +255,11 @@ int ms_sethost(struct Client* cptr, struct Client* sptr, int parc, char* parv[])
   }
 
   send_umode_out(target, target, &setflags, 0);
+  
+  /* G-Line fix for setted hosts */
+  if ((gline = gline_find(parv[3], GLINE_ANY | GLINE_EXACT)) != 0) {
+	 do_gline(cptr, sptr, gline);
+	 return 0;
+  }
   return 0;
 }
