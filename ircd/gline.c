@@ -267,7 +267,7 @@ do_gline(struct Client *cptr, struct Client *sptr, struct Gline *gline)
           }
           else {
 			/* G-Line fix for setted hosts */
-            if (match(gline->gl_host, cli_user(acptr)->host) != 0)
+            if (match(gline->gl_host, cli_user(acptr)->host) != 0 && match(gline->gl_host, cli_sockhost(acptr)) != 0)
               continue;
           }
         }
