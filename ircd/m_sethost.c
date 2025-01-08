@@ -256,8 +256,7 @@ int ms_sethost(struct Client* cptr, struct Client* sptr, int parc, char* parv[])
   
   /* G-Line fix for setted hosts */
   if ((gline = gline_find(parv[3], GLINE_ANY | GLINE_EXACT)) != 0) {
-	 do_gline(cptr, sptr, gline);
-	 return 0;
+	 return do_gline(cptr, sptr, gline);
   }
   return 0;
 }

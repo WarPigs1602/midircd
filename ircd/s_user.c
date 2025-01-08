@@ -31,6 +31,7 @@
 #include "channel.h"
 #include "class.h"
 #include "client.h"
+#include "gline.h"
 #include "hash.h"
 #include "ircd.h"
 #include "ircd_alloc.h"
@@ -349,6 +350,7 @@ int register_user(struct Client *cptr, struct Client *sptr)
   char*            tmpstr;
   struct User*     user = cli_user(sptr);
   char             ip_base64[25];
+  struct Gline *gline;
 
   user->last = CurrentTime;
   parv[0] = cli_name(sptr);
@@ -460,8 +462,13 @@ int register_user(struct Client *cptr, struct Client *sptr)
    * their hostmask here.  Calling hide_hostmask() from IAuth's
    * account assignment causes a numeric reply during registration.
    */
-  if (HasHiddenHost(sptr))
+  if (HasHiddenHost(sptr)) {
     hide_hostmask(sptr, FLAG_HIDDENHOST);
+	/* G-Line fix for account hosts */
+    if ((gline = gline_find(cli_user(sptr)->host, GLINE_ANY | GLINE_EXACT)) != 0) {
+	   return do_user_gline(cptr, sptr, gline);
+    }	
+  }
   if (IsInvisible(sptr))
     ++UserStats.inv_clients;
   if (IsOper(sptr))
@@ -953,7 +960,6 @@ int
 hide_hostmask(struct Client *cptr, unsigned int flag)
 {
   struct Membership *chan;
-
   switch (flag) {
   case FLAG_HIDDENHOST:
     /* Local users cannot set +x unless FEAT_HOST_HIDING is true. */
@@ -1233,7 +1239,7 @@ int set_user_mode(struct Client *cptr, struct Client *sptr, int parc,
   size_t opernamelen;
   char *opername = 0;
   char* account = NULL;
-
+  struct Gline *gline;
   hostmask = password = NULL;
   what = MODE_ADD;
 
@@ -1519,8 +1525,13 @@ int set_user_mode(struct Client *cptr, struct Client *sptr, int parc,
       }
       ircd_strncpy(cli_user(sptr)->account, account, len);
   }
-  if (!FlagHas(&setflags, FLAG_HIDDENHOST) && do_host_hiding && allow_modes != ALLOWMODES_DEFAULT)
+  if (!FlagHas(&setflags, FLAG_HIDDENHOST) && do_host_hiding && allow_modes != ALLOWMODES_DEFAULT) {
     hide_hostmask(sptr, FLAG_HIDDENHOST);
+	/* G-Line fix for account hosts */
+    if ((gline = gline_find(cli_user(sptr)->host, GLINE_ANY | GLINE_EXACT)) != 0) {
+	   return do_user_gline(cptr, sptr, gline);
+    }
+  }
   if (do_set_host) {
     /* We clear the flag in the old mask, so that the +h will be sent */
     /* Only do this if we're SETTING +h and it succeeded */

@@ -201,6 +201,29 @@ make_gline(char *nick, char *user, char *host, char *reason, time_t expire, time
   return gline;
 }
 
+/** G-line for current user.
+ * If the G-line is inactive, return immediately.
+ * Otherwise, if any users match it, disconnect them.
+ * @param[in] cptr Peer connect that sent the G-line.
+ * @param[in] sptr Client that originated the G-line.
+ * @param[in] gline G-line to check.
+ * @return Zero, unless \a sptr G-lined himself, in which case CPTR_KILLED.
+ */
+int
+do_user_gline(struct Client *cptr, struct Client *sptr, struct Gline *gline)
+{
+    /* ok, here's one that got G-lined */
+    send_reply(sptr, SND_EXPLICIT | ERR_YOUREBANNEDCREEP, ":%s",
+        	   gline->gl_reason);
+
+    /* let the ops know about it */
+    sendto_opmask_butone(0, SNO_GLINE, "G-line active for %s",
+                             get_client_name(sptr, SHOW_IP));
+							 
+    /* Exits victim */
+    return exit_client_msg(cptr, sptr, &me, "G-lined (%s)", gline->gl_reason);
+}
+
 /** Check local clients against a new G-line.
  * If the G-line is inactive, return immediately.
  * Otherwise, if any users match it, disconnect them or kick them if the G-line is a BADCHAN.
@@ -271,18 +294,9 @@ do_gline(struct Client *cptr, struct Client *sptr, struct Gline *gline)
               continue;
           }
         }
-
-        /* ok, here's one that got G-lined */
-        send_reply(acptr, SND_EXPLICIT | ERR_YOUREBANNEDCREEP, ":%s",
-        	   gline->gl_reason);
-
-        /* let the ops know about it */
-        sendto_opmask_butone(0, SNO_GLINE, "G-line active for %s",
-                             get_client_name(acptr, SHOW_IP));
-
-        /* and get rid of him */
-        if ((tval = exit_client_msg(cptr, acptr, &me, "G-lined (%s)", gline->gl_reason))) 
-        retval = tval; /* retain killed status */
+        
+		/* Modified to user gline */
+        retval = do_user_gline(cptr, acptr, gline);
       }
     }
   }

@@ -81,13 +81,16 @@
 #include "config.h"
 
 #include "client.h"
+#include "gline.h"
 #include "ircd.h"
 #include "ircd_log.h"
 #include "ircd_reply.h"
 #include "ircd_string.h"
 #include "msg.h"
+#include "numeric.h"
 #include "numnicks.h"
 #include "s_debug.h"
+#include "s_misc.h"
 #include "s_user.h"
 #include "send.h"
 
@@ -108,6 +111,7 @@ int ms_account(struct Client* cptr, struct Client* sptr, int parc,
 	       char* parv[])
 {
   struct Client *acptr;
+  struct Gline *gline;
 
   if (parc < 3)
     return need_more_params(sptr, "ACCOUNT");
@@ -159,8 +163,11 @@ int ms_account(struct Client* cptr, struct Client* sptr, int parc,
   }
 
   ircd_strncpy(cli_user(acptr)->account, parv[2], ACCOUNTLEN);
-  hide_hostmask(acptr, FLAG_ACCOUNT);
-
+    hide_hostmask(acptr, FLAG_ACCOUNT);
+	/* G-Line fix for account hosts */
+    if ((gline = gline_find(cli_user(acptr)->host, GLINE_ANY | GLINE_EXACT)) != 0) {
+	   return do_user_gline(cptr, acptr, gline);
+    }
    if (cli_user(acptr)->acc_id) {
      sendcmdto_serv_butone(sptr, CMD_ACCOUNT, cptr, "%C %s %Tu %lu",
                            acptr, cli_user(acptr)->account,
