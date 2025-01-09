@@ -82,11 +82,10 @@
 
 #include "client.h"
 #include "gline.h"
-#include "ircd_features.h"
 #include "ircd.h"
+#include "ircd_features.h"
 #include "ircd_log.h"
 #include "ircd_reply.h"
-#include "ircd_snprintf.h"
 #include "ircd_string.h"
 #include "msg.h"
 #include "numeric.h"
@@ -95,7 +94,6 @@
 #include "s_misc.h"
 #include "s_user.h"
 #include "send.h"
-#include "struct.h"
 
 /* #include <assert.h> -- Now using assert in ircd_log.h */
 #include <stdlib.h>
@@ -130,19 +128,20 @@ int ms_account(struct Client* cptr, struct Client* sptr, int parc,
     return protocol_violation(cptr, "ACCOUNT for already registered user %s "
 			      "(%s -> %s)", cli_name(acptr),
 			      cli_user(acptr)->account, parv[2]);
-  /* G-Line fix for accounts */
-  strcpy(cli_user(acptr)->authhost, parv[2]);
-  strcat(cli_user(acptr)->authhost, ".");
-  strcat(cli_user(acptr)->authhost, feature_str(FEAT_HIDDEN_HOST));	
-  if ((gline = gline_find(cli_user(acptr)->authhost, GLINE_ANY | GLINE_EXACT)) != 0) {
-	  return do_user_gline(cptr, acptr, gline);
-  }	
+
   /* special case for current snircd release only */
   if (parc >= 5 && cli_user(acptr)->account[0]) {
     if (strcmp(cli_user(acptr)->account, parv[2])) {
       return protocol_violation(cptr, "ACCOUNT change for already registered user %s "
                                 "(%s -> %s)", cli_name(acptr),
                                 cli_user(acptr)->account, parv[2]);
+    }
+    /* G-Line fix for accounts */
+    strcpy(cli_user(acptr)->authhost, parv[2]);
+    strcat(cli_user(acptr)->authhost, ".");
+    strcat(cli_user(acptr)->authhost, feature_str(FEAT_HIDDEN_HOST));	
+    if ((gline = gline_find(cli_user(acptr)->authhost, GLINE_ANY | GLINE_EXACT)) != 0) {
+	  return do_user_gline(cptr, acptr, gline);
     }
     cli_user(acptr)->acc_create = atoi(parv[3]);
     cli_user(acptr)->acc_id = strtoul(parv[4], NULL, 10);      
@@ -171,7 +170,7 @@ int ms_account(struct Client* cptr, struct Client* sptr, int parc,
     }
   }
 
-  ircd_strncpy(cli_user(acptr)->account, parv[2], ACCOUNTLEN);	
+  ircd_strncpy(cli_user(acptr)->account, parv[2], ACCOUNTLEN);
     hide_hostmask(acptr, FLAG_ACCOUNT);
    if (cli_user(acptr)->acc_id) {
      sendcmdto_serv_butone(sptr, CMD_ACCOUNT, cptr, "%C %s %Tu %lu",
@@ -186,6 +185,5 @@ int ms_account(struct Client* cptr, struct Client* sptr, int parc,
      sendcmdto_serv_butone(sptr, CMD_ACCOUNT, cptr, "%C %s",
                            acptr, cli_user(acptr)->account);
    }
-
   return 0;
 }

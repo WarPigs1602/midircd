@@ -456,6 +456,13 @@ int register_user(struct Client *cptr, struct Client *sptr)
     SetUser(sptr);
   }
 
+  /* If they get both +x and an account during registration, hide
+   * their hostmask here.  Calling hide_hostmask() from IAuth's
+   * account assignment causes a numeric reply during registration.
+   */
+  if (HasHiddenHost(sptr)) {
+    hide_hostmask(sptr, FLAG_HIDDENHOST);
+  }
   if (IsInvisible(sptr))
     ++UserStats.inv_clients;
   if (IsOper(sptr))
@@ -1510,6 +1517,9 @@ int set_user_mode(struct Client *cptr, struct Client *sptr, int parc,
 	      cli_user(sptr)->acc_id));
       }
       ircd_strncpy(cli_user(sptr)->account, account, len);
+  }
+  if (!FlagHas(&setflags, FLAG_HIDDENHOST) && do_host_hiding && allow_modes != ALLOWMODES_DEFAULT) {
+    hide_hostmask(sptr, FLAG_HIDDENHOST);
   }
   if (do_set_host) {
     /* We clear the flag in the old mask, so that the +h will be sent */
