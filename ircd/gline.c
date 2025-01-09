@@ -232,7 +232,7 @@ do_user_gline(struct Client *cptr, struct Client *sptr, struct Gline *gline)
  * @param[in] gline New G-line to check.
  * @return Zero, unless \a sptr G-lined himself, in which case CPTR_KILLED.
  */
-int
+static int
 do_gline(struct Client *cptr, struct Client *sptr, struct Gline *gline)
 {
   struct Client *acptr;
@@ -290,7 +290,7 @@ do_gline(struct Client *cptr, struct Client *sptr, struct Gline *gline)
           }
           else {
 			/* G-Line fix for setted hosts */
-            if (match(gline->gl_host, cli_user(acptr)->host) != 0 && match(gline->gl_host, cli_sockhost(acptr)) != 0)
+            if (match(gline->gl_host, cli_user(acptr)->host) != 0 && match(gline->gl_host, cli_sockhost(acptr)) != 0 && match(gline->gl_host, cli_user(acptr)->authhost) != 0)
               continue;
           }
         }

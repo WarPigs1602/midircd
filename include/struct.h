@@ -83,7 +83,10 @@ struct User {
   char               host[HOSTLEN + 1];         /**< displayed hostname */
   char               realusername[USERLEN + 1]; /**< actual username */
   char               realhost[HOSTLEN + 1];     /**< actual hostname */
-  char               account[ACCOUNTLEN + 1];   /**< IRC account name */
+  char               account[ACCOUNTLEN + 1];   /**< actual hostname */
+  char               authhost[ACCOUNTLEN + HOSTLEN + 2];    /**< actual hostname */
+
+  /**< IRC account name */
   time_t	     acc_create;                /**< IRC account timestamp */
   unsigned long       acc_id;                    /**< IRC account unique id */
   char*              opername;                  /**< IRC Oper Account name */
