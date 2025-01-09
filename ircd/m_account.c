@@ -136,13 +136,6 @@ int ms_account(struct Client* cptr, struct Client* sptr, int parc,
                                 "(%s -> %s)", cli_name(acptr),
                                 cli_user(acptr)->account, parv[2]);
     }
-    /* G-Line fix for accounts */
-    strcpy(cli_user(acptr)->authhost, parv[2]);
-    strcat(cli_user(acptr)->authhost, ".");
-    strcat(cli_user(acptr)->authhost, feature_str(FEAT_HIDDEN_HOST));	
-    if ((gline = gline_find(cli_user(acptr)->authhost, GLINE_ANY | GLINE_EXACT)) != 0) {
-	  return do_user_gline(cptr, acptr, gline);
-    }
     cli_user(acptr)->acc_create = atoi(parv[3]);
     cli_user(acptr)->acc_id = strtoul(parv[4], NULL, 10);      
     sendcmdto_serv_butone(sptr, CMD_ACCOUNT, cptr, "%C %s %Tu %lu",
@@ -185,5 +178,12 @@ int ms_account(struct Client* cptr, struct Client* sptr, int parc,
      sendcmdto_serv_butone(sptr, CMD_ACCOUNT, cptr, "%C %s",
                            acptr, cli_user(acptr)->account);
    }
+  /* G-Line fix for accounts */
+  strcpy(cli_user(acptr)->authhost, parv[2]);
+  strcat(cli_user(acptr)->authhost, ".");
+  strcat(cli_user(acptr)->authhost, feature_str(FEAT_HIDDEN_HOST));	
+  if ((gline = gline_find(cli_user(acptr)->authhost, GLINE_ANY | GLINE_EXACT)) != 0) {
+	  do_user_gline(cptr, acptr, gline);
+  }
   return 0;
 }
