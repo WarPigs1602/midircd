@@ -154,6 +154,8 @@ int m_nick(struct Client* cptr, struct Client* sptr, int parc, char* parv[])
 
   if (IsServerPort(cptr))
     return exit_client(cptr, cptr, &me, "Use a different port");
+  if (IsWebircPort(cptr) && !cli_wline(cptr))
+    return exit_client(cptr, cptr, &me, "WebIRC authorization required");
 
   /*
    * parv[0] will be empty for clients connecting for the first time
