@@ -85,11 +85,13 @@
 #include "ircd.h"
 #include "ircd_features.h"
 #include "ircd_reply.h"
+#include "ircd_snprintf.h"
 #include "ircd_string.h"
 #include "s_auth.h"
 #include "s_conf.h"
 #include "s_misc.h"
 
+#include <stdio.h>
 #include <string.h>
 
 /*
@@ -107,6 +109,7 @@ int m_webirc(struct Client *cptr, struct Client *sptr, int parc, char *parv[])
   const char *passwd;
   const char *hostname;
   const char *ip;
+  char message [255];
 
   if (!IsWebircPort(cptr))
     return exit_client(cptr, cptr, &me, "Use a different port");
@@ -129,7 +132,9 @@ int m_webirc(struct Client *cptr, struct Client *sptr, int parc, char *parv[])
   cli_status(sptr) = STAT_UNKNOWN_USER;
 
   int res = auth_spoof_user(cli_auth(cptr), NULL, hostname, ip);
-  if (res > 0)
-    return exit_client(cptr, cptr, &me, "WEBIRC invalid spoof");
+  if (res > 0) {
+    sprintf(message, "Invalid spoof host or ip %s %s", hostname, ip);  
+    return exit_client(cptr, cptr, &me, message);
+  }
   return res;
 }

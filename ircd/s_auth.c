@@ -1276,13 +1276,11 @@ int auth_spoof_user(struct AuthRequest *auth, const char *username, const char *
   struct Client *sptr = auth->client;
   time_t next_target = 0;
 
-/**
-  Removed check because ipv6 issue
-  if (!auth_verify_hostname(hostname, HOSTLEN))
+  if (strcmp(ip, hostname) != 0 && !auth_verify_hostname(hostname, HOSTLEN))
     return 1;
   if (!ipmask_parse(ip, &cli_ip(sptr), NULL))
     return 2;
-*/
+
   if (!IPcheck_local_connect(&cli_ip(sptr), &next_target)) {
     ++ServerStats->is_ref;
     return exit_client(sptr, sptr, &me, "Your host is trying to (re)connect too fast -- throttled");
