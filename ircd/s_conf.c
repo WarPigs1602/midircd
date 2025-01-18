@@ -1037,7 +1037,7 @@ int rehash(struct Client *cptr, int sig)
        * get past K/G's etc, we'll "fix" the bug by actually explaining
        * whats going on.
        */
-      if ((found_g = find_kill(acptr, 0))) {
+      if ((found_g = find_kill(acptr))) {
         sendto_opmask_butone(0, found_g == -2 ? SNO_GLINE : SNO_OPERKILL,
                              found_g == -2 ? "G-line active for %s%s" :
                              "K-line active for %s%s",
@@ -1097,14 +1097,16 @@ int init_conf(void)
  * @return 0 if client is accepted; -1 if client was locally denied
  * (K-line); -2 if client was globally denied (G-line).
  */
-int find_kill(struct Client *cptr, int glinecheck)
+int find_kill(struct Client *cptr)
 {
   const char*      host;
+  const char*   spoofhost;
+  const char*   realhost;
+  const char*   realname;
   const char*      name;
-  const char*      realname;
+  const char*      authhost;
   struct DenyConf* deny;
   struct Gline*    agline = NULL;
-
   assert(0 != cptr);
 
   if (!cli_user(cptr))
@@ -1113,10 +1115,14 @@ int find_kill(struct Client *cptr, int glinecheck)
   host = cli_sockhost(cptr);
   name = cli_user(cptr)->username;
   realname = cli_info(cptr);
+  spoofhost = cli_user(cptr)->host;
+  authhost = cli_user(cptr)->authhost;
 
   assert(strlen(host) <= HOSTLEN);
   assert((name ? strlen(name) : 0) <= HOSTLEN);
+  assert((spoofhost ? strlen(spoofhost) : 0) <= HOSTLEN);
   assert((realname ? strlen(realname) : 0) <= REALLEN);
+  assert((authhost ? strlen(authhost) : 0) <= HOSTLEN);
 
   /* 2000-07-14: Rewrote this loop for massive speed increases.
    *             -- Isomer
@@ -1129,9 +1135,13 @@ int find_kill(struct Client *cptr, int glinecheck)
     if (deny->bits > 0) {
       if (!ipmask_check(&cli_ip(cptr), &deny->address, deny->bits))
         continue;
-    } else if (deny->hostmask && match(deny->hostmask, host))
+    } else if (deny->hostmask && match(deny->hostmask, host)) {
       continue;
-
+    } else if (deny->hostmask && match(deny->hostmask, spoofhost)) {
+      continue;
+    } else if (deny->hostmask && match(deny->hostmask, authhost)) {
+      continue;
+    }
     if (EmptyString(deny->message))
       send_reply(cptr, SND_EXPLICIT | ERR_YOUREBANNEDCREEP,
                  ":Connection from your host is refused on this server.");
@@ -1144,13 +1154,7 @@ int find_kill(struct Client *cptr, int glinecheck)
     return -1;
   }
 
-  /* added glinecheck to define if we check for glines too, shouldn't happen
-   * when rehashing as it is causing problems with big servers and lots of glines.
-   * Think of a 18000 user leaf with 18000 glines present, this will probably
-   * cause the server to split from the net.
-   * -skater_x
-   */
-  if (glinecheck && (agline = gline_lookup(cptr, 0)) && GlineIsActive(agline)) {
+  if (!feature_bool(FEAT_DISABLE_GLINES) && (agline = gline_lookup(cptr, 0))) {
     /*
      * find active glines
      * added a check against the user's IP address to find_gline() -Kev

@@ -90,6 +90,7 @@
 #include "msg.h"
 #include "numeric.h"
 #include "numnicks.h"
+#include "s_conf.h"
 #include "s_debug.h"
 #include "s_misc.h"
 #include "s_user.h"
@@ -113,6 +114,7 @@ int ms_account(struct Client* cptr, struct Client* sptr, int parc,
 {
   struct Client *acptr;
   struct Gline *gline;
+  int killreason;
 
   if (parc < 3)
     return need_more_params(sptr, "ACCOUNT");
@@ -182,8 +184,12 @@ int ms_account(struct Client* cptr, struct Client* sptr, int parc,
   strcpy(cli_user(acptr)->authhost, parv[2]);
   strcat(cli_user(acptr)->authhost, ".");
   strcat(cli_user(acptr)->authhost, feature_str(FEAT_HIDDEN_HOST));	
-  if ((gline = gline_find(cli_user(acptr)->authhost, GLINE_ANY | GLINE_EXACT)) != 0) {
-	  do_user_gline(cptr, acptr, gline);
-  }
+    killreason = find_kill(acptr);
+    if (killreason)
+    {
+      ++ServerStats->is_ref;
+      return exit_client(acptr, acptr, cptr,
+                         (killreason == -1 ? "K-lined" : "G-lined"));
+    }
   return 0;
 }

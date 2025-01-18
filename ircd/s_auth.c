@@ -437,7 +437,7 @@ static int check_auth_finished(struct AuthRequest *auth, int bitclr)
 
     /* Check for K- or G-line. */
     FlagSet(&auth->flags, AR_GLINE_CHECKED);
-    killreason = find_kill(sptr, 1);
+    killreason = find_kill(sptr);
     if (killreason)
     {
       ++ServerStats->is_ref;

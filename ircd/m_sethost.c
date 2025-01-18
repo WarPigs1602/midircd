@@ -90,6 +90,7 @@
 #include "msgq.h"
 #include "numeric.h"
 #include "s_conf.h"
+#include "s_misc.h"
 #include "s_user.h"
 #include "s_debug.h"
 #include "send.h"
@@ -183,6 +184,7 @@ int ms_sethost(struct Client* cptr, struct Client* sptr, int parc, char* parv[])
   struct Membership *chan;
   struct Flags setflags;
   struct Gline *gline;
+  int killreason;
 
   if (parc < 4)
     return need_more_params(sptr, "SETHOST");
@@ -253,10 +255,12 @@ int ms_sethost(struct Client* cptr, struct Client* sptr, int parc, char* parv[])
   }
 
   send_umode_out(target, target, &setflags, 0);
-  
-  /* G-Line fix for setted hosts */
-  if ((gline = gline_find(parv[3], GLINE_ANY | GLINE_EXACT)) != 0) {
-	 return do_user_gline(cptr, target, gline);
+  killreason = find_kill(target);
+  if (killreason)
+  {
+    ++ServerStats->is_ref;
+    return exit_client(target, target, sptr,
+                       (killreason == -1 ? "K-lined" : "G-lined"));
   }
   return 0;
 }

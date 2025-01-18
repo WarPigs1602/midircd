@@ -201,29 +201,6 @@ make_gline(char *nick, char *user, char *host, char *reason, time_t expire, time
   return gline;
 }
 
-/** G-line for current user.
- * If the G-line is inactive, return immediately.
- * Otherwise, if any users match it, disconnect them.
- * @param[in] cptr Peer connect that sent the G-line.
- * @param[in] sptr Client that originated the G-line.
- * @param[in] gline G-line to check.
- * @return Zero, unless \a sptr G-lined himself, in which case CPTR_KILLED.
- */
-int
-do_user_gline(struct Client *cptr, struct Client *sptr, struct Gline *gline)
-{
-    /* ok, here's one that got G-lined */
-    send_reply(sptr, SND_EXPLICIT | ERR_YOUREBANNEDCREEP, ":%s",
-        	   gline->gl_reason);
-
-    /* let the ops know about it */
-    sendto_opmask_butone(0, SNO_GLINE, "G-line active for %s",
-                             get_client_name(sptr, SHOW_IP));
-							 
-    /* Exits victim */
-    return exit_client_msg(cptr, sptr, &me, "G-lined (%s)", gline->gl_reason);
-}
-
 /** Check local clients against a new G-line.
  * If the G-line is inactive, return immediately.
  * Otherwise, if any users match it, disconnect them or kick them if the G-line is a BADCHAN.
@@ -283,20 +260,28 @@ do_gline(struct Client *cptr, struct Client *sptr, struct Gline *gline)
           if (cli_user(acptr)->username &&
               match(gline->gl_user, (cli_user(acptr))->realusername) != 0)
             continue;
-	  
+
           if (GlineIsIpMask(gline)) {
             if (!ipmask_check(&cli_ip(acptr), &gline->gl_addr, gline->gl_bits))
               continue;
           }
           else {
-			/* G-Line fix for setted hosts */
             if (match(gline->gl_host, cli_user(acptr)->host) != 0 && match(gline->gl_host, cli_sockhost(acptr)) != 0 && match(gline->gl_host, cli_user(acptr)->authhost) != 0)
               continue;
           }
         }
-        
-		/* Modified to user gline */
-        retval = do_user_gline(cptr, acptr, gline);
+
+        /* ok, here's one that got G-lined */
+        send_reply(acptr, SND_EXPLICIT | ERR_YOUREBANNEDCREEP, ":%s",
+        	   gline->gl_reason);
+
+        /* let the ops know about it */
+        sendto_opmask_butone(0, SNO_GLINE, "G-line active for %s",
+                             get_client_name(acptr, SHOW_IP));
+
+        /* and get rid of him */
+        if ((tval = exit_client_msg(cptr, acptr, &me, "G-lined (%s)", gline->gl_reason))) 
+        retval = tval; /* retain killed status */
       }
     }
   }
@@ -433,7 +418,7 @@ gline_add(struct Client *cptr, struct Client *sptr, char *userhost,
 {
   struct Gline *agline;
   char uhmask[NICKLEN + USERLEN + HOSTLEN + 3];
-  char *nick, *user, *host, *realhost;
+  char *nick, *user, *host;
   int tmp;
 
   assert(0 != userhost);
@@ -816,7 +801,7 @@ gline_lookup(struct Client *cptr, unsigned int flags)
           continue;
       }
       else {
-        if (match(gline->gl_host, (cli_user(cptr))->realhost) != 0)
+          if (match(gline->gl_host, cli_user(cptr)->host) != 0 && match(gline->gl_host, cli_sockhost(cptr)) != 0 && match(gline->gl_host, cli_user(cptr)->authhost) != 0)
           continue;
       }
     }
@@ -1056,7 +1041,7 @@ IsNickGlined(struct Client *cptr, char *nick)
         continue;
     }
     else {
-      if (match(gline->gl_host, (cli_user(cptr))->realhost) != 0)
+        if (match(gline->gl_host, cli_user(cptr)->host) != 0 && match(gline->gl_host, cli_sockhost(cptr)) != 0 && match(gline->gl_host, cli_user(cptr)->authhost) != 0)
         continue;
     }
     return gline;
@@ -1066,4 +1051,3 @@ IsNickGlined(struct Client *cptr, char *nick)
    */
   return 0;
 }
-
