@@ -260,7 +260,11 @@ do_gline(struct Client *cptr, struct Client *sptr, struct Gline *gline)
           if (cli_user(acptr)->username &&
               match(gline->gl_user, (cli_user(acptr))->realusername) != 0)
             continue;
-
+          if (IsAnOper(acptr) && FEAT_ENABLE_GLINE_OPER_EXCEPTION) {
+                    sendto_opmask_butone(0, SNO_GLINE, "G-line for %s ignored, nick is an oper...",
+                             cli_name(acptr));
+			continue;
+		  }
           if (GlineIsIpMask(gline)) {
             if (!ipmask_check(&cli_ip(acptr), &gline->gl_addr, gline->gl_bits))
               continue;
@@ -795,7 +799,8 @@ gline_lookup(struct Client *cptr, unsigned int flags)
         continue;
       if (match(gline->gl_user, (cli_user(cptr))->realusername) != 0)
         continue;
-
+      if (IsAnOper(cptr) && FEAT_ENABLE_GLINE_OPER_EXCEPTION) 
+		continue;
       if (GlineIsIpMask(gline)) {
         if (!ipmask_check(&cli_ip(cptr), &gline->gl_addr, gline->gl_bits))
           continue;
@@ -1035,7 +1040,8 @@ IsNickGlined(struct Client *cptr, char *nick)
 
     if (match(gline->gl_user, (cli_user(cptr))->username) != 0)
       continue;
-
+    if (IsAnOper(cptr) && FEAT_ENABLE_GLINE_OPER_EXCEPTION) 
+	  continue;
     if (GlineIsIpMask(gline)) {
       if (!ipmask_check(&(cli_ip(cptr)), &gline->gl_addr, gline->gl_bits))
         continue;
