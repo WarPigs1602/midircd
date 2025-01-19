@@ -425,6 +425,11 @@ gline_add(struct Client *cptr, struct Client *sptr, char *userhost,
   char *nick, *user, *host;
   int tmp;
 
+
+  if (cli_user(sptr)->realhost != NULL && strcmp(cli_user(sptr)->authhost, userhost) != 0) {
+	  userhost = cli_user(sptr)->realhost;
+  }
+  
   assert(0 != userhost);
   assert(0 != reason);
 
