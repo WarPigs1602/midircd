@@ -97,6 +97,7 @@
 #include "send.h"
 
 /* #include <assert.h> -- Now using assert in ircd_log.h */
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -181,15 +182,13 @@ int ms_account(struct Client* cptr, struct Client* sptr, int parc,
                            acptr, cli_user(acptr)->account);
    }
   /* G-Line fix for accounts */
-  strcpy(cli_user(acptr)->authhost, parv[2]);
-  strcat(cli_user(acptr)->authhost, ".");
-  strcat(cli_user(acptr)->authhost, feature_str(FEAT_HIDDEN_HOST));	
-    killreason = find_kill(acptr);
-    if (killreason)
-    {
-      ++ServerStats->is_ref;
-      return exit_client(acptr, acptr, cptr,
-                         (killreason == -1 ? "K-lined" : "G-lined"));
-    }
+   sprintf(cli_user(acptr)->authhost, "%s.%s", parv[2], feature_str(FEAT_HIDDEN_HOST));	
+   killreason = find_kill(acptr);
+   if (killreason)
+   {
+     ++ServerStats->is_ref;
+     return exit_client(acptr, acptr, cptr,
+                        (killreason == -1 ? "K-lined" : "G-lined"));
+   }
   return 0;
 }

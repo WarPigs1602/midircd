@@ -270,7 +270,7 @@ do_gline(struct Client *cptr, struct Client *sptr, struct Gline *gline)
               continue;
           }
           else {
-            if (match(gline->gl_host, cli_user(acptr)->host) != 0 && match(gline->gl_host, cli_sockhost(acptr)) != 0 && match(gline->gl_host, cli_user(acptr)->authhost) != 0)
+			if (match(gline->gl_host, cli_user(acptr)->host) != 0 && match(gline->gl_host, cli_sockhost(acptr)) != 0 && match(gline->gl_host, cli_user(acptr)->authhost) != 0)
               continue;
           }
         }
@@ -424,11 +424,7 @@ gline_add(struct Client *cptr, struct Client *sptr, char *userhost,
   char uhmask[NICKLEN + USERLEN + HOSTLEN + 3];
   char *nick, *user, *host;
   int tmp;
-
-
-  if (cli_user(sptr)->realhost != NULL && strcmp(cli_user(sptr)->authhost, userhost) != 0) {
-	  userhost = cli_user(sptr)->realhost;
-  }
+  
   
   assert(0 != userhost);
   assert(0 != reason);
@@ -1045,8 +1041,9 @@ IsNickGlined(struct Client *cptr, char *nick)
 
     if (match(gline->gl_user, (cli_user(cptr))->username) != 0)
       continue;
-    if (IsAnOper(cptr) && FEAT_ENABLE_GLINE_OPER_EXCEPTION) 
-	  continue;
+    if (IsAnOper(cptr) && FEAT_ENABLE_GLINE_OPER_EXCEPTION) {
+      continue;
+	}
     if (GlineIsIpMask(gline)) {
       if (!ipmask_check(&(cli_ip(cptr)), &gline->gl_addr, gline->gl_bits))
         continue;
