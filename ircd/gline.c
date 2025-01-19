@@ -201,6 +201,39 @@ make_gline(char *nick, char *user, char *host, char *reason, time_t expire, time
   return gline;
 }
 
+/** This scans all users for the real host
+ * @param[in] host The host to parse
+ * @return The real host
+ */
+static char* 
+get_realhost(char *host) {
+  struct Client *acptr;	
+  char *realhost = host;  
+  char *authhost;
+  int fd;
+  for (fd = HighestFd; fd >= 0; --fd) {
+    /*
+     * get the users!
+     */
+    if ((acptr = LocalClientArray[fd])) {
+      if (!cli_user(acptr))
+        continue;
+	  if (IsAccount(acptr)) {
+		  sprintf(authhost, "%s.%s", cli_user(acptr)->account, feature_str(FEAT_HIDDEN_HOST));
+          if (match(authhost, host)) 		  
+	        realhost = authhost; 
+		  else
+		    break;
+	  }	
+	  if (cli_user(acptr)->realhost && match(cli_user(acptr)->host, host)) {
+	      realhost = cli_user(acptr)->realhost; 
+		  break;
+	  }
+	}
+  }
+  return realhost;
+}
+
 /** Check local clients against a new G-line.
  * If the G-line is inactive, return immediately.
  * Otherwise, if any users match it, disconnect them or kick them if the G-line is a BADCHAN.
@@ -256,7 +289,6 @@ do_gline(struct Client *cptr, struct Client *sptr, struct Gline *gline)
           if (cli_name(acptr) &&
               match(gline->gl_nick, cli_name(acptr)) !=0)
             continue;
-
           if (cli_user(acptr)->username &&
               match(gline->gl_user, (cli_user(acptr))->realusername) != 0)
             continue;
@@ -425,6 +457,8 @@ gline_add(struct Client *cptr, struct Client *sptr, char *userhost,
   char *nick, *user, *host;
   int tmp;
   
+  // Detects the real host
+  userhost = get_realhost(userhost);
   
   assert(0 != userhost);
   assert(0 != reason);
