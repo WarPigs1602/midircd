@@ -540,6 +540,26 @@ static int check_auth_finished(struct AuthRequest *auth, int bitclr)
   return res;
 }
 
+/** Verify that a ipv6 address is valid, i.e., only contains characters
+ * valid for a ip and that a ip is not too long.
+ * @param host ip to check.
+ * @param maxlen Maximum length of ip, not including NUL terminator.
+ * @return Non-zero if the ip is valid.
+ */
+static int
+auth_verify_ipv6(const char *ip, int maxlen)
+{
+  int i;
+
+  /* Walk through the ip */
+  for (i = 0; ip[i]; i++)
+    /* If it's not a ip character or if it's too long, return false */
+    if (!IsIP6Char(ip[i]) || i >= maxlen)
+      return 0;
+
+  return 1; /* it's a valid ip */
+}
+
 /** Verify that a hostname is valid, i.e., only contains characters
  * valid for a hostname and that a hostname is not too long.
  * @param host Hostname to check.
@@ -1276,7 +1296,7 @@ int auth_spoof_user(struct AuthRequest *auth, const char *username, const char *
   struct Client *sptr = auth->client;
   time_t next_target = 0;
 
-  if (strcmp(ip, hostname) != 0 && !auth_verify_hostname(hostname, HOSTLEN))
+  if (!auth_verify_ipv6(hostname, HOSTLEN) && !auth_verify_hostname(hostname, HOSTLEN))
     return 1;
   if (!ipmask_parse(ip, &cli_ip(sptr), NULL))
     return 2;

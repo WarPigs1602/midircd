@@ -203,7 +203,6 @@ make_gline(char *nick, char *user, char *host, char *reason, time_t expire, time
 
 /** This scans all users for the real host
  * @param[in] host The host to parse
- * @return The real host
  */
 static void 
 get_realhost(char **host) {
