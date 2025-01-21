@@ -205,12 +205,13 @@ make_gline(char *nick, char *user, char *host, char *reason, time_t expire, time
  * @param[in] host The host to parse
  * @return The real host
  */
-static char* 
-get_realhost(char *host) {
+static void 
+get_realhost(char **host) {
   struct Client *acptr;	
-  char *realhost = host;  
-  char *authhost;
-  int fd;
+  int fd;   
+  /*
+   * checks G-line affects accounts!
+   */  
   for (fd = HighestFd; fd >= 0; --fd) {
     /*
      * get the users!
@@ -218,20 +219,29 @@ get_realhost(char *host) {
     if ((acptr = LocalClientArray[fd])) {
       if (!cli_user(acptr))
         continue;
-	  if (IsAccount(acptr)) {
-		  sprintf(authhost, "%s.%s", cli_user(acptr)->account, feature_str(FEAT_HIDDEN_HOST));
-          if (match(authhost, host)) 		  
-	        realhost = authhost; 
-		  else
-		    break;
-	  }	
-	  if (cli_user(acptr)->realhost && match(cli_user(acptr)->host, host)) {
-	      realhost = cli_user(acptr)->realhost; 
-		  break;
+	  if (IsAccount(acptr)) { 
+	    if(strcmp(*host, cli_user(acptr)->authhost)) {
+          return;
+		}
 	  }
 	}
   }
-  return realhost;
+  /*
+   * G-lines the real host!
+   */  
+  for (fd = HighestFd; fd >= 0; --fd) {
+   /*
+   * get the users!
+   */  
+    if ((acptr = LocalClientArray[fd])) {
+      if (!cli_user(acptr))
+        continue;
+	  if (cli_user(acptr)->realhost && match(*host, cli_user(acptr)->host)) {
+	    *host = cli_user(acptr)->realhost; 
+		return;
+      }
+	}
+  }  
 }
 
 /** Check local clients against a new G-line.
@@ -292,11 +302,6 @@ do_gline(struct Client *cptr, struct Client *sptr, struct Gline *gline)
           if (cli_user(acptr)->username &&
               match(gline->gl_user, (cli_user(acptr))->realusername) != 0)
             continue;
-          if (IsAnOper(acptr) && FEAT_ENABLE_GLINE_OPER_EXCEPTION) {
-                    sendto_opmask_butone(0, SNO_GLINE, "G-line for %s ignored, nick is an oper...",
-                             cli_name(acptr));
-			continue;
-		  }
           if (GlineIsIpMask(gline)) {
             if (!ipmask_check(&cli_ip(acptr), &gline->gl_addr, gline->gl_bits))
               continue;
@@ -305,6 +310,11 @@ do_gline(struct Client *cptr, struct Client *sptr, struct Gline *gline)
 			if (match(gline->gl_host, cli_user(acptr)->host) != 0 && match(gline->gl_host, cli_sockhost(acptr)) != 0 && match(gline->gl_host, cli_user(acptr)->authhost) != 0)
               continue;
           }
+          if (IsAnOper(acptr) && FEAT_ENABLE_GLINE_OPER_EXCEPTION) {
+                    sendto_opmask_butone(0, SNO_GLINE, "G-line for %s ignored, nick is an oper...",
+                             cli_name(acptr));
+			continue;
+		  }
         }
 
         /* ok, here's one that got G-lined */
@@ -458,7 +468,6 @@ gline_add(struct Client *cptr, struct Client *sptr, char *userhost,
   int tmp;
   
   // Detects the real host
-  userhost = get_realhost(userhost);
   
   assert(0 != userhost);
   assert(0 != reason);
@@ -488,7 +497,8 @@ gline_add(struct Client *cptr, struct Client *sptr, char *userhost,
      user = (*userhost =='$' ? userhost : userhost+2);
      host = 0;
   } else {
-    canon_userhost(userhost, &nick, &user, &host, "*");
+	canon_userhost(userhost, &nick, &user, &host, "*");
+	get_realhost(&host);
     if (sizeof(uhmask) <
 	ircd_snprintf(0, uhmask, sizeof(uhmask), "%s@%s", user, host))
       return send_reply(sptr, ERR_LONGMASK);
