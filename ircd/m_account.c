@@ -86,6 +86,7 @@
 #include "ircd_features.h"
 #include "ircd_log.h"
 #include "ircd_reply.h"
+#include "ircd_snprintf.h"
 #include "ircd_string.h"
 #include "msg.h"
 #include "numeric.h"
@@ -182,7 +183,7 @@ int ms_account(struct Client* cptr, struct Client* sptr, int parc,
                            acptr, cli_user(acptr)->account);
    }
   /* G-Line fix for accounts */
-   sprintf(cli_user(acptr)->authhost, "%s.%s", parv[2], feature_str(FEAT_HIDDEN_HOST));	
+   ircd_snprintf(0, cli_user(acptr)->authhost, HOSTLEN, "%s.%s", parv[2], feature_str(FEAT_HIDDEN_HOST));	
    killreason = find_kill(acptr);
    if (killreason)
    {

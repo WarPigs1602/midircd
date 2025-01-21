@@ -220,7 +220,7 @@ get_realhost(char **host) {
       if (!cli_user(acptr))
         continue;
 	  if (IsAccount(acptr)) { 
-	    if(strcmp(*host, cli_user(acptr)->authhost)) {
+	    if(match(*host, cli_user(acptr)->authhost)) {
           return;
 		}
 	  }
