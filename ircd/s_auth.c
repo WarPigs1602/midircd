@@ -1259,6 +1259,17 @@ void auth_send_exit(struct Client *cptr)
   sendto_iauth(cptr, "D");
 }
 
+/** Forward an XREPLY on to iauth.
+ * @param[in] sptr Source of the XREPLY.
+ * @param[in] routing Routing information for the original XQUERY.
+ * @param[in] reply Contents of the reply.
+ */
+void auth_send_xreply(struct Client *sptr, const char *routing,
+		      const char *reply)
+{
+  sendto_iauth(NULL, "X %#C %s :%s", sptr, routing, reply);
+}
+
 /** Mark that a user has started capabilities negotiation.
  * This blocks authorization until auth_cap_done() is called.
  * @param[in] auth Authorization request for client.
@@ -2126,6 +2137,54 @@ static int iauth_cmd_usermode(struct IAuth *iauth, struct Client *cli,
   return 0;
 }
 
+/** Send an extension query to a specified remote server.
+ * @param[in] iauth Active IAuth session.
+ * @param[in] cli Client referenced by command.
+ * @param[in] parc Number of parameters (3).
+ * @param[in] params Remote server, routing information, and query.
+ * @return Zero.
+ */
+static int iauth_cmd_xquery(struct IAuth *iauth, struct Client *cli,
+			    int parc, char **params)
+{
+  char *serv;
+  const char *routing;
+  const char *query;
+  struct Client *acptr;
+
+  /* Process parameters */
+  if (EmptyString(params[0])) {
+    sendto_iauth(cli, "E Missing :Missing server parameter");
+    return 0;
+  } else
+    serv = params[0];
+
+  if (EmptyString(params[1])) {
+    sendto_iauth(cli, "E Missing :Missing routing parameter");
+    return 0;
+  } else
+    routing = params[1];
+
+  if (EmptyString(params[2])) {
+    sendto_iauth(cli, "E Missing :Missing query parameter");
+    return 0;
+  } else
+    query = params[2];
+
+  /* Try to find the specified server */
+  if (!(acptr = find_match_server(serv))) {
+    sendto_iauth(cli, "x %s %s :Server not online", serv, routing);
+    return 0;
+  }
+
+  /* If it's to us, do nothing; otherwise, forward the query */
+  if (!IsMe(acptr))
+    /* The "iauth:" prefix helps ircu route the reply to iauth */
+    sendcmdto_one(&me, CMD_XQUERY, acptr, "%C iauth:%s :%s", acptr, routing,
+		  query);
+
+  return 0;
+}
 
 /** Send a challenge string to the client.
  * @param[in] iauth Active IAuth session.
@@ -2166,6 +2225,7 @@ static void iauth_parse(struct IAuth *iauth, char *message)
   case 'A': handler = iauth_cmd_config; has_cli = 0; break;
   case 's': handler = iauth_cmd_newstats; has_cli = 0; break;
   case 'S': handler = iauth_cmd_stats; has_cli = 0; break;
+  case 'X': handler = iauth_cmd_xquery; has_cli = 0; break;
   case 'o': handler = iauth_cmd_username_forced; has_cli = 1; break;
   case 'U': handler = iauth_cmd_username_good; has_cli = 1; break;
   case 'u': handler = iauth_cmd_username_bad; has_cli = 1; break;

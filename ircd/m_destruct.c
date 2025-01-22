@@ -153,7 +153,14 @@ int ms_destruct(struct Client* cptr, struct Client* sptr, int parc, char* parv[]
 
     /* Next, send JOINs for all members. */
     for (member = chptr->members; member; member = member->next_member)
-      sendcmdto_one(member->user, CMD_JOIN, cptr, "%H", chptr);
+    {
+      if (CapHas(cli_active(member->user), CAP_EXTJOIN))
+        sendcmdto_one(member->user, CMD_JOIN, cptr,
+        "%H %s :%s", chptr, IsAccount(cptr) ? cli_account(cptr) : "*",
+        cli_info(cptr));
+      else
+        sendcmdto_one(member->user, CMD_JOIN, cptr, "%H", chptr);
+    }
 
     /* Build MODE strings. We use MODEBUF_DEST_BOUNCE with MODE_DEL to assure
        that the resulting MODEs are only sent upstream. */

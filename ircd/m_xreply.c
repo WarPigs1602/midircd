@@ -1,7 +1,6 @@
 /*
- * IRC - Internet Relay Chat, ircd/m_wallchops.c
- * Copyright (C) 1990 Jarkko Oikarinen and
- *                    University of Oulu, Computing Center
+ * IRC - Internet Relay Chat, ircd/m_xreply.c
+ * Copyright (C) 2010 Kevin L. Mitchell <klmitch@mit.edu>
  *
  * See file AUTHORS in IRC package for additional names of
  * the programmers.
@@ -20,7 +19,7 @@
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
  *
- * $Id: m_wallchops.c,v 1.9 2004/12/11 05:14:03 klmitch Exp $
+ * $Id$
  */
 
 /*
@@ -81,9 +80,7 @@
  */
 #include "config.h"
 
-#include "channel.h"
 #include "client.h"
-#include "hash.h"
 #include "ircd.h"
 #include "ircd_log.h"
 #include "ircd_reply.h"
@@ -91,84 +88,52 @@
 #include "msg.h"
 #include "numeric.h"
 #include "numnicks.h"
-#include "s_user.h"
+#include "s_auth.h"
 #include "send.h"
 
-/* #include <assert.h> -- Now using assert in ircd_log.h */
+#include <string.h>
 
 /*
- * m_wallchops - local generic message handler
+ * ms_xreply - extension message reply handler
+ *
+ * parv[0] = sender prefix
+ * parv[1] = target server numeric
+ * parv[2] = routing information
+ * parv[3] = extension message reply
  */
-int m_wallchops(struct Client* cptr, struct Client* sptr, int parc, char* parv[])
+int ms_xreply(struct Client* cptr, struct Client* sptr, int parc, char* parv[])
 {
-  struct Channel *chptr;
-  const char *ch;
+  struct Client* acptr;
+  const char* routing;
+  const char* reply;
 
-  assert(0 != cptr);
-  assert(cptr == sptr);
+  if (parc < 4) /* have enough parameters? */
+    return need_more_params(sptr, "XREPLY");
 
-  ClrFlag(sptr, FLAG_TS8);
+  routing = parv[2];
+  reply = parv[3];
 
-  if (parc < 2 || EmptyString(parv[1]))
-    return send_reply(sptr, ERR_NORECIPIENT, "WALLCHOPS");
+  /* Look up the target */
+  acptr = parv[1][2] ? findNUser(parv[1]) : FindNServer(parv[1]);
+  if (!acptr)
+    return send_reply(sptr, SND_EXPLICIT | ERR_NOSUCHSERVER,
+		      "* :Server has disconnected");
 
-  if (parc < 3 || EmptyString(parv[parc - 1]))
-    return send_reply(sptr, ERR_NOTEXTTOSEND);
-
-  if (IsChannelName(parv[1]) && (chptr = FindChannel(parv[1]))) {
-    if (client_can_send_to_channel(sptr, chptr, 0) && !(chptr->mode.mode & MODE_NONOTICE)) {
-      if ((chptr->mode.mode & MODE_NOPRIVMSGS) &&
-          check_target_limit(sptr, chptr, chptr->chname, 0))
-        return 0;
-
-      /* +cC checks */
-      if (chptr->mode.mode & MODE_NOCOLOUR)
-        for (ch=parv[parc - 1];*ch;ch++)
-          if (*ch==2 || *ch==3 || *ch==22 || *ch==27 || *ch==31) {
-            return 0;
-          }
-
-      if ((chptr->mode.mode & MODE_NOCTCP) && ircd_strncmp(parv[parc - 1],"\001ACTION ",8))
-        for (ch=parv[parc - 1];*ch;)
-          if (*ch++==1) {
-            return 0;
-          }
-
-      sendcmdto_channel_butone(sptr, CMD_WALLCHOPS, chptr, cptr,
-			       SKIP_DEAF | SKIP_BURST | SKIP_NONOPS,
-			       "%H :@ %s", chptr, parv[parc - 1]);
-      if (CapHas(cli_active(sptr), CAP_ECHOMESSAGE))
-        sendcmdto_one(sptr, CMD_NOTICE, cli_from(sptr), // Sending CMD_NOTICE since CMD_WALLCHOPS is translated into CMD_NOTICE in sendcmdto_channel_butone()
-                "@%H :@ %s", chptr, parv[parc - 1]);				   
-    }
-    else
-      send_reply(sptr, ERR_CANNOTSENDTOCHAN, parv[1]);
-  }
-  else
-    send_reply(sptr, ERR_NOSUCHCHANNEL, parv[1]);
-
-  return 0;
-}
-
-/*
- * ms_wallchops - server message handler
- */
-int ms_wallchops(struct Client* cptr, struct Client* sptr, int parc, char* parv[])
-{
-  struct Channel *chptr;
-  assert(0 != cptr);
-  assert(0 != sptr);
-
-  if (parc < 3 || !IsUser(sptr))
+  /* If it's not to us, forward the reply */
+  if (!IsMe(acptr)) {
+    sendcmdto_one(sptr, CMD_XREPLY, acptr, "%C %s :%s", acptr, routing,
+		  reply);
     return 0;
-
-  if (!IsLocalChannel(parv[1]) && (chptr = FindChannel(parv[1]))) {
-    if (client_can_send_to_channel(sptr, chptr, 0) && !(chptr->mode.mode & MODE_NONOTICE)) {
-      sendcmdto_channel_butone(sptr, CMD_WALLCHOPS, chptr, cptr,
-			       SKIP_DEAF | SKIP_BURST | SKIP_NONOPS,
-			       "%H :%s", chptr, parv[parc - 1]);
-    } else
-      send_reply(sptr, ERR_CANNOTSENDTOCHAN, parv[1]);
   }
+
+  /* OK, figure out where to route the message */
+  if (!ircd_strncmp("iauth:", routing, 6))
+    auth_send_xreply(sptr, routing + 6, reply);
+  else
+    /* If we don't know where to route it, log it and drop it */
+    log_write(LS_SYSTEM, L_NOTICE, 0, "Received unroutable extension reply "
+	      "from %#C to %#C routing %s; message: %s", sptr, acptr,
+	      routing, reply);
+
   return 0;
 }

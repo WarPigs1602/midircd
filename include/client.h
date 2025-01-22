@@ -397,6 +397,8 @@ struct Client {
 #define cli_wline(cli)          con_wline(cli_connect(cli))
 /** Get sentalong marker for client. */
 #define cli_sentalong(cli)      con_sentalong(cli_connect(cli))
+/** Get client account string. */
+#define cli_account(cli)	(cli_user(cli) ? cli_user(cli)->account : "0")
 
 /** Verify that a connection is valid. */
 #define con_verify(con)		((con)->con_magic == CONNECTION_MAGIC)

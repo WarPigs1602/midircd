@@ -47,12 +47,13 @@ typedef int (*bqcmp)(const void *, const void *);
 static struct capabilities {
   enum Capab cap;
   char *capstr;
+  unsigned int config;
   unsigned long flags;
   char *name;
   int namelen;
 } capab_list[] = {
-#define _CAP(cap, flags, name)						      \
-	{ CAP_ ## cap, #cap, (flags), (name), sizeof(name) - 1 }
+#define _CAP(cap, config, flags, name)      \
+	{ CAP_ ## cap, #cap, (config), (flags), (name), sizeof(name) - 1 }
   CAPLIST
 #undef _CAP
 };
@@ -145,10 +146,15 @@ send_caplist(struct Client *sptr, const struct CapSet *set,
   int i, loc, len, flags, pfx_len;
 
   /* set up the buffer for the final LS message... */
-  mb = msgq_make(sptr, "%:#C " MSG_CAP " %s :", &me, subcmd);
+  mb = msgq_make(sptr, "%:#C " MSG_CAP " %C %s :", &me, sptr, subcmd);
 
   for (i = 0, loc = 0; i < CAPAB_LIST_LEN; i++) {
     flags = capab_list[i].flags;
+
+    /* Check if the capability is enabled in features() */
+    if (!feature_bool(capab_list[i].config))
+      continue;
+
     /* This is a little bit subtle, but just involves applying de
      * Morgan's laws to the obvious check: We must display the
      * capability if (and only if) it is set in \a rem or \a set, or
@@ -175,7 +181,7 @@ send_caplist(struct Client *sptr, const struct CapSet *set,
 
     len = capab_list[i].namelen + pfx_len; /* how much we'd add... */
     if (msgq_bufleft(mb) < loc + len + 2) { /* would add too much; must flush */
-      sendcmdto_one(&me, CMD_CAP, sptr, "%s * :%s", subcmd, capbuf);
+      sendcmdto_one(&me, CMD_CAP, sptr, "%C %s * :%s", sptr, subcmd, capbuf);
       capbuf[(loc = 0)] = '\0'; /* re-terminate the buffer... */
     }
 
@@ -215,9 +221,10 @@ cap_req(struct Client *sptr, const char *caplist)
   memset(&rem, 0, sizeof(rem));
   while (cl) { /* walk through the capabilities list... */
     if (!(cap = find_cap(&cl, &neg)) /* look up capability... */
-	|| (!neg && (cap->flags & CAPFL_PROHIBIT)) /* is it prohibited? */
+        || !feature_bool(cap->config) /* is it deactivated in config? */
+        || (!neg && (cap->flags & CAPFL_PROHIBIT)) /* is it prohibited? */
         || (neg && (cap->flags & CAPFL_STICKY))) { /* is it sticky? */
-      sendcmdto_one(&me, CMD_CAP, sptr, "NAK :%s", caplist);
+      sendcmdto_one(&me, CMD_CAP, sptr, "%C NAK :%s", sptr, caplist);
       return 0; /* can't complete requested op... */
     }
 
@@ -260,10 +267,15 @@ cap_ack(struct Client *sptr, const char *caplist)
 	(neg ? HasCap(sptr, cap->cap) : !HasCap(sptr, cap->cap))) /* uh... */
       continue;
 
-    if (neg) /* set or clear the active capability... */
+    if (neg) { /* set or clear the active capability... */
+      if (cap->flags & CAPFL_STICKY)
+        continue; /* but don't clear sticky capabilities */
       CapClr(cli_active(sptr), cap->cap);
-    else
+    } else {
+      if (cap->flags & CAPFL_PROHIBIT)
+        continue; /* and don't set prohibited ones */
       CapSet(cli_active(sptr), cap->cap);
+    }
   }
 
   return 0;

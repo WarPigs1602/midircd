@@ -69,6 +69,21 @@ extern void sendcmdto_common_channels_butone(struct Client *from,
 					     struct Client *one,
 					     const char *pattern, ...);
 
+/* Send command to all channel users on this server matching or not matching a capability flag */
+void sendcmdto_capflag_channel_butserv_butone(struct Client *from, const char *cmd,
+					      const char *tok, struct Channel *to,
+					      struct Client *one, unsigned int skip,
+					      int require, int forbid, const char *pattern, ...);
+						  
+/* Send command to all channels user is on matching or not matching a capability flag */
+extern void sendcmdto_capflag_common_channels_butone(struct Client *from,
+						     const char *cmd,
+						     const char *tok,
+						     struct Client *one,
+						     int require,
+						     int forbid,
+						     const char *pattern, ...);
+							 
 /* Send command to all channel users on this server */
 extern void sendcmdto_channel_butserv_butone(struct Client *from,
 					     const char *cmd,

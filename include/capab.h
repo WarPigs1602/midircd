@@ -27,17 +27,26 @@
 #include "client.h"
 #endif
 
-#define CAPFL_HIDDEN	0x0001	/**< Do not advertize this capability */
-#define CAPFL_PROHIBIT	0x0002	/**< Client may not set this capability */
-#define CAPFL_PROTO	0x0004	/**< Cap must be acknowledged by client */
+#ifndef INCLUDED_ircd_features_h
+#include "ircd_features.h"
+#endif
+
+#define CAPFL_HIDDEN    0x0001	/**< Do not advertize this capability */
+#define CAPFL_PROHIBIT  0x0002	/**< Client may not set this capability */
+#define CAPFL_PROTO     0x0004	/**< Cap must be acknowledged by client */
 #define CAPFL_STICKY    0x0008  /**< Cap may not be cleared once set */
 
 #define CAPLIST	\
-	_CAP(USERPFX, 0, "undernet.org/userpfx")
+	_CAP(ACCOUNTNOTIFY, FEAT_CAP_ACCOUNTNOTIFY, 0, "account-notify"), \
+	_CAP(AWAYNOTIFY, FEAT_CAP_AWAYNOTIFY, 0 , "away-notify"), \
+	_CAP(CHGHOST, FEAT_CAP_CHGHOST, 0, "chghost"), \
+	_CAP(ECHOMESSAGE, FEAT_CAP_ECHOMESSAGE, 0, "echo-message"), \
+	_CAP(EXTJOIN, FEAT_CAP_EXTJOIN, 0, "extended-join"), \
+	_CAP(INVITENOTIFY, FEAT_CAP_INVITENOTIFY, 0, "invite-notify")
 
 /** Client capabilities */
 enum Capab {
-#define _CAP(cap, flags, name)	CAP_ ## cap
+#define _CAP(cap, config, flags, name)	CAP_ ## cap
   CAPLIST,
 #undef _CAP
   _CAP_LAST_CAP
