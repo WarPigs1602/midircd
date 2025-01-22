@@ -443,7 +443,7 @@ log_vwrite(enum LogSys subsys, enum LogLevel severity, unsigned int flags,
     vector[2].iov_len = 1;
 
     /* write it out to the log file */
-    writev(desc->file->fd, vector, 3);
+    if(writev(desc->file->fd, vector, 3));
   }
 
   /* oh yeah, syslog it too... */

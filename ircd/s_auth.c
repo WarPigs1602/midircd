@@ -52,6 +52,7 @@
 #include "list.h"
 #include "msg.h"	/* for MAXPARA */
 #include "numeric.h"
+#include "numnicks.h"
 #include "querycmds.h"
 #include "random.h"
 #include "res.h"

@@ -511,7 +511,7 @@ void add_connection(struct Listener* listener, int fd) {
     if (!IPcheck_local_connect(&addr.addr, &next_target))
     {
       ++ServerStats->is_ref;
-      write(fd, throttle_message, strlen(throttle_message));
+      if(write(fd, throttle_message, strlen(throttle_message)));
       close(fd);
       return;
     }
@@ -534,7 +534,7 @@ void add_connection(struct Listener* listener, int fd) {
   if (!socket_add(&(cli_socket(new_client)), client_sock_callback,
 		  (void*) cli_connect(new_client), SS_CONNECTED, 0, fd)) {
     ++ServerStats->is_ref;
-    write(fd, register_message, strlen(register_message));
+    if(write(fd, register_message, strlen(register_message)));
     close(fd);
     cli_fd(new_client) = -1;
     return;
