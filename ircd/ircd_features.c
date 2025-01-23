@@ -371,6 +371,9 @@ static struct FeatureDesc {
   F_B(CAP_EXTJOIN, 0, 1, 0),
   F_B(CAP_INVITENOTIFY, 0, 1, 0),
 
+  /* Spam protection */
+  F_B(ANTI_KNOCKER, 0, 0, 0),
+  
   /* HEAD_IN_SAND Features */
   F_B(HIS_SNOTICES, 0, 1, 0),
   F_B(HIS_SNOTICES_OPER_ONLY, 0, 1, 0),

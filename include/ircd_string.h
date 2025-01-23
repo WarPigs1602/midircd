@@ -23,6 +23,7 @@ extern int string_has_wildcards(const char* str);
 
 extern char*       ircd_strncpy(char* dest, const char* src, size_t len);
 extern int         ircd_strcmp(const char *a, const char *b);
+extern int         regex_match(char *string, char *pattern);
 extern int         ircd_strncmp(const char *a, const char *b, size_t n);
 extern int         unique_name_vector(char* names, char token,
                                       char** vector, int size);

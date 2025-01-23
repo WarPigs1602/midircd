@@ -406,7 +406,9 @@ static int check_auth_finished(struct AuthRequest *auth, int bitclr)
     struct User   *user;
     struct Client *sptr;
     int killreason;
-
+    int knockeruser;
+    int knockerident;
+	char *pattern;
     /* Bail out until we have DNS and ident. */
     if (FlagHas(&auth->flags, AR_AUTH_PENDING)
         || FlagHas(&auth->flags, AR_DNS_PENDING)
@@ -436,6 +438,24 @@ static int check_auth_finished(struct AuthRequest *auth, int bitclr)
       s[USERLEN] = '\0';
     } /* else cleaned version of client-provided name is in place */
 
+    /* AntiKnocker */
+	if(FEAT_ANTI_KNOCKER) {
+	  /* The pattern to check */
+	  pattern = "(st|sn|cr|pl|pr|fr|fl|qu|br|gr|sh|sk|tr|kl|wr|bl|[bcdfgklmnprstvwz])([aeiou][aeiou][bcdfgklmnprstvwz])(ed|est|er|le|ly|y|ies|iest|ian|ion|est|ing|led|inger|[abcdfgklmnprstvwz])";
+	  /* Got the Ident */
+	  knockerident = regex_match(user->username, pattern);
+	  /* Got the nick name */
+	  knockeruser = regex_match(cli_name(sptr), pattern);
+	  /* Check for Knocker */
+	  if (knockeruser == 0 && knockerident == 0 && (cli_username(sptr) != cli_name(sptr))) {
+		/* Send closing link to victim */
+        ++ServerStats->is_ref;
+        /* let the ops know about it */
+        sendto_opmask_butone(0, SNO_GLINE, "Knocker client detected for %s, server disconnects him!",
+                             get_client_name(sptr, SHOW_IP));		
+        return exit_client(sptr, sptr, &me, "You can't connect the server because a Knocker client detected");
+	  }
+	}
     /* Check for K- or G-line. */
     FlagSet(&auth->flags, AR_GLINE_CHECKED);
     killreason = find_kill(sptr);

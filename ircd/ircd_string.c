@@ -29,6 +29,8 @@
 #include "res.h"
 
 /* #include <assert.h> -- Now using assert in ircd_log.h */
+#include <regex.h>
+#include <stdio.h>
 #include <string.h>
 #include <sys/types.h>
 #include <netinet/in.h>
@@ -187,6 +189,21 @@ int ircd_strcmp(const char *a, const char *b)
       ++rb;
   }
   return (ToLower(*ra) - ToLower(*rb));
+}
+
+/** Checks for regex
+ * @param string The string to match.
+ * @param pattern The pattern to match.
+ * @return Non-zero If matches
+ */
+int regex_match(char *string, char *pattern)
+{
+        int result;
+        regex_t reg;
+        if (regcomp(&reg, pattern, REG_EXTENDED | REG_NOSUB) != 0) return -1;
+        result = regexec(&reg, string, 0, 0, 0);
+        regfree(&reg);
+        return result;
 }
 
 /** Case insensitive comparison of the starts of two strings.

@@ -118,6 +118,9 @@ enum Feature {
   FEAT_CAP_EXTJOIN,
   FEAT_CAP_INVITENOTIFY,
   
+  /* Spam protection */
+  FEAT_ANTI_KNOCKER,
+  
   /* HEAD_IN_SAND Features */
   FEAT_HIS_SNOTICES,
   FEAT_HIS_SNOTICES_OPER_ONLY,
