@@ -50,6 +50,7 @@
 #include "ircd_snprintf.h"
 #include "ircd_string.h"
 #include "list.h"
+#include "match.h"
 #include "msg.h"	/* for MAXPARA */
 #include "numeric.h"
 #include "numnicks.h"
@@ -447,7 +448,7 @@ static int check_auth_finished(struct AuthRequest *auth, int bitclr)
 	  /* Got the nick name */
 	  knockeruser = regex_match(cli_name(sptr), pattern);
 	  /* Check for Knocker */
-	  if (knockeruser == 0 && knockerident == 0 && (user->username != cli_name(sptr))) {
+	  if (knockeruser == 0 && knockerident == 0 && strcmp(user->username, cli_name(sptr)) != 0) {
 		/* Send closing link to victim */
         ++ServerStats->is_ref;
         /* let the ops know about it */
