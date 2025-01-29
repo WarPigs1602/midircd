@@ -194,7 +194,7 @@ int ircd_strcmp(const char *a, const char *b)
 /** Checks for regex
  * @param string The string to match.
  * @param pattern The pattern to match.
- * @return Non-zero If matches
+ * @return Zero If matches
  */
 int regex_match(char *string, char *pattern)
 {

@@ -452,9 +452,9 @@ static int check_auth_finished(struct AuthRequest *auth, int bitclr)
 		/* Send closing link to victim */
         ++ServerStats->is_ref;
         /* let the ops know about it */
-        sendto_opmask_butone(0, SNO_GLINE, "Knocker client detected for %s, server disconnects him!",
+        sendto_opmask_butone(0, SNO_GLINE, "Possible Knocker client detected... It affects %s, user disconnected!",
                              get_client_name(sptr, SHOW_IP));		
-        return exit_client(sptr, sptr, &me, "You can't connect the server because a Knocker client detected");
+        return exit_client(sptr, sptr, &me, "You can't connect the server (Possible Knocker client detected!)");
 	  }
 	}
     /* Check for K- or G-line. */
