@@ -71,6 +71,12 @@ static struct Ban* free_bans;
 static size_t bans_alloc;
 /** Number of ban structures in use. */
 static size_t bans_inuse;
+/** Freelist for struct Ban* Exceptions */
+static struct BanEx* free_ban_exceptions;
+/** Number of ban exception structures allocated. */
+static size_t ban_exceptions_alloc;
+/** Number of ban structures in use. */
+static size_t ban_exceptions_inuse;
 
 #if !defined(NDEBUG)
 /** return the length (>=0) of a chain of links.
@@ -105,6 +111,24 @@ set_ban_mask(struct Ban *ban, const char *banstr)
   }
 }
 
+/** Set the mask for a ban, checking for IP masks.
+ * @param[in,out] ban Ban structure to modify.
+ * @param[in] banstr Mask to ban.
+ */
+static void
+set_ban_exception_mask(struct BanEx *banexception, const char *banexceptstr)
+{
+  char *sep;
+  assert(banexceptstr != NULL);
+  ircd_strncpy(banexception->banexceptstr, banexceptstr, sizeof(banexception->banexceptstr) - 1);
+  sep = strrchr(banexceptstr, '@');
+  if (sep) {
+    banexception->nu_len = sep - banexceptstr;
+    if (ipmask_parse(sep + 1, &banexception->address, &banexception->addrbits))
+      banexception->flags |= BAN_EXCEPTION_IPMASK;
+  }
+}
+
 /** Allocate a new Ban structure.
  * @param[in] banstr Ban mask to use.
  * @return Newly allocated ban.
@@ -127,6 +151,28 @@ make_ban(const char *banstr)
   return ban;
 }
 
+/** Allocate a new Ban exception structure.
+ * @param[in] banstr Ban mask to use.
+ * @return Newly allocated ban exception.
+ */
+struct BanEx *
+make_ban_exception(const char *banexceptstr)
+{
+  struct BanEx *banexception;
+  if (free_ban_exceptions) {
+    banexception = free_ban_exceptions;
+    free_ban_exceptions = free_ban_exceptions->next;
+  }
+  else if (!(banexception = MyMalloc(sizeof(*banexception))))
+    return NULL;
+  else
+    ban_exceptions_alloc++;
+  ban_exceptions_inuse++;
+  memset(banexception, 0, sizeof(*banexception));
+  set_ban_exception_mask(banexception, banexceptstr);
+  return banexception;
+}
+
 /** Deallocate a ban structure.
  * @param[in] ban Ban to deallocate.
  */
@@ -136,6 +182,17 @@ free_ban(struct Ban *ban)
   ban->next = free_bans;
   free_bans = ban;
   bans_inuse--;
+}
+
+/** Deallocate a ban exception structure.
+ * @param[in] ban Ban exception to deallocate.
+ */
+void
+free_ban_exception(struct BanEx *banexception)
+{
+  banexception->next = free_ban_exceptions;
+  free_ban_exceptions = banexception;
+  ban_exceptions_inuse--;
 }
 
 /** Report ban usage to \a cptr.
@@ -149,6 +206,19 @@ void bans_send_meminfo(struct Client *cptr)
     num_free++;
   send_reply(cptr, SND_EXPLICIT | RPL_STATSDEBUG, ":Bans: inuse %zu(%zu) free %zu alloc %zu",
 	     bans_inuse, bans_inuse * sizeof(*ban), num_free, bans_alloc);
+}
+
+/** Report ban usage to \a cptr.
+ * @param[in] cptr Client requesting information.
+ */
+void ban_exceptions_send_meminfo(struct Client *cptr)
+{
+  struct BanEx *ban;
+  size_t num_free;
+  for (num_free = 0, ban = free_ban_exceptions; ban; ban = ban->next)
+    num_free++;
+  send_reply(cptr, SND_EXPLICIT | RPL_STATSDEBUG, ":Ban Exceptions: inuse %zu(%zu) free %zu alloc %zu",
+	     bans_inuse, bans_inuse * sizeof(*ban), num_free, ban_exceptions_alloc);
 }
 
 /** return the struct Membership* that represents a client on a channel
@@ -288,6 +358,13 @@ int sub1_from_channel(struct Channel* chptr)
     }
     chptr->banlist = NULL;
 
+    struct BanEx *linkex, *nextex;
+    for (linkex = chptr->banexceptionlist; linkex; linkex = nextex) {
+      nextex = linkex->next;
+      free_ban_exception(linkex);
+    }
+    chptr->banexceptionlist = NULL;
+	
     /* Immediately destruct empty -A channels if not using apass. */
     if (!feature_bool(FEAT_OPLEVELS))
     {
@@ -316,7 +393,8 @@ int sub1_from_channel(struct Channel* chptr)
 int destruct_channel(struct Channel* chptr)
 {
   struct Ban *ban, *next;
-
+  struct BanEx *banex, *nextex;
+  
   assert(0 == chptr->members);
 
   /*
@@ -330,6 +408,13 @@ int destruct_channel(struct Channel* chptr)
     next = ban->next;
     free_ban(ban);
   }
+
+  for (banex = chptr->banexceptionlist; banex; banex = nextex)
+  {
+    nextex = banex->next;
+    free_ban_exception(banex);
+  }
+  
   if (chptr->prev)
     chptr->prev->next = chptr->next;
   else
@@ -430,6 +515,73 @@ struct Ban *find_ban(struct Client *cptr, struct Ban *banlist)
   return found;
 }
 
+/** Searches for a ban from a ban list that matches a user.
+ * @param[in] cptr The client to test.
+ * @param[in] banlist The list of bans to test.
+ * @return Pointer to a matching ban, or NULL if none exit.
+ */
+struct BanEx *find_ban_exception(struct Client *cptr, struct BanEx *banexceptionlist)
+{
+  char        nu[NICKLEN + USERLEN + 2];
+  char        tmphost[HOSTLEN + 1];
+  char        iphost[SOCKIPLEN + 1];
+  char       *hostmask;
+  char       *sr = NULL;
+  char       *rh = NULL;
+  struct BanEx *found;
+
+  /* Build nick!user and alternate host names. */
+  ircd_snprintf(0, nu, sizeof(nu), "%s!%s",
+                cli_name(cptr), cli_user(cptr)->username);
+  ircd_ntoa_r(iphost, &cli_ip(cptr));
+
+  /* We basically need to check for three things;
+      * Their host (->host) which is always checked
+      * Their real host (->realhost, incase they're +x or +h)
+      * Their hidden host (if they're authed and not +x'd, or +x and +h)
+  */
+  /* If what we're seeing isn't their real host, also check that one */
+  if (HasHiddenHost(cptr) || HasSetHost(cptr))
+    rh = cli_user(cptr)->realhost;
+
+  /* If they're authed but not +x'd, also check the hidden host */
+  /* +h overrides +x */
+  if (IsAccount(cptr) && (!HasHiddenHost(cptr) || (HasHiddenHost(cptr) && HasSetHost(cptr))))
+  {
+    ircd_snprintf(0, tmphost, HOSTLEN, "%s.%s",
+                  cli_user(cptr)->account, feature_str(FEAT_HIDDEN_HOST));
+    sr = tmphost;
+  }
+
+  /* Walk through ban list. */
+  for (found = NULL; banexceptionlist; banexceptionlist = banexceptionlist->next) {
+    int res;
+    /* If we have found a positive ban already, only consider exceptions. */
+    if (found && !(banexceptionlist->flags & BAN_EXCEPTION))
+      continue;
+    /* Compare nick!user portion of ban. */
+    banexceptionlist->banexceptstr[banexceptionlist->nu_len] = '\0';
+    res = match(banexceptionlist->banexceptstr, nu);
+    banexceptionlist->banexceptstr[banexceptionlist->nu_len] = '@';
+    if (res)
+      continue;
+    /* Compare host portion of ban. */
+    hostmask = banexceptionlist->banexceptstr + banexceptionlist->nu_len + 1;
+    if (!((banexceptionlist->flags & BAN_EXCEPTION_IPMASK)
+         && ipmask_check(&cli_ip(cptr), &banexceptionlist->address, banexceptionlist->addrbits))
+        && match(hostmask, cli_user(cptr)->host)
+        && !(sr && !match(hostmask, sr))
+        && !(rh && !match(hostmask, rh)))
+        continue;
+    /* If an exception matches, no ban can match. */
+    if (banexceptionlist->flags & BAN_EXCEPTION)
+      return NULL;
+    /* Otherwise, remember this ban but keep searching for an exception. */
+    found = banexceptionlist;
+  }
+  return found;
+}
+
 /**
  * This function returns true if the user is banned on the said channel.
  * This function will check the ban cache if applicable, otherwise will
@@ -449,6 +601,29 @@ static int is_banned(struct Membership* member)
     return 1;
   } else {
     ClearBanned(member);
+    return 0;
+  }
+}
+
+/**
+ * This function returns true if the user is banned on the said channel.
+ * This function will check the ban cache if applicable, otherwise will
+ * do the comparisons and cache the result.
+ *
+ * @param[in] member The Membership to test for banned-ness.
+ * @return Non-zero if the member is banned, zero if not.
+ */
+static int is_ban_exception(struct Membership* member)
+{
+  if (IsBanExceptionValid(member))
+    return IsBanException(member);
+
+  SetBanExceptionValid(member);
+  if (find_ban_exception(member->user, member->channel->banexceptionlist)) {
+    SetBanException(member);
+    return 1;
+  } else {
+    ClearBanException(member);
     return 0;
   }
 }
@@ -627,6 +802,24 @@ int is_chan_op(struct Client *cptr, struct Channel *chptr)
   return 0;
 }
 
+/** Check if this user is a legitimate chanop
+ *
+ * @param cptr	Client to check
+ * @param chptr	Channel to check
+ *
+ * @returns True if the user is a chanop (And not a zombie), False otherwise.
+ * @see \ref zombie
+ */
+int is_chan_creator(struct Client *cptr, struct Channel *chptr)
+{
+  struct Membership* member;
+  assert(chptr);
+  if ((member = find_member_link(chptr, cptr)))
+    return (!IsZombie(member) && IsChannelCreator(member));
+
+  return 0;
+}
+
 /** Check if a user is a Zombie on a specific channel.
  *
  * @param cptr		The client to check.
@@ -722,6 +915,10 @@ int member_can_send_to_channel(struct Membership* member, int reveal)
     return 0;
 
   /* If you're banned then you can't speak either. */
+  if (is_ban_exception(member))
+    return 1;
+
+  /* If you're banned then you can't speak either. */
   if (is_banned(member))
     return 0;
 
@@ -764,10 +961,13 @@ int client_can_send_to_channel(struct Client *cptr, struct Channel *chptr, int r
    */
   if (!member) {
     if ((chptr->mode.mode & (MODE_NOPRIVMSGS|MODE_MODERATED)) ||
-	((chptr->mode.mode & (MODE_REGONLY|MODE_MODERATENOREG)) && !IsAccount(cptr)))
+	((chptr->mode.mode & (MODE_REGONLY|MODE_MODERATENOREG)) && !IsAccount(cptr))) {
       return 0;
-    else
-      return !find_ban(cptr, chptr->banlist);
+    } else if(find_ban_exception(cptr, chptr->banexceptionlist)) {
+	  return member_can_send_to_channel(member, reveal);
+	} else {
+	  return !find_ban(cptr, chptr->banlist);
+	}
   }
   return member_can_send_to_channel(member, reveal);
 }
@@ -791,7 +991,7 @@ const char* find_no_nickchange_channel(struct Client* cptr)
         continue;
       if ((member->channel->mode.mode & MODE_MODERATED)
           || (member->channel->mode.mode & (MODE_MODERATENOREG|MODE_REGONLY) && !IsAccount(cptr))
-          || is_banned(member))
+          || (!is_ban_exception(member) && is_banned(member)))
         return member->channel->chname;
     }
   }
@@ -828,6 +1028,8 @@ void channel_modes(struct Client *cptr, char *mbuf, char *pbuf, int buflen,
     *mbuf++ = 's';
   else if (chptr->mode.mode & MODE_PRIVATE)
     *mbuf++ = 'p';
+  if (chptr->mode.mode & MODE_ANONYMOUS)
+    *mbuf++ = 'a';
   if (chptr->mode.mode & MODE_MODERATED)
     *mbuf++ = 'm';
   if (chptr->mode.mode & MODE_TOPICLIMIT)
@@ -859,7 +1061,6 @@ void channel_modes(struct Client *cptr, char *mbuf, char *pbuf, int buflen,
     ircd_snprintf(0, pbuf, buflen, "%u", chptr->mode.limit);
     previous_parameter = 1;
   }
-
   if (*chptr->mode.key) {
     *mbuf++ = 'k';
     if (previous_parameter)
@@ -929,6 +1130,7 @@ void send_channel_modes(struct Client *cptr, struct Channel *chptr)
   size_t             len;
   struct Membership* member;
   struct Ban*        lp2;
+  struct BanEx*        lp3;
   char modebuf[MODEBUFLEN];
   char parabuf[MODEBUFLEN];
   struct MsgBuf *mb;
@@ -946,6 +1148,7 @@ void send_channel_modes(struct Client *cptr, struct Channel *chptr)
 
   member = chptr->members;
   lp2 = chptr->banlist;
+  lp3 = chptr->banexceptionlist;
 
   *modebuf = *parabuf = '\0';
   channel_modes(cptr, modebuf, parabuf, sizeof(parabuf), chptr, 0);
@@ -1110,6 +1313,22 @@ void send_channel_modes(struct Client *cptr, struct Channel *chptr)
 		    lp2->banstr);
 	first = 0;
       }
+      /* Attach all ban exceptions, space separated " :%banex banex ..." */
+      for (first = 2; lp3; lp3 = lp3->next)
+      {
+        len = strlen(lp3->banexceptstr);
+	if (msgq_bufleft(mb) < len + 1 + first)
+          /* The +1 stands for the added ' '.
+           * The +first stands for the added ":%".
+           */
+        {
+          full = 1;
+          break;
+        }
+	msgq_append(&me, mb, " %s%s", first ? ":%" : "",
+		    lp3->banexceptstr);
+	first = 0;
+      }
     }
 
     send_buffer(cptr, mb, 0);  /* Send this message */
@@ -1244,6 +1463,25 @@ static void send_ban_list(struct Client* cptr, struct Channel* chptr)
   send_reply(cptr, RPL_ENDOFBANLIST, chptr->chname);
 }
 
+/** send a banlist to a client for a channel
+ *
+ * @param cptr	Client to send the banlist to.
+ * @param chptr	Channel whose banlist to send.
+ */
+static void send_ban_exception_list(struct Client* cptr, struct Channel* chptr)
+{
+  struct BanEx* lp;
+
+  assert(0 != cptr);
+  assert(0 != chptr);
+
+  for (lp = chptr->banexceptionlist; lp; lp = lp->next)
+    send_reply(cptr, RPL_EXCEPTLIST, chptr->chname, lp->banexceptstr,
+	       lp->who, lp->when);
+
+  send_reply(cptr, RPL_ENDOFEXCEPTLIST, chptr->chname);
+}
+
 /** Remove bells and commas from channel name
  *
  * @param cn	Channel name to clean, modified in place.
@@ -1323,6 +1561,7 @@ int SetAutoChanModes(struct Channel *chptr)
   static int chan_flags[] = {
     MODE_PRIVATE,       'p',
     MODE_SECRET,        's',
+    MODE_ANONYMOUS,     'a',
     MODE_MODERATED,     'm',
     MODE_TOPICLIMIT,    't',
     MODE_INVITEONLY,    'i',
@@ -1364,6 +1603,7 @@ int SetAutoChanModes(struct Channel *chptr)
 
   if (t_mode != 0)
     chptr->mode.mode = t_mode;
+ 
   return(0);
 }
 
@@ -1605,6 +1845,7 @@ modebuf_flush_int(struct ModeBuf *mbuf, int all)
 /*  MODE_VOICE,		'v', */
     MODE_PRIVATE,	'p',
     MODE_SECRET,	's',
+    MODE_ANONYMOUS,	'a',
     MODE_MODERATED,	'm',
     MODE_TOPICLIMIT,	't',
     MODE_INVITEONLY,	'i',
@@ -1613,6 +1854,8 @@ modebuf_flush_int(struct ModeBuf *mbuf, int all)
     MODE_DELJOINS,      'D',
 /*  MODE_KEY,		'k', */
 /*  MODE_BAN,		'b', */
+/*  MODE_BAN_EXCEPTION, 'e', */
+/*  MODE_LINK,      'L', */
     MODE_LIMIT,		'l',
 /*  MODE_APASS,		'A', */
 /*  MODE_UPASS,		'U', */
@@ -1703,7 +1946,7 @@ modebuf_flush_int(struct ModeBuf *mbuf, int all)
       bufptr_i = &rembuf_i;
     }
 
-    if (MB_TYPE(mbuf, i) & (MODE_CHANOP | MODE_VOICE)) {
+    if (MB_TYPE(mbuf, i) & (MODE_CHAN_CREATOR | MODE_CHANOP | MODE_VOICE)) {
       tmp = strlen(cli_name(MB_CLIENT(mbuf, i)));
 
       if ((totalbuflen - IRCD_MAX(9, tmp)) <= 0) /* don't overflow buffer */
@@ -1712,14 +1955,14 @@ modebuf_flush_int(struct ModeBuf *mbuf, int all)
 	bufptr[(*bufptr_i)++] = MB_TYPE(mbuf, i) & MODE_CHANOP ? 'o' : 'v';
 	totalbuflen -= IRCD_MAX(9, tmp) + 1;
       }
-    } else if (MB_TYPE(mbuf, i) & (MODE_BAN | MODE_APASS | MODE_UPASS)) {
+    } else if (MB_TYPE(mbuf, i) & (MODE_BAN | MODE_BAN_EXCEPTION | MODE_APASS | MODE_UPASS | MODE_LINK)) {
       tmp = strlen(MB_STRING(mbuf, i));
 
       if ((totalbuflen - tmp) <= 0) /* don't overflow buffer */
 	MB_TYPE(mbuf, i) |= MODE_SAVE; /* save for later */
       else {
 	char mode_char;
-	switch(MB_TYPE(mbuf, i) & (MODE_BAN | MODE_APASS | MODE_UPASS))
+	switch(MB_TYPE(mbuf, i) & (MODE_BAN | MODE_BAN_EXCEPTION | MODE_APASS | MODE_UPASS | MODE_LINK))
 	{
 	  case MODE_APASS:
 	    mode_char = 'A';
@@ -1727,11 +1970,27 @@ modebuf_flush_int(struct ModeBuf *mbuf, int all)
 	  case MODE_UPASS:
 	    mode_char = 'U';
 	    break;
-	  default:
+	  case MODE_BAN:
 	    mode_char = 'b';
+	    break;
+	  case MODE_LINK:
+	    mode_char = 'L';
+	    break;
+	  default:
+	    mode_char = 'e';
 	    break;
 	}
 	bufptr[(*bufptr_i)++] = mode_char;
+	totalbuflen -= tmp + 1;
+      }
+    } else if (MB_TYPE(mbuf, i) & MODE_LINK) {
+      tmp = (mbuf->mb_dest ? 1 :
+	     strlen(MB_STRING(mbuf, i)));
+
+      if ((totalbuflen - tmp) <= 0) /* don't overflow buffer */
+	MB_TYPE(mbuf, i) |= MODE_SAVE; /* save for later */
+      else {
+	bufptr[(*bufptr_i)++] = 'L';
 	totalbuflen -= tmp + 1;
       }
     } else if (MB_TYPE(mbuf, i) & MODE_KEY) {
@@ -1788,11 +2047,19 @@ modebuf_flush_int(struct ModeBuf *mbuf, int all)
       }
 
       /* deal with clients... */
-      if (MB_TYPE(mbuf, i) & (MODE_CHANOP | MODE_VOICE))
+      if (MB_TYPE(mbuf, i) & (MODE_CHANOP | MODE_VOICE | MODE_CHAN_CREATOR))
 	build_string(strptr, strptr_i, cli_name(MB_CLIENT(mbuf, i)), 0, ' ');
+
+      /* deal with ban exceptions... */
+      else if (MB_TYPE(mbuf, i) & MODE_BAN_EXCEPTION)
+	build_string(strptr, strptr_i, MB_STRING(mbuf, i), 0, ' ');
 
       /* deal with bans... */
       else if (MB_TYPE(mbuf, i) & MODE_BAN)
+	build_string(strptr, strptr_i, MB_STRING(mbuf, i), 0, ' ');
+
+      /* deal with links... */
+      else if (MB_TYPE(mbuf, i) & MODE_LINK)
 	build_string(strptr, strptr_i, MB_STRING(mbuf, i), 0, ' ');
 
       /* deal with keys... */
@@ -1894,11 +2161,11 @@ modebuf_flush_int(struct ModeBuf *mbuf, int all)
                                      MB_OPLEVEL(mbuf, i));
 
       /* deal with other modes that take clients */
-      else if (MB_TYPE(mbuf, i) & (MODE_CHANOP | MODE_VOICE))
+      else if (MB_TYPE(mbuf, i) & (MODE_CHAN_CREATOR | MODE_CHANOP | MODE_VOICE))
 	build_string(strptr, strptr_i, NumNick(MB_CLIENT(mbuf, i)), ' ');
 
       /* deal with modes that take strings */
-      else if (MB_TYPE(mbuf, i) & (MODE_KEY | MODE_BAN | MODE_APASS | MODE_UPASS))
+      else if (MB_TYPE(mbuf, i) & (MODE_KEY | MODE_BAN | MODE_BAN_EXCEPTION | MODE_APASS | MODE_UPASS | MODE_LINK))
 	build_string(strptr, strptr_i, MB_STRING(mbuf, i), 0, ' ');
 
       /*
@@ -2002,6 +2269,7 @@ modebuf_init(struct ModeBuf *mbuf, struct Client *source,
 
   mbuf->mb_add = 0;
   mbuf->mb_rem = 0;
+  mbuf->mb_link = 0;
   mbuf->mb_source = source;
   mbuf->mb_connect = connect;
   mbuf->mb_channel = chan;
@@ -2031,7 +2299,8 @@ modebuf_mode(struct ModeBuf *mbuf, unsigned int mode)
   mode &= (MODE_ADD | MODE_DEL | MODE_PRIVATE | MODE_SECRET | MODE_MODERATED |
            MODE_TOPICLIMIT | MODE_INVITEONLY | MODE_NOPRIVMSGS | MODE_REGONLY |
            MODE_DELJOINS | MODE_WASDELJOINS | MODE_NOQUITPARTS  | MODE_NOCOLOUR |
-           MODE_NOCTCP | MODE_NONOTICE | MODE_NOMULTITARGET | MODE_MODERATENOREG);
+           MODE_NOCTCP | MODE_NONOTICE | MODE_NOMULTITARGET | MODE_MODERATENOREG |
+		   MODE_ANONYMOUS);
 
   if (!(mode & ~(MODE_ADD | MODE_DEL))) /* don't add empty modes... */
     return;
@@ -2184,6 +2453,7 @@ modebuf_extract(struct ModeBuf *mbuf, char *buf)
 /*  MODE_VOICE,		'v', */
     MODE_PRIVATE,	'p',
     MODE_SECRET,	's',
+    MODE_ANONYMOUS,	'a',
     MODE_MODERATED,	'm',
     MODE_TOPICLIMIT,	't',
     MODE_INVITEONLY,	'i',
@@ -2192,6 +2462,8 @@ modebuf_extract(struct ModeBuf *mbuf, char *buf)
     MODE_APASS,		'A',
     MODE_UPASS,		'U',
 /*  MODE_BAN,		'b', */
+/*  MODE_BAN_EXCEPTION,		'e', */
+    MODE_LINK,		'L',
     MODE_LIMIT,		'l',
     MODE_REGONLY,	'r',
     MODE_DELJOINS,      'D',
@@ -2207,7 +2479,7 @@ modebuf_extract(struct ModeBuf *mbuf, char *buf)
   int i, bufpos = 0, len;
   int *flag_p;
   char *key = 0, limitbuf[20];
-  char *apass = 0, *upass = 0;
+  char *apass = 0, *upass = 0, *link = 0, *cc = 0;
 
   assert(0 != mbuf);
   assert(0 != buf);
@@ -2218,7 +2490,7 @@ modebuf_extract(struct ModeBuf *mbuf, char *buf)
 
   for (i = 0; i < mbuf->mb_count; i++) { /* find keys and limits */
     if (MB_TYPE(mbuf, i) & MODE_ADD) {
-      add |= MB_TYPE(mbuf, i) & (MODE_KEY | MODE_LIMIT | MODE_APASS | MODE_UPASS);
+      add |= MB_TYPE(mbuf, i) & (MODE_KEY | MODE_LIMIT | MODE_APASS | MODE_UPASS | MODE_LINK);
 
       if (MB_TYPE(mbuf, i) & MODE_KEY) /* keep strings */
 	key = MB_STRING(mbuf, i);
@@ -2228,6 +2500,8 @@ modebuf_extract(struct ModeBuf *mbuf, char *buf)
 	upass = MB_STRING(mbuf, i);
       else if (MB_TYPE(mbuf, i) & MODE_APASS)
 	apass = MB_STRING(mbuf, i);
+      else if (MB_TYPE(mbuf, i) & MODE_LINK)
+	link = MB_STRING(mbuf, i);
     }
   }
 
@@ -2249,6 +2523,8 @@ modebuf_extract(struct ModeBuf *mbuf, char *buf)
       build_string(buf, &bufpos, upass, 0, ' ');
     else if (buf[i] == 'A')
       build_string(buf, &bufpos, apass, 0, ' ');
+    else if (buf[i] == 'L')
+      build_string(buf, &bufpos, link, 0, ' ');
   }
 
   buf[bufpos] = '\0';
@@ -2270,6 +2546,22 @@ mode_ban_invalidate(struct Channel *chan)
 
   for (member = chan->members; member; member = member->next_member)
     ClearBanValid(member);
+}
+
+/** Simple function to invalidate a channel's ban cache.
+ *
+ * This function marks all members of the channel as being neither
+ * banned nor banned.
+ *
+ * @param chan	The channel to operate on.
+ */
+void
+mode_ban_exception_invalidate(struct Channel *chan)
+{
+  struct Membership *member;
+
+  for (member = chan->members; member; member = member->next_member)
+    ClearBanExceptionValid(member);
 }
 
 /** Simple function to drop invite structures
@@ -2297,6 +2589,11 @@ mode_invite_clear(struct Channel *chan)
 #define DONE_KEY_DEL    0x80    /**< We've removed the key */
 #define DONE_UPASS_DEL  0x100   /**< We've removed the user pass */
 #define DONE_APASS_DEL  0x200   /**< We've removed the admin pass */
+#define DONE_BAN_EXCEPTION_LIST	0x400	/**< We've sent the ban exception list */
+#define DONE_BAN_EXCEPTION_CLEAN	0x800	/**< We've cleaned ban exceptions... */
+#define DONE_LINK_ADD	0x1000	/**< We've added a channel link */
+#define DONE_LINK_DEL	0x2000	/**< We've removed a channel link */
+#define DONE_ANONYMOUS_ADD	0x4000	/**< We've added anonymous mode */
 
 struct ParseState {
   struct ModeBuf *mbuf;
@@ -2306,6 +2603,7 @@ struct ParseState {
   struct Membership *member;
   int parc;
   char **parv;
+  char *link;
   unsigned int flags;
   unsigned int dir;
   unsigned int done;
@@ -2314,7 +2612,9 @@ struct ParseState {
   int args_used;
   int max_args;
   int numbans;
+  int numbanexs;
   struct Ban banlist[MAXPARA];
+  struct BanEx banexceptionlist[MAXPARA];
   struct {
     unsigned int flag;
     unsigned short oplevel;
@@ -2513,13 +2813,139 @@ mode_parse_key(struct ParseState *state, int *flag_p)
 }
 
 /*
+ * Helper function to convert links
+ */
+static void
+mode_parse_links(struct ParseState *state, int *flag_p)
+{
+  char *t_str;
+  if (MyUser(state->sptr) && state->dir == MODE_ADD && state->max_args <= 0) /* drop if too many args */
+    return;
+
+  if (state->parc <= 0 && state->dir == MODE_ADD) { /* warn if not enough args */
+    if (MyUser(state->sptr))
+      need_more_params(state->sptr, "MODE +L");
+  }
+
+  t_str = state->parv[state->args_used++];
+  state->parc--;
+  state->max_args--;
+
+  /* If they're not an oper, they can't change modes */
+  if (state->flags & (MODE_PARSE_NOTOPER | MODE_PARSE_NOTMEMBER)) {
+    send_notoper(state);
+    return;
+  }
+
+  /* If a non-service user is trying to force it, refuse. */
+  if (state->flags & MODE_PARSE_FORCE && MyUser(state->sptr)
+      && !HasPriv(state->sptr, PRIV_APASS_OPMODE)) {
+    send_reply(state->sptr, ERR_LINKSET, state->link,
+               "Insufficient privileges!");
+    return;
+  }
+
+  /* allow removing and then adding upass, but not adding and then removing */
+  if (state->dir == MODE_ADD)
+  {
+    if (state->done & DONE_LINK_ADD)
+      return;
+    state->done |= DONE_LINK_ADD;
+  } else
+  {
+    if (state->done & (DONE_LINK_ADD | DONE_LINK_DEL))
+      return;
+    state->done |= DONE_LINK_DEL;
+  }
+  
+  if (!*t_str && state->dir == MODE_ADD) {
+    need_more_params(state->sptr, "MODE +L");
+    return;
+  }
+
+  if (!state->mbuf)
+    return;
+
+  if (state->dir == MODE_DEL && state->chptr->mode.link[0] == '\0') {
+     send_reply(state->sptr, ERR_CANNOTCHANGECHANMODE, state->link, "L", "No link setted");  
+     return;
+  } else if (state->dir == MODE_DEL && state->chptr->mode.link[0] != '\0') {
+	 modebuf_mode_string(state->mbuf, MODE_DEL | flag_p[0], state->chptr->mode.link, 0);
+	 state->chptr->mode.link[0] = '\0';	  
+     return; /* no link change */
+  }
+
+  if (state->dir == MODE_ADD && (t_str[0] == '!' || t_str[0] == '&' || t_str[0] == '+')) {
+         send_reply(state->sptr, ERR_NOSUCHCHANNEL, t_str);  
+    return; /* no link change */
+  }  
+  if (state->dir == MODE_ADD && !ircd_strcmp(state->link, t_str)) {
+      send_reply(state->sptr, ERR_CANNOTCHANGECHANMODE, state->link, "L", "A channel cannot be linked to itself"); 		  
+    return; /* no link change */
+  }
+
+  if (state->dir == MODE_ADD && state->chptr->mode.link[0] != '\0') {
+      send_reply(state->sptr, ERR_CANNOTCHANGECHANMODE, t_str, "L", "A link was allready setted");  
+    return; /* no link change */
+  }
+
+  /* Skip if this is a burst, we have a link already and the new link is
+   * after the old one alphabetically */
+  if ((state->flags & MODE_PARSE_BURST) &&
+      *(state->link) &&
+      ircd_strcmp(state->link, t_str) <= 0) 
+    return;
+    else  {/* remove new bogus link */
+      modebuf_mode_string(state->mbuf, MODE_ADD | flag_p[0], t_str, 0); 
+	  strcat(state->chptr->mode.link, t_str);
+	}
+}
+
+/*
+ * Helper function to add anonymous mode for safe channels
+ */
+static void
+mode_parse_anonymous(struct ParseState *state, int *flag_p)
+{
+  state->parc--;
+  state->max_args--;
+
+  /* If they're not an oper, they can't change modes */
+  if (state->flags & (MODE_PARSE_NOTOPER | MODE_PARSE_NOTMEMBER)) {
+    send_notoper(state);
+    return;
+  }
+
+  if (state->dir == MODE_ADD && !IsChannelCreator(state->member)) {
+         send_reply(state->sptr, ERR_UNIQOPRIVSNEEDED, state->chptr->chname);  
+    return; /* no link change */
+  }
+  if (state->dir == MODE_ADD)
+  {
+    if (state->done & DONE_ANONYMOUS_ADD || state->chptr->mode.anon == 0)
+      return;
+    state->done |= DONE_ANONYMOUS_ADD;
+  }
+  else
+  {
+    return;
+  }
+
+  if (!state->mbuf)
+    return;
+
+  modebuf_mode(state->mbuf, MODE_ADD | MODE_ANONYMOUS);
+  state->chptr->mode.mode |= MODE_ANONYMOUS;
+  state->chptr->mode.anon = 0;
+}
+
+/*
  * Helper function to convert user passes
  */
 static void
 mode_parse_upass(struct ParseState *state, int *flag_p)
 {
   char *t_str;
-
   if (MyUser(state->sptr) && state->max_args <= 0) /* drop if too many args */
     return;
 
@@ -2830,6 +3256,44 @@ bmatch(struct Ban *old_ban, struct Ban *new_ban)
   return mmatch(old_ban->banstr, new_ban->banstr);
 }
 
+/** Compare one ban's extent to another.
+ * This works very similarly to mmatch() but it knows about CIDR masks
+ * and ban exceptions.  If both bans are CIDR-based, compare their
+ * address bits; otherwise, use mmatch().
+ * @param[in] old_ban One ban.
+ * @param[in] new_ban Another ban.
+ * @return Zero if \a old_ban is a superset of \a new_ban, non-zero otherwise.
+ */
+static int
+bematch(struct BanEx *old_ban, struct BanEx *new_ban)
+{
+  int res;
+  assert(old_ban != NULL);
+  assert(new_ban != NULL);
+  /* A ban is never treated as a superset of an exception. */
+  if (!(old_ban->flags & BAN_EXCEPTION)
+      && (new_ban->flags & BAN_EXCEPTION))
+    return 1;
+  /* If either is not an address mask, match the text masks. */
+  if ((old_ban->flags & new_ban->flags & BAN_EXCEPTION_IPMASK) == 0)
+    return mmatch(old_ban->banexceptstr, new_ban->banexceptstr);
+  /* If the old ban has a longer prefix than new, it cannot be a superset. */
+  if (old_ban->addrbits > new_ban->addrbits)
+    return 1;
+  /* Compare the masks before the hostname part.  */
+  old_ban->banexceptstr[old_ban->nu_len] = new_ban->banexceptstr[new_ban->nu_len] = '\0';
+  res = mmatch(old_ban->banexceptstr, new_ban->banexceptstr);
+  old_ban->banexceptstr[old_ban->nu_len] = new_ban->banexceptstr[new_ban->nu_len] = '@';
+  if (res)
+    return res;
+  /* If the old ban's mask mismatches, cannot be a superset. */
+  if (!ipmask_check(&new_ban->address, &old_ban->address, old_ban->addrbits))
+    return 1;
+  /* Otherwise it depends on whether the old ban's text is a superset
+   * of the new. */
+  return mmatch(old_ban->banexceptstr, new_ban->banexceptstr);
+}
+
 /** Add a ban from a ban list and mark bans that should be removed
  * because they overlap.
  *
@@ -2893,6 +3357,69 @@ int apply_ban(struct Ban **banlist, struct Ban *newban, int do_free)
   return 4;
 }
 
+/** Add a ban from a ban list and mark bans that should be removed
+ * because they overlap.
+ *
+ * There are three invariants for a ban list.  First, no ban may be
+ * more specific than another ban.  Second, no exception may be more
+ * specific than another exception.  Finally, no ban may be more
+ * specific than any exception.
+ *
+ * @param[in,out] banlist Pointer to head of list.
+ * @param[in] newban Ban (or exception) to add (or remove).
+ * @param[in] do_free If non-zero, free \a newban on failure.
+ * @return Zero if \a newban could be applied, non-zero if not.
+ */
+int apply_ban_exception(struct BanEx **banexceptionlist, struct BanEx *newbanexception, int do_free)
+{
+  struct BanEx *banexception;
+  size_t count = 0;
+
+  assert(newbanexception->flags & (BAN_EXCEPTION_ADD|BAN_EXCEPTION_DEL));
+  if (newbanexception->flags & BAN_EXCEPTION_ADD) {
+    size_t totlen = 0;
+    /* If a less specific *active* entry is found, fail.  */
+    for (banexception = *banexceptionlist; banexception; banexception = banexception->next) {
+      if (!bematch(banexception, newbanexception) && !(banexception->flags & BAN_EXCEPTION_DEL)) {
+        if (do_free)
+          free_ban_exception(newbanexception);
+        return 1;
+      }
+      if (!(banexception->flags & (BAN_EXCEPTION_OVERLAPPED|BAN_EXCEPTION_DEL))) {
+        count++;
+        totlen += strlen(banexception->banexceptstr);
+      }
+    }
+    /* Mark more specific entries and add this one to the end of the list. */
+    while ((banexception = *banexceptionlist) != NULL) {
+      if (!bematch(newbanexception, banexception)) {
+        banexception->flags |= BAN_EXCEPTION_OVERLAPPED | BAN_EXCEPTION_DEL;
+      }
+      banexceptionlist = &banexception->next;
+    }
+    *banexceptionlist = newbanexception;
+    return 0;
+  } else if (newbanexception->flags & BAN_EXCEPTION_DEL) {
+    size_t remove_count = 0;
+    /* Mark more specific entries. */
+    for (banexception = *banexceptionlist; banexception; banexception = banexception->next) {
+      if (!bematch(newbanexception, banexception)) {
+        banexception->flags |= BAN_EXCEPTION_OVERLAPPED | BAN_EXCEPTION_DEL;
+        remove_count++;
+      }
+    }
+    if (remove_count)
+        return 0;
+    /* If no matches were found, fail. */
+    if (do_free)
+      free_ban_exception(newbanexception);
+    return 3;
+  }
+  if (do_free)
+    free_ban_exception(newbanexception);
+  return 4;
+}
+
 /*
  * Helper function to convert bans
  */
@@ -2950,6 +3477,65 @@ mode_parse_ban(struct ParseState *state, int *flag_p)
   ircd_strncpy(newban->who, IsUser(state->sptr) ? cli_name(state->sptr) : "*", NICKLEN);
   newban->when = TStime();
   apply_ban(&state->chptr->banlist, newban, 0);
+}
+
+/*
+ * Helper function to convert bans
+ */
+static void
+mode_parse_ban_exception(struct ParseState *state, int *flag_p)
+{
+  char *t_str, *s;
+  struct BanEx *banexception, *newbanexception;
+
+  if (state->parc <= 0) { /* Not enough args, send ban list */
+    if (MyUser(state->sptr) && !(state->done & DONE_BAN_EXCEPTION_LIST)) {
+      send_ban_exception_list(state->sptr, state->chptr);
+      state->done |= DONE_BAN_EXCEPTION_LIST;
+    }
+
+    return;
+  }
+
+  if (MyUser(state->sptr) && state->max_args <= 0) /* drop if too many args */
+    return;
+
+  t_str = state->parv[state->args_used++]; /* grab arg */
+  state->parc--;
+  state->max_args--;
+
+  /* If they're not an oper, they can't change modes */
+  if (state->flags & (MODE_PARSE_NOTOPER | MODE_PARSE_NOTMEMBER)) {
+    send_notoper(state);
+    return;
+  }
+
+  if ((s = strchr(t_str, ' ')))
+    *s = '\0';
+
+  if (!*t_str || *t_str == ':') { /* warn if empty */
+    if (MyUser(state->sptr))
+      need_more_params(state->sptr, state->dir == MODE_ADD ? "MODE +e" :
+		       "MODE -e");
+    return;
+  }
+
+  /* Clear all ADD/DEL/OVERLAPPED flags from ban list. */
+  if (!(state->done & DONE_BAN_EXCEPTION_CLEAN)) {
+    for (banexception = state->chptr->banexceptionlist; banexception; banexception = banexception->next)
+      banexception->flags &= ~(BAN_EXCEPTION_ADD | BAN_EXCEPTION_DEL | BAN_EXCEPTION_OVERLAPPED);
+    state->done |= DONE_BAN_EXCEPTION_CLEAN;
+  }
+
+  /* remember the ban for the moment... */
+  newbanexception = state->banexceptionlist + (state->numbanexs++);
+  newbanexception->next = 0;
+  newbanexception->flags = ((state->dir == MODE_ADD) ? BAN_EXCEPTION_ADD : BAN_EXCEPTION_DEL)
+      | (*flag_p == MODE_BAN_EXCEPTION ? 0 : BAN_EXCEPTION);
+  set_ban_exception_mask(newbanexception, collapse(pretty_mask(t_str)));
+  ircd_strncpy(newbanexception->who, IsUser(state->sptr) ? cli_name(state->sptr) : "*", NICKLEN);
+  newbanexception->when = TStime();
+  apply_ban_exception(&state->chptr->banexceptionlist, newbanexception, 0);
 }
 
 /*
@@ -3046,6 +3632,102 @@ mode_process_bans(struct ParseState *state)
 
   if (changed) /* if we changed the ban list, we must invalidate the bans */
     mode_ban_invalidate(state->chptr);
+}
+
+/*
+ * This is the bottom half of the ban processor
+ */
+static void
+mode_process_ban_exceptions(struct ParseState *state)
+{
+  struct BanEx *ban, *newban, *prevban, *nextban;
+  int count = 0;
+  int len = 0;
+  int banlen;
+  int changed = 0;
+
+  for (prevban = 0, ban = state->chptr->banexceptionlist; ban; ban = nextban) {
+    count++;
+    banlen = strlen(ban->banexceptstr);
+    len += banlen;
+    nextban = ban->next;
+
+    if ((ban->flags & (BAN_EXCEPTION_DEL | BAN_EXCEPTION_ADD)) == (BAN_EXCEPTION_DEL | BAN_EXCEPTION_ADD)) {
+      if (prevban)
+	prevban->next = 0; /* Break the list; ban isn't a real ban */
+      else
+	state->chptr->banexceptionlist = 0;
+
+      count--;
+      len -= banlen;
+
+      continue;
+    } else if (ban->flags & BAN_EXCEPTION_DEL) { /* Deleted a ban? */
+      char *bandup;
+      DupString(bandup, ban->banexceptstr);
+      modebuf_mode_string(state->mbuf, MODE_DEL | MODE_BAN_EXCEPTION,
+			  bandup, 1);
+
+      if (state->flags & MODE_PARSE_SET) { /* Ok, make it take effect */
+	if (prevban) /* clip it out of the list... */
+	  prevban->next = ban->next;
+	else
+	  state->chptr->banexceptionlist = ban->next;
+
+	count--;
+	len -= banlen;
+        free_ban_exception(ban);
+
+	changed++;
+	continue; /* next ban; keep prevban like it is */
+      } else
+	ban->flags &= BAN_EXCEPTION_IPMASK; /* unset other flags */
+    } else if (ban->flags & BAN_EXCEPTION_ADD) { /* adding a ban? */
+      if (prevban)
+	prevban->next = 0; /* Break the list; ban isn't a real ban */
+      else
+	state->chptr->banexceptionlist = 0;
+
+      /* If we're supposed to ignore it, do so. */
+      if (ban->flags & BAN_EXCEPTION_OVERLAPPED &&
+	  !(state->flags & MODE_PARSE_BOUNCE)) {
+	count--;
+	len -= banlen;
+      } else {
+	if (state->flags & MODE_PARSE_SET && MyUser(state->sptr) &&
+	    (len > (feature_int(FEAT_AVBANLEN) * feature_int(FEAT_MAXBANS)) ||
+	     count > feature_int(FEAT_MAXBANS))) {
+	  send_reply(state->sptr, ERR_BANLISTFULL, state->chptr->chname,
+		     ban->banexceptstr);
+	  count--;
+	  len -= banlen;
+	} else {
+          char *bandup;
+	  /* add the ban to the buffer */
+          DupString(bandup, ban->banexceptstr);
+	  modebuf_mode_string(state->mbuf, MODE_ADD | MODE_BAN_EXCEPTION,
+			      bandup, 1);
+
+	  if (state->flags & MODE_PARSE_SET) { /* create a new ban */
+	    newban = make_ban_exception(ban->banexceptstr);
+            strcpy(newban->who, ban->who);
+	    newban->when = ban->when;
+	    newban->flags = ban->flags & BAN_EXCEPTION_IPMASK;
+
+	    newban->next = state->chptr->banexceptionlist; /* and link it in */
+	    state->chptr->banexceptionlist = newban;
+
+	    changed++;
+	  }
+	}
+      }
+    }
+
+    prevban = ban;
+  } /* for (prevban = 0, ban = state->chptr->banlist; ban; ban = nextban) { */
+
+  if (changed) /* if we changed the ban list, we must invalidate the bans */
+    mode_ban_exception_invalidate(state->chptr);
 }
 
 /*
@@ -3320,9 +4002,12 @@ mode_parse(struct ModeBuf *mbuf, struct Client *cptr, struct Client *sptr,
     MODE_INVITEONLY,	'i',
     MODE_NOPRIVMSGS,	'n',
     MODE_KEY,		'k',
+    MODE_ANONYMOUS,		'a',
     MODE_APASS,		'A',
     MODE_UPASS,		'U',
     MODE_BAN,		'b',
+    MODE_BAN_EXCEPTION,		'e',
+    MODE_LINK,		'L',
     MODE_LIMIT,		'l',
     MODE_REGONLY,	'r',
     MODE_DELJOINS,      'D',
@@ -3363,12 +4048,18 @@ mode_parse(struct ModeBuf *mbuf, struct Client *cptr, struct Client *sptr,
   state.args_used = 0;
   state.max_args = MAXMODEPARAMS;
   state.numbans = 0;
+  state.numbanexs = 0;
+  state.link = 0;
 
   for (i = 0; i < MAXPARA; i++) { /* initialize ops/voices arrays */
     state.banlist[i].next = 0;
     state.banlist[i].who[0] = '\0';
     state.banlist[i].when = 0;
     state.banlist[i].flags = 0;
+    state.banexceptionlist[i].next = 0;
+    state.banexceptionlist[i].who[0] = '\0';
+    state.banexceptionlist[i].when = 0;
+    state.banexceptionlist[i].flags = 0;
     state.cli_change[i].flag = 0;
     state.cli_change[i].client = 0;
   }
@@ -3416,6 +4107,18 @@ mode_parse(struct ModeBuf *mbuf, struct Client *cptr, struct Client *sptr,
 	mode_parse_ban(&state, flag_p);
 	break;
 
+      case 'e': /* deal with ban exceptions */
+	mode_parse_ban_exception(&state, flag_p);
+	break;
+
+      case 'L': /* deal with linked channels */
+	  state.link = state.chptr->chname;
+	mode_parse_links(&state, flag_p);
+	break;
+
+      case 'a': /* deal with anonymous channels */
+	mode_parse_anonymous(&state, flag_p);
+	break;
       case 'o': /* deal with ops/voice */
       case 'v':
 	mode_parse_client(&state, flag_p);
@@ -3514,6 +4217,9 @@ mode_parse(struct ModeBuf *mbuf, struct Client *cptr, struct Client *sptr,
   }
 
   if (state.flags & MODE_PARSE_WIPEOUT) {
+    if (state.link && !(state.done & DONE_LINK_DEL))
+      modebuf_mode_string(state.mbuf, MODE_DEL | MODE_LINK,
+			  state.link, 0);
     if (state.chptr->mode.limit && !(state.done & DONE_LIMIT))
       modebuf_mode_uint(state.mbuf, MODE_DEL | MODE_LIMIT,
 			state.chptr->mode.limit);
@@ -3531,9 +4237,13 @@ mode_parse(struct ModeBuf *mbuf, struct Client *cptr, struct Client *sptr,
   if (state.done & DONE_BANCLEAN) /* process bans */
     mode_process_bans(&state);
 
+  if (state.done & DONE_BAN_EXCEPTION_CLEAN) /* process bans */
+    mode_process_ban_exceptions(&state);
+	
   /* process client changes */
-  if (state.cli_change[0].flag)
+  if (state.cli_change[0].flag) {
     mode_process_clients(&state);
+  }
 
   return state.args_used; /* tell our parent how many args we gobbled */
 }

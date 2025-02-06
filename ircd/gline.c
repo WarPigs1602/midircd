@@ -471,7 +471,7 @@ gline_add(struct Client *cptr, struct Client *sptr, char *userhost,
   assert(0 != userhost);
   assert(0 != reason);
 
-  if (*userhost == '#' || *userhost == '&') {
+  if (*userhost == '#' || *userhost == '&' || *userhost == '!') {
     if ((flags & GLINE_LOCAL) && !HasPriv(sptr, PRIV_LOCAL_BADCHAN))
       return send_reply(sptr, ERR_NOPRIVILEGES);
 
@@ -746,7 +746,7 @@ gline_find(char *userhost, unsigned int flags)
   }
 
   if ((flags & (GLINE_BADCHAN | GLINE_ANY)) == GLINE_BADCHAN ||
-      *userhost == '#' || *userhost == '&')
+      *userhost == '#' || *userhost == '&' || *userhost == '!')
     return 0;
 
   DupString(t_uh, userhost);

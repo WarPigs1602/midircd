@@ -264,6 +264,25 @@ struct Channel* hSeekChannel(const char *name)
 
 }
 
+/** Find a channel by name.
+ * If a channel is found, it is moved to the top of its hash bucket.
+ * @param[in] name Channel name to search for.
+ * @return Matching channel, or NULL if none.
+ */
+struct Channel* hSeekSafe(const char *name)
+{
+  struct Channel *chptr;
+  if(!IsChannelName(name)) {
+   for (int i = 0; i < HASHSIZE; i++) {
+     if ((chptr = channelTable[i]) && chptr->safe) {
+	    if(0 == ircd_strcmp(name, chptr->safe)) 
+           return chptr;			
+	 }
+    }
+  }
+  return NULL;
+}
+
 /* I will add some useful(?) statistics here one of these days,
    but not for DEBUGMODE: just to let the admins play with it,
    coders are able to SIGCORE the server and look into what goes

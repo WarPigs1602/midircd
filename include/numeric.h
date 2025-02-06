@@ -266,8 +266,8 @@ extern const struct Numeric* get_error_numeric(int err);
 #define RPL_ISSUEDINVITE     345        /* Undernet extension */
 #define RPL_INVITELIST       346        /* IRCnet, Undernet extension */
 #define RPL_ENDOFINVITELIST  347        /* IRCnet, Undernet extension */
-/*      RPL_EXCEPTLIST       348           IRCnet extension */
-/*      RPL_ENDOFEXCEPTLIST  349           IRCnet extension */
+#define RPL_EXCEPTLIST       348        /* IRCnet extension */
+#define RPL_ENDOFEXCEPTLIST  349        /* IRCnet extension */
 
 #define RPL_VERSION          351
 #define RPL_WHOREPLY         352        /* See also RPL_ENDOFWHO */
@@ -391,8 +391,8 @@ extern const struct Numeric* get_error_numeric(int err);
 #define ERR_KEYSET           467        /* Undernet extension */
 #define ERR_INVALIDUSERNAME  468        /* Undernet extension */
 /* 	ERR_ONLYSERVERSCANCHANGE 468	   Dalnet,unreal */
-/*	ERR_LINKSET	     469	unreal */
-/*	ERR_LINKCHANNEL	     470	unreal */
+#define ERR_LINKSET	         469	/* unreal */
+#define ERR_LINKCHANNEL	     470	/* unreal */
 /*      ERR_KICKEDFROMCHAN   470         aircd */
 #define ERR_CHANNELISFULL    471
 #define ERR_UNKNOWNMODE      472
@@ -421,7 +421,7 @@ extern const struct Numeric* get_error_numeric(int err);
 /*	ERR_CANTKICKADMIN    485	   PTlink */
 /*	ERR_HTMDISABLED      486	   unreal */
 #define ERR_ACCOUNTONLY      486	/* QuakeNet/ASUKA extension */
-/*      ERR_CHANTOORECENT    487           IRCnet extension (?) */
+#define ERR_UNIQOPRIVSNEEDED    487 /*          IRCnet extension (?) */
 /*      ERR_TSLESSCHAN       488           IRCnet extension (?) */
 #define ERR_VOICENEEDED      489        /* Undernet extension */
 
@@ -472,7 +472,7 @@ extern const struct Numeric* get_error_numeric(int err);
 #define ERR_CHANSECURED      562	/* Undernet extension */
 #define ERR_UPASSSET         563	/* Undernet extension */
 #define ERR_UPASSNOTSET      564	/* Undernet extension */
-/*      ERR_NOMANAGER_LONG   565	no longer used */
+#define ERR_CANNOTCHANGECHANMODE 565
 #define ERR_NOMANAGER        566	/* Undernet extension */
 #define ERR_UPASS_SAME_APASS 567        /* Undernet extension */
 #define ERR_LASTERROR        568

@@ -112,7 +112,7 @@ int ms_opmode(struct Client* cptr, struct Client* sptr, int parc, char* parv[])
   if (IsLocalChannel(parv[1]))
     return 0;
 
-  if ('#' != *parv[1] || !(chptr = FindChannel(parv[1])))
+  if (('#' != *parv[1] && '!' != *parv[1]) || !(chptr = FindChannel(parv[1])))
     return send_reply(sptr, ERR_NOSUCHCHANNEL, parv[1]);
 
   modebuf_init(&mbuf, sptr, cptr, chptr,

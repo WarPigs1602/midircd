@@ -166,7 +166,7 @@ void do_names(struct Client* sptr, struct Channel* chptr, int filter)
     if (needs_space)
       buf[idx++] = ' ';
     needs_space=1;
-    if (IsZombie(member))
+    if (IsZombie(member) || IsChannelCreator(member))
       buf[idx++] = '!';
     else if (IsChanOp(member))
       buf[idx++] = '@';

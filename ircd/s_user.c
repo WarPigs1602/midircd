@@ -660,8 +660,10 @@ int set_nick_name(struct Client* cptr, struct Client* sptr,
       }
       /* Invalidate all bans against the user so we check them again */
       for (member = (cli_user(cptr))->channel; member;
-	   member = member->next_channel)
+	   member = member->next_channel) {
 	ClearBanValid(member);
+	ClearBanExceptionValid(member);
+	   }
     }
     /*
      * Also set 'lastnick' to current time, if changed.
@@ -963,8 +965,10 @@ hide_hostmask(struct Client *cptr, unsigned int flag)
   case FLAG_ACCOUNT:
     /* Invalidate all bans against the user so we check them again */
     for (chan = (cli_user(cptr))->channel; chan;
-         chan = chan->next_channel)
+         chan = chan->next_channel) {
       ClearBanValid(chan);
+	  ClearBanExceptionValid(chan);
+	}
     break;
   default:
     return 0;
@@ -1976,14 +1980,16 @@ void set_snomask(struct Client *cptr, unsigned int newmask, int what)
 int is_silenced(struct Client *sptr, struct Client *acptr)
 {
   struct Ban *found;
+  struct BanEx *foundex;
   struct User *user;
   size_t buf_used, slen;
   char buf[BUFSIZE];
 
   if (IsServer(sptr) || !(user = cli_user(acptr))
-      || !(found = find_ban(sptr, user->silence)))
+      || (!(found = find_ban(sptr, user->silence)) && !(foundex = find_ban_exception(sptr, user->silenceex))))
     return 0;
   assert(!(found->flags & BAN_EXCEPTION));
+  assert(!(foundex->flags & BAN_EXCEPTION));
   if (!MyConnect(sptr)) {
     /* Buffer positive silence to send back. */
     buf_used = strlen(found->banstr);
@@ -2011,6 +2017,32 @@ int is_silenced(struct Client *sptr, struct Client *acptr)
       sendcmdto_one(acptr, CMD_SILENCE, cli_from(sptr), "%C %s", sptr, buf);
       buf_used = 0;
     }
+/* Buffer positive silence to send back. */
+    buf_used = strlen(foundex->banexceptstr);
+    memcpy(buf, foundex->banexceptstr, buf_used);
+    /* Add exceptions to buffer. */
+    for (foundex = user->silenceex; foundex; foundex = foundex->next) {
+      if (!(foundex->flags & BAN_EXCEPTION))
+        continue;
+      slen = strlen(foundex->banexceptstr);
+      if (buf_used + slen + 4 > 400) {
+        buf[buf_used] = '\0';
+        sendcmdto_one(acptr, CMD_SILENCE, cli_from(sptr), "%C %s", sptr, buf);
+        buf_used = 0;
+      }
+      if (buf_used)
+        buf[buf_used++] = ',';
+      buf[buf_used++] = '+';
+      buf[buf_used++] = '~';
+      memcpy(buf + buf_used, found->banstr, slen);
+      buf_used += slen;
+    }
+    /* Flush silence buffer. */
+    if (!buf_used) {
+      buf[buf_used] = '\0';
+      sendcmdto_one(acptr, CMD_SILENCE, cli_from(sptr), "%C %s", sptr, buf);
+      buf_used = 0;
+    }	
   }
   return 1;
 }

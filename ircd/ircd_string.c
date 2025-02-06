@@ -30,8 +30,11 @@
 
 /* #include <assert.h> -- Now using assert in ircd_log.h */
 #include <regex.h>
+#include <stdbool.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
+#include <time.h>
 #include <sys/types.h>
 #include <netinet/in.h>
 
@@ -39,6 +42,72 @@
  * include the character attribute tables here
  */
 #include "chattr.tab.c"
+
+static char* itoa (unsigned long long  value,  char str[],  int radix)
+{
+    char        buf [66];
+    char*       dest = buf + sizeof(buf);
+    bool     sign = false;
+
+    if (value == 0) {
+        memcpy (str, "0", 2);
+        return str;
+    }
+
+    if (radix < 0) {
+        radix = -radix;
+        if ( (long long) value < 0) {
+            value = -value;
+            sign = true;
+        }
+    }
+
+    *--dest = '\0';
+
+    switch (radix)
+    {
+    case 16:
+        while (value) {
+            * --dest = '0' + (value & 0xF);
+            if (*dest > '9') *dest += 'A' - '9' - 1;
+            value >>= 4;
+        }
+        break;
+    case 10:
+        while (value) {
+            *--dest = '0' + (value % 10);
+            value /= 10;
+        }
+        break;
+
+    case 8:
+        while (value) {
+            *--dest = '0' + (value & 7);
+            value >>= 3;
+        }
+        break;
+
+    case 2:
+        while (value) {
+            *--dest = '0' + (value & 1);
+            value >>= 1;
+        }
+        break;
+
+    default:            // The slow version, but universal
+        while (value) {
+            *--dest = '0' + (value % radix);
+            if (*dest > '9') *dest += 'A' - '9' - 1;
+            value /= radix;
+        }
+        break;
+    }
+
+    if (sign) *--dest = '-';
+
+    memcpy (str, dest, buf +sizeof(buf) - dest);
+    return str;
+}
 
 /** Check whether \a str contains wildcard characters.
  * @param[in] str String that might contain wildcards.
@@ -57,6 +126,33 @@ int string_has_wildcards(const char* str)
       return 1;
   }
   return 0;
+}
+
+const char chars[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+
+/** Creates a random string.
+ * @param[in] len String lenght.
+ * @return The random string.
+ */
+void ircd_rand_str(char *dest, size_t length) {
+	srand(time(NULL));
+    char charset[] = "0123456789"
+                     "abcdefghijklmnopqrstuvwxyz"
+                     "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+
+    while (length-- > 0) {
+        size_t index = (double) rand() / RAND_MAX * (sizeof charset - 1);
+        *dest++ = charset[index];
+    }
+    *dest = '\0';
+}
+
+void ircd_time_str(char *dest) {
+	time_t now;
+	time(&now);
+	size_t length = sizeof(now);
+	size_t chr1 = sizeof(chars);
+    itoa(now, dest, chr1);
 }
 
 /** Split a string on certain delimiters.

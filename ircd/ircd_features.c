@@ -314,6 +314,7 @@ static struct FeatureDesc {
   F_B(OPLEVELS, 0, 1, 0),
   F_B(ZANNELS, 0, 1, 0),
   F_B(LOCAL_CHANNELS, 0, 1, 0),
+  F_B(SECURE_CHANNELS, 0, 1, 0),
   F_B(TOPIC_BURST, 0, 0, 0),
   F_B(DISABLE_GLINES, 0, 0, 0),
   F_B(ENABLE_GLINE_OPER_EXCEPTION, 0, 0, 0),

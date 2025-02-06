@@ -184,6 +184,13 @@ int ms_topic(struct Client* cptr, struct Client* sptr, int parc, char* parv[])
       continue;
     }
 
+    /* Ignore requests for topics from remote servers */
+    if (IsSaveChannel(name) && !MyUser(sptr))
+    {
+      protocol_violation(sptr,"Topic request");
+      continue;
+    }
+	
     /* If existing channel is older or has newer topic, ignore */
     if (parc > 3 && (ts = atoi(parv[2])) && chptr->creationtime < ts)
       continue;

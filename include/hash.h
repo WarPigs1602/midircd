@@ -51,6 +51,8 @@ struct StatDesc;
 
 /* Raw calls, expect a core if you pass a NULL or zero-length name */
 /** Search for a channel by name. */
+#define SeekSafe(name)          hSeekSafe((name))
+/** Search for a channel by name. */
 #define SeekChannel(name)       hSeekChannel((name))
 /** Search for any client by name. */
 #define SeekClient(name)        hSeekClient((name), ~0)
@@ -61,6 +63,8 @@ struct StatDesc;
 
 /* Safer macros with sanity check on name, WARNING: these are _macros_,
    no side effects allowed on <name> ! */
+/** Search for a safe channel by name. */
+#define FindSafe(name)          (BadPtr((name)) ? 0 : SeekSafe(name))
 /** Search for a channel by name. */
 #define FindChannel(name)       (BadPtr((name)) ? 0 : SeekChannel(name))
 /** Search for any client by name. */
@@ -82,6 +86,7 @@ extern int hChangeClient(struct Client *cptr, const char *newname);
 extern int hRemChannel(struct Channel *chptr);
 extern struct Client *hSeekClient(const char *name, int TMask);
 extern struct Channel *hSeekChannel(const char *name);
+extern struct Channel *hSeekSafe(const char *name);
 
 extern int m_hash(struct Client *cptr, struct Client *sptr, int parc, char *parv[]);
 

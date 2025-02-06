@@ -57,7 +57,7 @@
 #define NTL_IRCIP   0x8000  /**< Numeric IPs charset (DIGIT and .)   */
 #define NTL_EOL    0x10000  /**< \\r\\n                              */
 #define NTL_KTIME  0x20000  /**< Valid character for a k:line time   */
-#define NTL_CHPFX  0x40000  /**< channel prefix char # & +           */
+#define NTL_CHPFX  0x40000  /**< channel prefix char # & + !          */
 #define NTL_IRCIP6 0x80000  /**< Numeric IPv6 character (hex or colon) */
 
 /*

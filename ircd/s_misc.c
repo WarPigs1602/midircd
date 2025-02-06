@@ -183,6 +183,7 @@ static void exit_one_client(struct Client* bcptr, const char* comment)
 {
   struct SLink *lp;
   struct Ban *bp;
+  struct BanEx *bpe;
 
   if (cli_serv(bcptr) && cli_serv(bcptr)->client_list)  /* Was SetServerYXX called ? */
     ClearServerYXX(bcptr);      /* Removes server from server_list[] */
@@ -219,6 +220,12 @@ static void exit_one_client(struct Client* bcptr, const char* comment)
       free_ban(bp);
     }
 
+    /* Clean up silenceexfield */
+    while ((bpe = cli_user(bcptr)->silenceex)) {
+      cli_user(bcptr)->silenceex = bpe->next;
+      free_ban_exception(bpe);
+    }
+	
     /* Clean up snotice lists */
     if (MyUser(bcptr))
       set_snomask(bcptr, ~0, SNO_DEL);

@@ -121,6 +121,8 @@ do_clearmode(struct Client *cptr, struct Client *sptr, struct Channel *chptr,
     MODE_NOPRIVMSGS,	'n',
     MODE_KEY,		'k',
     MODE_BAN,		'b',
+    MODE_BAN_EXCEPTION,		'e',
+    MODE_LINK,		'L',
     MODE_LIMIT,		'l',
     MODE_REGONLY,	'r',
     MODE_DELJOINS,      'D',
@@ -138,6 +140,7 @@ do_clearmode(struct Client *cptr, struct Client *sptr, struct Channel *chptr,
   int control_buf_i = 0;
   struct ModeBuf mbuf;
   struct Ban *link, *next;
+  struct BanEx *linkex, *nextex;
   struct Membership *member;
 
   /* Ok, so what are we supposed to get rid of? */
@@ -171,6 +174,13 @@ do_clearmode(struct Client *cptr, struct Client *sptr, struct Channel *chptr,
   if (del_mode & MODE_KEY && *chptr->mode.key)
     modebuf_mode_string(&mbuf, MODE_DEL | MODE_KEY, chptr->mode.key, 0);
 
+  /*
+   * If we're removing the key, note that; note that we can't clear
+   * the key until after modebuf_* are done with it
+   */
+  if (del_mode & MODE_LINK && *chptr->mode.link)
+    modebuf_mode_string(&mbuf, MODE_DEL | MODE_LINK, chptr->mode.link, 0);
+
   /* If we're removing the limit, note that and clear the limit */
   if (del_mode & MODE_LIMIT && chptr->mode.limit) {
     modebuf_mode_uint(&mbuf, MODE_DEL | MODE_LIMIT, chptr->mode.limit);
@@ -195,8 +205,26 @@ do_clearmode(struct Client *cptr, struct Client *sptr, struct Channel *chptr,
     chptr->banlist = 0;
   }
 
+  /*
+   * Go through and mark the bans for deletion; note that we can't
+   * free them until after modebuf_* are done with them
+   */
+  if (del_mode & MODE_BAN_EXCEPTION) {
+    for (linkex = chptr->banexceptionlist; linkex; linkex = nextex) {
+      char *bandup;
+      nextex = linkex->next;
+
+      DupString(bandup, linkex->banexceptstr);
+      modebuf_mode_string(&mbuf, MODE_DEL | MODE_BAN_EXCEPTION, /* delete ban */
+			  bandup, 1);
+      free_ban_exception(linkex);
+    }
+
+    chptr->banexceptionlist = 0;
+  }
+  
   /* Deal with users on the channel */
-  if (del_mode & (MODE_BAN | MODE_CHANOP | MODE_VOICE))
+  if (del_mode & (MODE_BAN | MODE_BAN_EXCEPTION | MODE_CHANOP | MODE_VOICE))
     for (member = chptr->members; member; member = member->next_member) {
       if (IsZombie(member)) /* we ignore zombies */
 	continue;
@@ -204,8 +232,10 @@ do_clearmode(struct Client *cptr, struct Client *sptr, struct Channel *chptr,
       if (del_mode & MODE_BAN) /* If we cleared bans, clear the valid flags */
 	ClearBanValid(member);
 
+      if (del_mode & MODE_BAN_EXCEPTION) /* If we cleared bans, clear the valid flags */
+	ClearBanExceptionValid(member);
       /* Drop channel operator status */
-      if (IsChanOp(member) && del_mode & MODE_CHANOP) {
+      if (!IsChannelCreator(member) && IsChanOp(member) && del_mode & MODE_CHANOP) {
 	modebuf_mode_client(&mbuf, MODE_DEL | MODE_CHANOP, member->user, MAXOPLEVEL + 1);
 	member->status &= ~CHFL_CHANOP;
       }
@@ -263,7 +293,7 @@ ms_clearmode(struct Client* cptr, struct Client* sptr, int parc, char* parv[])
     return send_reply(sptr, ERR_NOPRIVILEGES);
   }
 
-  if (!IsChannelName(parv[1]) || IsLocalChannel(parv[1]) ||
+  if ((!IsChannelName(parv[1]) && !IsLocalChannel(parv[1])) || !IsSaveChannel(parv[1]) ||
       !(chptr = FindChannel(parv[1])))
     return send_reply(sptr, ERR_NOSUCHCHANNEL, parv[1]);
 
@@ -309,7 +339,7 @@ mo_clearmode(struct Client* cptr, struct Client* sptr, int parc, char* parv[])
 	       IsLocalChannel(chname) ? PRIV_LOCAL_OPMODE : PRIV_OPMODE))
     return send_reply(sptr, ERR_NOPRIVILEGES);
 
-  if (('#' != *chname && '&' != *chname) || !(chptr = FindChannel(chname)))
+  if (('#' != *chname && '&' != *chname && '!' != *chname) || !(chptr = FindChannel(chname)))
     return send_reply(sptr, ERR_NOSUCHCHANNEL, chname);
 
   if (!force && (qreason = find_quarantine(chptr->chname)))

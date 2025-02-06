@@ -21,6 +21,8 @@ struct irc_in_addr;
 
 extern int string_has_wildcards(const char* str);
 
+extern void        ircd_rand_str(char *dest, size_t len);
+extern void        ircd_time_str(char *dest);
 extern char*       ircd_strncpy(char* dest, const char* src, size_t len);
 extern int         ircd_strcmp(const char *a, const char *b);
 extern int         regex_match(char *string, char *pattern);

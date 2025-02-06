@@ -728,9 +728,9 @@ static Numeric replyTable[] = {
 /* 347 */
   { RPL_ENDOFINVITELIST, ":End of Invite List", "347" },
 /* 348 */
-  { 0 },
+  { RPL_EXCEPTLIST, "%s %s %s %Tu", "348" },
 /* 349 */
-  { 0 },
+  { RPL_ENDOFEXCEPTLIST, "%s :End of Channel Ban Exception List", "349" },
 /* 350 */
   { 0 },
 /* 351 */
@@ -970,9 +970,9 @@ static Numeric replyTable[] = {
 /* 468 */
   { ERR_INVALIDUSERNAME, 0, "468" },
 /* 469 */
-  { 0 },
+  { ERR_LINKSET, "%s %s :Cannot add channel (%s)", "469" },
 /* 470 */
-  { 0 },
+  { ERR_LINKCHANNEL, "%s %s :The channel has been renamed", "470" },
 /* 471 */
   { ERR_CHANNELISFULL, "%s :Cannot join channel, Channel is full (+l)", "471" },
 /* 472 */
@@ -1006,7 +1006,7 @@ static Numeric replyTable[] = {
 /* 486 */
   { ERR_ACCOUNTONLY, "%s :You must be authed in order to message this user -- For details of how to obtain an account visit %s", "486" },
 /* 487 */
-  { 0 },
+  { ERR_UNIQOPRIVSNEEDED, "%s :You’re not the original channel operator", "487" },
 /* 488 */
   { 0 },
 /* 489 */
@@ -1162,7 +1162,7 @@ static Numeric replyTable[] = {
 /* 564 */
   { ERR_UPASSNOTSET, "%s :Cannot set user pass (+U) until Admin pass (+A) is set. First use /MODE %s +A <adminpass>", "564" },
 /* 565 */
-  { 0 },
+  { ERR_CANNOTCHANGECHANMODE, "%s %s :%s", "565" },  
 /* 566 */
   { ERR_NOMANAGER, "%s :Re-create the channel. The channel must be completely empty for a period of %s before it can be recreated.", "566" },
 /* 567 */
@@ -1230,7 +1230,7 @@ static Numeric replyTable[] = {
 /* 598 */
   { 0 },
 /* 599 */
-  { 0 }
+  { 0 },
 };
 
 /** Return a pointer to the Numeric for a particular code.

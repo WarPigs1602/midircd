@@ -191,10 +191,11 @@ static int checkClones(struct Channel *chptr, struct Client *cptr) {
 void checkUsers(struct Client *sptr, struct Channel *chptr, int flags) {
   struct Membership *lp;
   struct Ban *ban;
+  struct BanEx *banex;
   struct Client *acptr;
 
   char outbuf[BUFSIZE], outbuf2[BUFSIZE], ustat[64];
-  int cntr = 0, opcntr = 0, vcntr = 0, clones = 0, bans = 0, authed = 0;
+  int cntr = 0, opcntr = 0, vcntr = 0, clones = 0, bans = 0, banexceptions = 0, authed = 0;
 
   if (flags & CHECK_SHOWUSERS) { 
     send_reply(sptr, RPL_DATASTR, "Users (@ = op, + = voice)");
@@ -299,6 +300,17 @@ void checkUsers(struct Client *sptr, struct Channel *chptr, int flags) {
     }
 
     if (bans == 0)
+      send_reply(sptr, RPL_DATASTR, "<none>");
+  
+    send_reply(sptr, RPL_DATASTR, "Ban exceptions on channel::");
+
+    for (banex = chptr->banexceptionlist; banex; banex = banex->next) {
+      ircd_snprintf(0, outbuf, sizeof(outbuf),  "[%d] - %s - Set by %s, on %s",
+        ++banexceptions, banex->banexceptstr, banex->who, myctime(banex->when));
+      send_reply(sptr, RPL_DATASTR, outbuf);
+    }
+
+    if (banexceptions == 0)
       send_reply(sptr, RPL_DATASTR, "<none>");
   }
 

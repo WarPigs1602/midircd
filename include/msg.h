@@ -384,6 +384,10 @@ struct Client;
 #define TOK_CHGHOST		"CHGHOST"
 #define CMD_CHGHOST		MSG_CHGHOST, TOK_CHGHOST
 
+#define MSG_RENAME	"RENAME"
+#define TOK_RENAME	"RE"
+#define CMD_RENAME	MSG_RENAME, TOK_RENAME
+
 /*
  * Constants
  */

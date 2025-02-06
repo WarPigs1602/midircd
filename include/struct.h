@@ -69,6 +69,7 @@ struct User {
   struct Membership* channel;        /**< chain of channel pointer blocks */
   struct SLink*      invited;        /**< chain of invite pointer blocks */
   struct Ban*        silence;        /**< chain of silence pointer blocks */
+  struct BanEx*      silenceex;      /**< chain of silence pointer ignore blocks */
   char*              away;           /**< pointer to away message */
   time_t             last;           /**< last time user sent a message */
   unsigned int       refcnt;         /**< Number of times this block is referenced */

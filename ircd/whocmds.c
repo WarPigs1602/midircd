@@ -180,7 +180,7 @@ void do_who(struct Client* sptr, struct Client* acptr, struct Channel* repchan,
         *(p1++) = '@';
       if (HasVoice(chan))
         *(p1++) = '+';
-      if (IsZombie(chan))
+      if (IsChannelCreator(chan))
         *(p1++) = '!';
       if (IsDelayedJoin(chan))
         *(p1++) = '<';
@@ -190,7 +190,7 @@ void do_who(struct Client* sptr, struct Client* acptr, struct Channel* repchan,
         *(p1++) = '@';
       else if (HasVoice(chan))
         *(p1++) = '+';
-      else if (IsZombie(chan))
+      else if (IsChannelCreator(chan))
         *(p1++) = '!';
       else if (IsDelayedJoin(chan))
         *(p1++) = '<';

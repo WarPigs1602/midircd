@@ -35,6 +35,7 @@
 #include "ircd_log.h"
 #include "ircd_reply.h"
 #include "ircd_string.h"
+#include "ircd_snprintf.h"
 #include "msg.h"
 #include "numeric.h"
 #include "numnicks.h"
@@ -45,6 +46,7 @@
 
 /* #include <assert.h> -- Now using assert in ircd_log.h */
 #include <stdlib.h>
+#include <stdio.h>
 #include <string.h>
 
 /** Searches for and handles a 0 in a join list.
@@ -105,6 +107,7 @@ last0(struct Client *cptr, struct Client *sptr, char *chanlist)
 int m_join(struct Client *cptr, struct Client *sptr, int parc, char *parv[])
 {
   struct Channel *chptr;
+  struct Channel *chptr2;
   struct JoinBuf join;
   struct JoinBuf create;
   struct Gline *gline;
@@ -112,7 +115,11 @@ int m_join(struct Client *cptr, struct Client *sptr, int parc, char *parv[])
   char *chanlist;
   char *name;
   char *keys;
-
+  char buf[5];
+  char cc[HOSTLEN +1];
+  char safe[CHANNELLEN];
+  int found = -1;
+  int creator = -1;
   if (parc < 2 || *parv[1] == '\0')
     return need_more_params(sptr, "JOIN");
 
@@ -155,38 +162,86 @@ int m_join(struct Client *cptr, struct Client *sptr, int parc, char *parv[])
       send_reply(sptr, ERR_BANNEDFROMCHAN, name);
       continue;
     }
+    if (name[0] == '!' && name[1] != '!') {
+		if((chptr2 = FindSafe(&name[1]))){
+			found = 0;
+		} 
+		if(found != 0 && !(chptr2 = FindChannel(name))) {
+		 send_reply(sptr, ERR_NOSUCHCHANNEL, name);
+	     continue;		   
+	   }
+	}
+    if (name[0] == '!' && name[1] == '!') {
+	  if(FindSafe(&name[2])) {
+        send_reply(sptr, ERR_NOSUCHCHANNEL, name);
+        continue;		   
+	  }
+	}	
+    if (found != 0 && !(chptr = FindChannel(name))) {
+	  if (name[0] == '!' && name[1] == '!') {
+		char *buf2 = malloc(strlen(&name[2]));
+		ircd_strncpy(buf2, &name[2], CHANNELLEN);
+		ircd_time_str(buf);
+        ircd_strncpy(buf, &buf[1], 5);		
+	    ircd_snprintf(sptr, name, CHANNELLEN, "!%s%s", buf, buf2);
+		ircd_strncpy(safe, buf2, CHANNELLEN);
+		ircd_strncpy(cc, sptr->cli_name, HOSTLEN + 1);
+		free(buf2);
+		creator = 0;
 
-    if (!(chptr = FindChannel(name))) {
+      }
       if (((name[0] == '&') && !feature_bool(FEAT_LOCAL_CHANNELS))
           || strlen(name) >= IRCD_MIN(CHANNELLEN, feature_int(FEAT_CHANNELLEN))) {
         send_reply(sptr, ERR_NOSUCHCHANNEL, name);
         continue;
       }
-
+      if (((name[0] == '!') && !feature_bool(FEAT_SECURE_CHANNELS))
+          || strlen(name) >= IRCD_MIN(CHANNELLEN, feature_int(FEAT_CHANNELLEN))) {
+        send_reply(sptr, ERR_NOSUCHCHANNEL, name);
+        continue;
+      } 
       if (!(chptr = get_channel(sptr, name, CGT_CREATE)))
         continue;
-
       /* Try to add the new channel as a recent target for the user. */
       if (check_target_limit(sptr, chptr, chptr->chname, 0)) {
         chptr->members = 0;
         destruct_channel(chptr);
         continue;
       }
-
-      joinbuf_join(&create, chptr, CHFL_CHANOP | CHFL_CHANNEL_MANAGER);
+	  ircd_strncpy(chptr->cc, cc, HOSTLEN + 1);
+	  ircd_strncpy(chptr->rnd, buf, 5);
+	  ircd_strncpy(chptr->safe, safe, CHANNELLEN);
+      chptr->mode.anon = -1;
+      if(creator == 0)  
+        joinbuf_join(&create, chptr, CHFL_CHAN_CREATOR | CHFL_CHANOP | CHFL_CHANNEL_MANAGER);
+	  else
+        joinbuf_join(&create, chptr, CHFL_CHANOP | CHFL_CHANNEL_MANAGER);
+	  do_names(sptr, chptr, NAMES_ALL|NAMES_EON); 
       if (feature_bool(FEAT_AUTOCHANMODES) && feature_str(FEAT_AUTOCHANMODES_LIST) && strlen(feature_str(FEAT_AUTOCHANMODES_LIST)) > 0)
         SetAutoChanModes(chptr);
-    } else if (find_member_link(chptr, sptr)) {
+    } else if(found == 0) {
+       chptr = chptr2; 
+	   ircd_strncpy(cc, chptr->cc, HOSTLEN +1);
+	}
+	if (find_member_link(chptr, sptr)) {
       continue; /* already on channel */
     } else if (check_target_limit(sptr, chptr, chptr->chname, 0)) {
       continue;
     } else {
+	 
+	  if (sizeof(name) > 2 && name[0] == '!' && name[1] == '!') {
+         send_reply(sptr, ERR_NOSUCHCHANNEL, name);
+		 continue;
+      }  
       int flags = CHFL_DEOPPED;
       int err = 0;
 
       /* Check Apass/Upass -- since we only ever look at a single
        * "key" per channel now, this hampers brute force attacks. */
-      if (key && !strcmp(key, chptr->mode.apass))
+      if (cc != '\0' && !strcmp(cc, sptr->cli_name))
+        flags = CHFL_CHANOP | CHFL_CHAN_CREATOR;	
+      else if(cc != '\0');
+	  if (key && !strcmp(key, chptr->mode.apass))
         flags = CHFL_CHANOP | CHFL_CHANNEL_MANAGER;
       else if (key && !strcmp(key, chptr->mode.upass))
         flags = CHFL_CHANOP;
@@ -202,11 +257,10 @@ int m_join(struct Client *cptr, struct Client *sptr, int parc, char *parv[])
         err = ERR_CHANNELISFULL;
       else if ((chptr->mode.mode & MODE_REGONLY) && !IsAccount(sptr))
         err = ERR_NEEDREGGEDNICK;
-      else if (find_ban(sptr, chptr->banlist))
+      else if (find_ban(sptr, chptr->banlist) && !find_ban_exception(sptr, chptr->banexceptionlist))
         err = ERR_BANNEDFROMCHAN;
       else if (*chptr->mode.key && (!key || strcmp(key, chptr->mode.key)))
         err = ERR_BADCHANNELKEY;
-
       /*
        * ASUKA_X:
        * Allow XtraOpers to join all channels.
@@ -244,13 +298,14 @@ int m_join(struct Client *cptr, struct Client *sptr, int parc, char *parv[])
         if (err)
           sendto_opmask_butone(0, SNO_HACK4, "OPER JOIN: %C JOIN %H "
                                "(overriding +%c)", sptr, chptr, err);
-        err = 0;
+		err = 0;
       }
 
+      
       /* Is there some reason the user may not join? */
       if (err) {
         switch(err) {
-          case ERR_NEEDREGGEDNICK:
+		  case ERR_NEEDREGGEDNICK:
             send_reply(sptr, 
                        ERR_NEEDREGGEDNICK, 
                        chptr->chname, 
@@ -259,10 +314,25 @@ int m_join(struct Client *cptr, struct Client *sptr, int parc, char *parv[])
           default:
             send_reply(sptr, err, chptr->chname);
             break;
+        }		
+      if(chptr->mode.link[0] != '\0') {
+	    if (!(chptr2 = FindChannel(chptr->mode.link))) {
+	      chptr2 = get_channel(sptr, chptr->mode.link, CGT_CREATE);
+		  flags = CHFL_CHANOP;
+	    }
+	    if(chptr2) {
+		  if(chptr2->mode.link[0] != '\0' || chptr2->mode.link[0] == '!' || chptr2->mode.link[0] == '&' || chptr2->mode.link[0] == '+') {
+		   	send_reply(sptr, err, chptr->chname);
+			continue;
+		  }			
+		  chptr = chptr2;
         }
-        continue;
+	  } else {
+		continue;
+		}
       }
 
+	
       joinbuf_join(&join, chptr, flags);
       if (flags & CHFL_CHANOP) {
         struct ModeBuf mbuf;
@@ -272,13 +342,23 @@ int m_join(struct Client *cptr, struct Client *sptr, int parc, char *parv[])
 	   (as HACK(2)) when the user ops himself.
            (There is also no particularly good reason to have the user op himself.)
         */
-	modebuf_init(&mbuf, &me, cptr, chptr, MODEBUF_DEST_SERVER);
-	modebuf_mode_client(&mbuf, MODE_ADD | MODE_CHANOP, sptr,
-                            chptr->mode.apass[0] ? ((flags & CHFL_CHANNEL_MANAGER) ? 0 : 1) : MAXOPLEVEL);
+	
+    if (flags & CHFL_CHAN_CREATOR) {
+		modebuf_init(&mbuf, &me, cptr, chptr, MODEBUF_DEST_SERVER | MODEBUF_DEST_CHANNEL);
+	    modebuf_mode_client(&mbuf, MODE_ADD | MODE_CHAN_CREATOR, sptr, 
+                            chptr->mode.apass[0] ? ((flags & CHFL_CHANNEL_MANAGER) ? 0 : 1) : MAXOPLEVEL);		
+        sendcmdto_channel_butserv_butone(&me, CMD_MODE, chptr, sptr, 0,
+        "%H +O %C", chptr, sptr);	
+	} else {
+		modebuf_init(&mbuf, &me, cptr, chptr, MODEBUF_DEST_SERVER);
+	    modebuf_mode_client(&mbuf, MODE_ADD | MODE_CHANOP, sptr, 
+                            chptr->mode.apass[0] ? ((flags & CHFL_CHANNEL_MANAGER) ? 0 : 1) : MAXOPLEVEL);		
+	}
+		
 	modebuf_flush(&mbuf);
       }
     }
-
+  
     del_invite(sptr, chptr);
 
     if (chptr->topic[0]) {
@@ -292,7 +372,6 @@ int m_join(struct Client *cptr, struct Client *sptr, int parc, char *parv[])
 
   joinbuf_flush(&join); /* must be first, if there's a JOIN 0 */
   joinbuf_flush(&create);
-
   return 0;
 }
 
@@ -408,6 +487,11 @@ int ms_join(struct Client *cptr, struct Client *sptr, int parc, char *parv[])
           chptr->mode.limit = 0;
         }
 
+        if (chptr->mode.link) {
+          modebuf_mode_string(&mbuf, MODE_DEL | MODE_LINK, chptr->mode.link, 0);
+          chptr->mode.link[0] = '\0';
+        }
+
         if (chptr->mode.key[0]) {
           modebuf_mode_string(&mbuf, MODE_DEL | MODE_KEY, chptr->mode.key, 0);
           chptr->mode.key[0] = '\0';
@@ -429,6 +513,10 @@ int ms_join(struct Client *cptr, struct Client *sptr, int parc, char *parv[])
             modebuf_mode_client(&mbuf, MODE_DEL | MODE_CHANOP, member->user, OpLevel(member));
 	    member->status &= ~CHFL_CHANOP;
 	  }
+          if (IsChannelCreator(member)) {
+            modebuf_mode_client(&mbuf, MODE_DEL | MODE_CHAN_CREATOR, member->user, OpLevel(member));
+	    member->status &= ~CHFL_CHAN_CREATOR;
+          }
           if (HasVoice(member)) {
             modebuf_mode_client(&mbuf, MODE_DEL | MODE_VOICE, member->user, OpLevel(member));
 	    member->status &= ~CHFL_VOICE;
