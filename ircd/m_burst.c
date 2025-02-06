@@ -521,6 +521,20 @@ for (banex = ircd_strtok(&p, banexceptionlist, " "); banex;
 	    if (parse_flags & MODE_PARSE_SET) {
 	      int current_mode_needs_reset;
 	      for (current_mode_needs_reset = 1; *ptr; ptr++) {
+		if (*ptr == 'O') { /* has oper status */
+		  /*
+		   * An 'o' is pre-oplevel protocol, so this is only for
+		   * backwards compatibility.  Give them an op-level of
+		   * MAXOPLEVEL so everyone can deop them.
+		   */
+		  oplevel = MAXOPLEVEL;
+		  if (current_mode_needs_reset) {
+		    current_mode = base_mode;
+		    current_mode_needs_reset = 0;
+		  }
+		  current_mode = (current_mode & ~(CHFL_DEOPPED | CHFL_DELAYED | CHFL_CHAN_CREATOR));
+		}
+		else 
 		if (*ptr == 'o') { /* has oper status */
 		  /*
 		   * An 'o' is pre-oplevel protocol, so this is only for

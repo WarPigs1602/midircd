@@ -2867,7 +2867,7 @@ mode_parse_links(struct ParseState *state, int *flag_p)
     return;
 
   if (state->dir == MODE_DEL && state->chptr->mode.link[0] == '\0') {
-     send_reply(state->sptr, ERR_CANNOTCHANGECHANMODE, state->link, "L", "No link setted");  
+     send_reply(state->sptr, ERR_CANNOTCHANGECHANMODE, state->link, "L", "no link setted");  
      return;
   } else if (state->dir == MODE_DEL && state->chptr->mode.link[0] != '\0') {
 	 modebuf_mode_string(state->mbuf, MODE_DEL | flag_p[0], state->chptr->mode.link, 0);
@@ -2875,17 +2875,21 @@ mode_parse_links(struct ParseState *state, int *flag_p)
      return; /* no link change */
   }
 
+  if (state->dir == MODE_ADD && strchr(t_str, ',')) {
+      send_reply(state->sptr, ERR_CANNOTCHANGECHANMODE, state->link, "L", "a channel cannot linked to multiple channels"); 		  
+    return; /* no link change */
+  }
   if (state->dir == MODE_ADD && (t_str[0] == '!' || t_str[0] == '&' || t_str[0] == '+')) {
          send_reply(state->sptr, ERR_NOSUCHCHANNEL, t_str);  
     return; /* no link change */
   }  
   if (state->dir == MODE_ADD && !ircd_strcmp(state->link, t_str)) {
-      send_reply(state->sptr, ERR_CANNOTCHANGECHANMODE, state->link, "L", "A channel cannot be linked to itself"); 		  
+      send_reply(state->sptr, ERR_CANNOTCHANGECHANMODE, state->link, "L", "a channel cannot be linked to itself"); 		  
     return; /* no link change */
   }
 
   if (state->dir == MODE_ADD && state->chptr->mode.link[0] != '\0') {
-      send_reply(state->sptr, ERR_CANNOTCHANGECHANMODE, t_str, "L", "A link was allready setted");  
+      send_reply(state->sptr, ERR_CANNOTCHANGECHANMODE, t_str, "L", "a link was allready setted");  
     return; /* no link change */
   }
 

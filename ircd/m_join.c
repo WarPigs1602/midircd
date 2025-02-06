@@ -61,7 +61,6 @@ last0(struct Client *cptr, struct Client *sptr, char *chanlist)
 {
   char *p;
   int join0 = 0;
-
   for (p = chanlist; p[0]; p++) /* find last "JOIN 0" */
     if (p[0] == '0' && (p[1] == ',' || p[1] == '\0')) {
       if (p[1] == ',')
@@ -106,6 +105,8 @@ last0(struct Client *cptr, struct Client *sptr, char *chanlist)
  */
 int m_join(struct Client *cptr, struct Client *sptr, int parc, char *parv[])
 {
+  assert(0 != cptr);
+  assert(0 != sptr);	
   struct Channel *chptr;
   struct Channel *chptr2;
   struct JoinBuf join;
@@ -129,9 +130,15 @@ int m_join(struct Client *cptr, struct Client *sptr, int parc, char *parv[])
   chanlist = last0(cptr, sptr, parv[1]); /* find last "JOIN 0" */
 
   keys = parv[2]; /* remember where keys are */
-
+  int safecnt = 0;
   for (name = ircd_strtok(&p, chanlist, ","); name;
        name = ircd_strtok(&p, 0, ",")) {
+	if(name[0] == '!' && safecnt >= 1) {
+      /* bad channel name */
+      send_reply(sptr, ERR_TOOMANYTARGETS, name);
+      continue;
+    }		
+	safecnt++;	   
     char *key = 0;
 
     /* If we have any more keys, take the first for this channel. */
@@ -219,7 +226,7 @@ int m_join(struct Client *cptr, struct Client *sptr, int parc, char *parv[])
 	  do_names(sptr, chptr, NAMES_ALL|NAMES_EON); 
       if (feature_bool(FEAT_AUTOCHANMODES) && feature_str(FEAT_AUTOCHANMODES_LIST) && strlen(feature_str(FEAT_AUTOCHANMODES_LIST)) > 0)
         SetAutoChanModes(chptr);
-    } else if(found == 0) {
+    } else if(found == 0 && chptr2->cc[0] != '\0') {
        chptr = chptr2; 
 	   ircd_strncpy(cc, chptr->cc, HOSTLEN +1);
 	}
@@ -412,10 +419,14 @@ int ms_join(struct Client *cptr, struct Client *sptr, int parc, char *parv[])
   joinbuf_init(&join, sptr, cptr, JOINBUF_TYPE_JOIN, 0, 0);
 
   chanlist = last0(cptr, sptr, parv[1]); /* find last "JOIN 0" */
-
+  int safecnt = 0;
   for (name = ircd_strtok(&p, chanlist, ","); name;
        name = ircd_strtok(&p, 0, ",")) {
-
+    if(name[0] == '!' && safecnt >= 1) {
+      protocol_violation(cptr, "%s tried to join a safe channel %s with multiple targets", cli_name(sptr), name);
+      continue;		
+	}
+	safecnt++;
     flags = CHFL_DEOPPED;
 
     if (IsLocalChannel(name) || !IsChannelName(name))
@@ -424,6 +435,12 @@ int ms_join(struct Client *cptr, struct Client *sptr, int parc, char *parv[])
       continue;
     }
 
+    if (IsSaveChannel(name) && IsService(cptr))
+    {
+      protocol_violation(cptr, "%s tried to join %s", cli_name(sptr), name);
+      continue;
+    }
+	
     if (!(chptr = FindChannel(name)))
     {
       /* No channel exists, so create one */
@@ -509,14 +526,14 @@ int ms_join(struct Client *cptr, struct Client *sptr, int parc, char *parv[])
 
         for (member = chptr->members; member; member = member->next_member)
         {
-          if (IsChanOp(member)) {
-            modebuf_mode_client(&mbuf, MODE_DEL | MODE_CHANOP, member->user, OpLevel(member));
-	    member->status &= ~CHFL_CHANOP;
-	  }
           if (IsChannelCreator(member)) {
             modebuf_mode_client(&mbuf, MODE_DEL | MODE_CHAN_CREATOR, member->user, OpLevel(member));
 	    member->status &= ~CHFL_CHAN_CREATOR;
           }
+          if (IsChanOp(member)) {
+            modebuf_mode_client(&mbuf, MODE_DEL | MODE_CHANOP, member->user, OpLevel(member));
+	    member->status &= ~CHFL_CHANOP;
+	  }
           if (HasVoice(member)) {
             modebuf_mode_client(&mbuf, MODE_DEL | MODE_VOICE, member->user, OpLevel(member));
 	    member->status &= ~CHFL_VOICE;
