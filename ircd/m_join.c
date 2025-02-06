@@ -296,7 +296,7 @@ int m_join(struct Client *cptr, struct Client *sptr, int parc, char *parv[])
         default: err = '?'; break;
         }
         /* send accountability notice */
-        if (err)
+        if (err && chptr->mode.link[0] == '\0')
           sendto_opmask_butone(0, SNO_HACK4, "OPER JOIN: %C JOIN %H "
                                "(overriding +%c)", sptr, chptr, err);
 		err = 0;
@@ -320,12 +320,44 @@ int m_join(struct Client *cptr, struct Client *sptr, int parc, char *parv[])
 	    if (!(chptr2 = FindChannel(chptr->mode.link))) {
 	      chptr2 = get_channel(sptr, chptr->mode.link, CGT_CREATE);
 		  flags = CHFL_CHANOP;
-	    }
-	    if(chptr2) {
-		  if(chptr2->mode.link[0] != '\0' || chptr2->mode.link[0] == '!' || chptr2->mode.link[0] == '&' || chptr2->mode.link[0] == '+') {
-		   	send_reply(sptr, err, chptr->chname);
-			continue;
-		  }			
+	    } 
+		  if(chptr->mode.link[0] != '\0' || chptr->mode.link[0] == '!' || chptr->mode.link[0] == '&' || chptr->mode.link[0] == '+') {
+			err = 0;
+			if (IsInvited(sptr, chptr2)) {
+				/* Invites bypass these other checks. */
+			} else 			
+			if (chptr2->mode.mode & MODE_INVITEONLY)
+				err = ERR_INVITEONLYCHAN;
+			else if (chptr2->mode.limit && (chptr2->users >= chptr->mode.limit))
+				err = ERR_CHANNELISFULL;
+			else if ((chptr2->mode.mode & MODE_REGONLY) && !IsAccount(sptr))
+				err = ERR_NEEDREGGEDNICK;
+			else if (find_ban(sptr, chptr2->banlist) && !find_ban_exception(sptr, chptr2->banexceptionlist))
+				err = ERR_BANNEDFROMCHAN;
+			else if (*chptr2->mode.key && (!key || strcmp(key, chptr2->mode.key)))
+				err = ERR_BADCHANNELKEY;
+			char *type;	
+			char desc[64];
+			if(err) {
+				switch (err) {
+					case 0:
+					if (strcmp(chptr2->mode.key, "OVERRIDE")
+						&& strcmp(chptr2->mode.apass, "OVERRIDE")
+						&& strcmp(chptr2->mode.upass, "OVERRIDE")) {
+						send_reply(sptr, ERR_DONTCHEAT, chptr2->chname);
+						continue;
+					}
+					break;
+					case ERR_INVITEONLYCHAN: ircd_strncpy(desc, "channel is invite only", sizeof(desc)); break;
+					case ERR_CHANNELISFULL:  ircd_strncpy(desc, "channel has become full", sizeof(desc)); break;			
+					case ERR_BANNEDFROMCHAN: ircd_strncpy(desc, "you are banned", sizeof(desc)); break;
+					case ERR_BADCHANNELKEY:  ircd_strncpy(desc, "invalid channel key", sizeof(desc)); break;
+					case ERR_NEEDREGGEDNICK: ircd_strncpy(desc, "channel requires registration", sizeof(desc)); break;
+					default: ircd_strncpy(desc, "no reason specified", sizeof(desc)); break;
+				}
+				send_reply(sptr, ERR_LINKCHANNEL, chptr->chname, desc, chptr2->chname);
+				continue;
+			}	
 		  chptr = chptr2;
         }
 	  } else {
@@ -333,7 +365,6 @@ int m_join(struct Client *cptr, struct Client *sptr, int parc, char *parv[])
 		}
       }
 
-	
       joinbuf_join(&join, chptr, flags);
       if (flags & CHFL_CHANOP) {
         struct ModeBuf mbuf;
@@ -348,7 +379,7 @@ int m_join(struct Client *cptr, struct Client *sptr, int parc, char *parv[])
 		modebuf_init(&mbuf, &me, cptr, chptr, MODEBUF_DEST_SERVER | MODEBUF_DEST_CHANNEL);
 	    modebuf_mode_client(&mbuf, MODE_ADD | MODE_CHAN_CREATOR, sptr, 
                             chptr->mode.apass[0] ? ((flags & CHFL_CHANNEL_MANAGER) ? 0 : 1) : MAXOPLEVEL);		
-        sendcmdto_channel_butserv_butone(&me, CMD_MODE, chptr, sptr, 0,
+        sendcmdto_channel_butserv_butone(&his, CMD_MODE, chptr, sptr, 0,
         "%H +O %C", chptr, sptr);	
 	} else {
 		modebuf_init(&mbuf, &me, cptr, chptr, MODEBUF_DEST_SERVER);

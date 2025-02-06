@@ -2823,8 +2823,10 @@ mode_parse_links(struct ParseState *state, int *flag_p)
     return;
 
   if (state->parc <= 0 && state->dir == MODE_ADD) { /* warn if not enough args */
-    if (MyUser(state->sptr))
+    if (MyUser(state->sptr)) {
       need_more_params(state->sptr, "MODE +L");
+	  return;
+	}
   }
 
   t_str = state->parv[state->args_used++];
@@ -2879,7 +2881,7 @@ mode_parse_links(struct ParseState *state, int *flag_p)
       send_reply(state->sptr, ERR_CANNOTCHANGECHANMODE, state->link, "L", "a channel cannot linked to multiple channels"); 		  
     return; /* no link change */
   }
-  if (state->dir == MODE_ADD && (t_str[0] == '!' || t_str[0] == '&' || t_str[0] == '+')) {
+  if (state->dir == MODE_ADD && (IsSaveChannel(t_str) || IsLocalChannel(t_str))) {
          send_reply(state->sptr, ERR_NOSUCHCHANNEL, t_str);  
     return; /* no link change */
   }  

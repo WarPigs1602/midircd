@@ -972,7 +972,7 @@ static Numeric replyTable[] = {
 /* 469 */
   { ERR_LINKSET, "%s %s :Cannot add channel (%s)", "469" },
 /* 470 */
-  { ERR_LINKCHANNEL, "%s %s :The channel has been renamed", "470" },
+  { ERR_LINKCHANNEL, ":[Link] Cannot join channel %s (%s) -- transferring you to %s", "470" },
 /* 471 */
   { ERR_CHANNELISFULL, "%s :Cannot join channel, Channel is full (+l)", "471" },
 /* 472 */
