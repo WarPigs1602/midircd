@@ -128,17 +128,11 @@ int m_join(struct Client *cptr, struct Client *sptr, int parc, char *parv[])
   joinbuf_init(&create, sptr, cptr, JOINBUF_TYPE_CREATE, 0, TStime());
 
   chanlist = last0(cptr, sptr, parv[1]); /* find last "JOIN 0" */
-
+  if(strchr(chanlist, ',') && strchr(chanlist, '!')) 
+      return send_reply(sptr, ERR_TOOMANYTARGETS, chanlist);
   keys = parv[2]; /* remember where keys are */
-  int safecnt = 0;
   for (name = ircd_strtok(&p, chanlist, ","); name;
-       name = ircd_strtok(&p, 0, ",")) {
-	if(name[0] == '!' && safecnt >= 1) {
-      /* bad channel name */
-      send_reply(sptr, ERR_TOOMANYTARGETS, name);
-      continue;
-    }		
-	safecnt++;	   
+       name = ircd_strtok(&p, 0, ",")) {		
     char *key = 0;
 
     /* If we have any more keys, take the first for this channel. */
@@ -419,14 +413,10 @@ int ms_join(struct Client *cptr, struct Client *sptr, int parc, char *parv[])
   joinbuf_init(&join, sptr, cptr, JOINBUF_TYPE_JOIN, 0, 0);
 
   chanlist = last0(cptr, sptr, parv[1]); /* find last "JOIN 0" */
-  int safecnt = 0;
+  if(strchr(chanlist, ',') && strchr(chanlist, '!'))
+      return protocol_violation(cptr, "%s tried to join a safe channel %s with multiple targets", cli_name(sptr), name); 
   for (name = ircd_strtok(&p, chanlist, ","); name;
        name = ircd_strtok(&p, 0, ",")) {
-    if(name[0] == '!' && safecnt >= 1) {
-      protocol_violation(cptr, "%s tried to join a safe channel %s with multiple targets", cli_name(sptr), name);
-      continue;		
-	}
-	safecnt++;
     flags = CHFL_DEOPPED;
 
     if (IsLocalChannel(name) || !IsChannelName(name))
