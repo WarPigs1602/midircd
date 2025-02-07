@@ -2869,7 +2869,7 @@ mode_parse_links(struct ParseState *state, int *flag_p)
     return;
 
   if (state->dir == MODE_DEL && state->chptr->mode.link[0] == '\0') {
-     send_reply(state->sptr, ERR_CANNOTCHANGECHANMODE, state->link, "L", "no link setted");  
+     send_reply(state->sptr, ERR_CANNOTCHANGECHANMODE, "L", "no link setted");  
      return;
   } else if (state->dir == MODE_DEL && state->chptr->mode.link[0] != '\0') {
 	 modebuf_mode_string(state->mbuf, MODE_DEL | flag_p[0], state->chptr->mode.link, 0);
@@ -2878,7 +2878,7 @@ mode_parse_links(struct ParseState *state, int *flag_p)
   }
 
   if (state->dir == MODE_ADD && strchr(t_str, ',')) {
-      send_reply(state->sptr, ERR_CANNOTCHANGECHANMODE, state->link, "L", "a channel cannot linked to multiple channels"); 		  
+      send_reply(state->sptr, ERR_CANNOTCHANGECHANMODE, "L", "a channel cannot linked to multiple channels"); 		  
     return; /* no link change */
   }
   if (state->dir == MODE_ADD && (IsSaveChannel(t_str) || IsLocalChannel(t_str))) {
@@ -2886,12 +2886,12 @@ mode_parse_links(struct ParseState *state, int *flag_p)
     return; /* no link change */
   }  
   if (state->dir == MODE_ADD && !ircd_strcmp(state->link, t_str)) {
-      send_reply(state->sptr, ERR_CANNOTCHANGECHANMODE, state->link, "L", "a channel cannot be linked to itself"); 		  
+      send_reply(state->sptr, ERR_CANNOTCHANGECHANMODE, "L", "a channel cannot be linked to itself"); 		  
     return; /* no link change */
   }
 
   if (state->dir == MODE_ADD && state->chptr->mode.link[0] != '\0') {
-      send_reply(state->sptr, ERR_CANNOTCHANGECHANMODE, t_str, "L", "a link was allready setted");  
+      send_reply(state->sptr, ERR_CANNOTCHANGECHANMODE, "L", "a link was allready setted");  
     return; /* no link change */
   }
 
@@ -2916,12 +2916,14 @@ mode_parse_anonymous(struct ParseState *state, int *flag_p)
   state->parc--;
   state->max_args--;
 
+  if (!feature_bool(FEAT_ANONYMOUS))
+	  return;
   /* If they're not an oper, they can't change modes */
   if (state->flags & (MODE_PARSE_NOTOPER | MODE_PARSE_NOTMEMBER)) {
     send_notoper(state);
     return;
   }
-
+  
   if (state->dir == MODE_ADD && !IsChannelCreator(state->member)) {
          send_reply(state->sptr, ERR_UNIQOPRIVSNEEDED, state->chptr->chname);  
     return; /* no link change */
@@ -2943,6 +2945,7 @@ mode_parse_anonymous(struct ParseState *state, int *flag_p)
   modebuf_mode(state->mbuf, MODE_ADD | MODE_ANONYMOUS);
   state->chptr->mode.mode |= MODE_ANONYMOUS;
   state->chptr->mode.anon = 0;
+  hide_hostmask_to_anonymous(state->chptr);
 }
 
 /*
@@ -4292,6 +4295,7 @@ joinbuf_join(struct JoinBuf *jbuf, struct Channel *chan, unsigned int flags)
 {
   unsigned int len;
   int is_local;
+  int is_safe;
 
   assert(0 != jbuf);
 
@@ -4301,7 +4305,10 @@ joinbuf_join(struct JoinBuf *jbuf, struct Channel *chan, unsigned int flags)
   }
 
   is_local = IsLocalChannel(chan->chname);
-
+  is_safe = IsSaveChannel(chan->chname);
+  if(chan->mode.mode & MODE_ANONYMOUS && is_safe) {
+	  
+  }
   if (jbuf->jb_type == JOINBUF_TYPE_PART ||
       jbuf->jb_type == JOINBUF_TYPE_PARTALL) {
     struct Membership *member = find_member_link(chan, jbuf->jb_source);

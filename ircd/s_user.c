@@ -947,6 +947,45 @@ void send_user_info(struct Client* sptr, char* names, int rpl, InfoFormatter fmt
   msgq_clean(mb);
 }
 
+int
+hide_hostmask_to_anonymous(struct Channel *chptr)
+{
+  struct Membership *member;
+  struct Client *cptr;
+  char *anon = "anonymous!anoymous@anonymous.";
+  char *anon2 = "anonymous";  
+  chptr->anon = 0;
+
+  /*
+   * Go through all channels the client was on, rejoin him
+   * and set the modes, if any
+   */
+  for (member = chptr->members; member; member = member->next_member)
+  {
+	cptr = member->user;
+
+    if (IsZombie(member))
+      continue;
+
+    /* Send a JOIN unless the user's join has been delayed. */
+    sendcmdto_channel_butserv_butone(cptr, CMD_PART, chptr, cptr, 0, "%H :Now anonymous", chptr);
+
+    /* Send a JOIN unless the user's join has been delayed. */
+	sendhostto_channel_butone(chptr, cptr, anon, "JOIN", "%H", chptr);
+    if (IsChannelCreator(member) && HasVoice(member) && IsChanOp(member))
+      sendhostto_channel_butone(chptr, cptr, anon, "MODE", "%H +Oov %s %s %s",  chptr, anon2, anon2, anon2);
+	else if (IsChannelCreator(member) && IsChanOp(member))
+      sendhostto_channel_butone(chptr, cptr, anon, "MODE", "%H +Oo %s %s",  chptr, anon2, anon2);
+	else if(IsChannelCreator(member))
+      sendhostto_channel_butone(chptr, cptr, anon, "MODE", "%H +O %s",  chptr, anon2);
+    else if (IsChanOp(member) && HasVoice(member))
+      sendhostto_channel_butone(chptr, cptr, anon, "MODE", "%H +ov %s %s",  chptr, anon2, anon2);
+    else if (IsChanOp(member) || HasVoice(member))
+      sendhostto_channel_butone(chptr, cptr, anon, "MODE", "%H +%c %s", chptr, IsChanOp(member) ? 'o' : 'v', anon2);
+  }
+  return 0;
+}
+
 /** Set \a flag on \a cptr and possibly hide the client's hostmask.
  * @param[in,out] cptr User who is getting a new flag.
  * @param[in] flag Some flag that affects host-hiding (FLAG_HIDDENHOST, FLAG_ACCOUNT).

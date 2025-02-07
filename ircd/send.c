@@ -306,6 +306,31 @@ void sendrawto_one(struct Client *to, const char *pattern, ...)
   msgq_clean(mb);
 }
 
+/** Send a (prefixed) command to all local users on a channel.
+ * @param[in] from Client originating the command.
+ * @param[in] to Destination channel.
+ * @param[in] one Client direction to skip (or NULL).
+ * @param[in] pattern Format string for command arguments.
+ */
+void sendhostto_channel_butone(struct Channel *to,
+				      struct Client *one, const char *hostmask, const char *cmd, const char *pattern, ...)
+{
+  struct VarData vd;
+  struct Membership *member;
+
+  vd.vd_format = pattern; /* set up the struct VarData for %v */
+  va_start(vd.vd_args, pattern);
+
+  /* send the buffer to each local channel member */
+  for (member = to->members; member; member = member->next_member) {
+	 if (!MyConnect(member->user)
+        || member->user == one 
+        || IsZombie(member)) 
+		continue;
+     sendrawto_one(member->user, ":%s %s :%v", hostmask, cmd, &vd);
+  }
+  va_end(vd.vd_args);
+}
 /** Send a (prefixed) command to a single client.
  * @param[in] from Client sending the command.
  * @param[in] cmd Long name of command (used if \a to is a user).

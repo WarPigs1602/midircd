@@ -120,6 +120,9 @@ enum Feature {
   FEAT_CAP_INVITENOTIFY,
   
   /* Spam protection */
+  FEAT_ANONYMOUS,
+  
+  /* Spam protection */
   FEAT_ANTI_KNOCKER,
   
   /* HEAD_IN_SAND Features */

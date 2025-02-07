@@ -121,6 +121,7 @@ int m_join(struct Client *cptr, struct Client *sptr, int parc, char *parv[])
   char safe[CHANNELLEN];
   int found = -1;
   int creator = -1;
+  int bogus = -1;
   if (parc < 2 || *parv[1] == '\0')
     return need_more_params(sptr, "JOIN");
 
@@ -129,10 +130,16 @@ int m_join(struct Client *cptr, struct Client *sptr, int parc, char *parv[])
 
   chanlist = last0(cptr, sptr, parv[1]); /* find last "JOIN 0" */
   if(strchr(chanlist, ',') && strchr(chanlist, '!')) 
-      return send_reply(sptr, ERR_TOOMANYTARGETS, chanlist);
+      bogus = 0;
   keys = parv[2]; /* remember where keys are */
   for (name = ircd_strtok(&p, chanlist, ","); name;
        name = ircd_strtok(&p, 0, ",")) {		
+    if (IsSaveChannel(name) && bogus == 0)
+    {
+      /* bad channel name */
+      send_reply(sptr, ERR_NOSUCHCHANNEL, name);
+      continue;
+    }
     char *key = 0;
 
     /* If we have any more keys, take the first for this channel. */
@@ -151,6 +158,10 @@ int m_join(struct Client *cptr, struct Client *sptr, int parc, char *parv[])
       continue;
     }
 
+	if (IsSaveChannel(name) && !(chptr2 = FindSafe(&name[1])) && name[1] != '!') {
+      send_reply(sptr, ERR_NOSUCHCHANNEL, name);
+      continue;	  
+	}
     if (cli_user(sptr)->joined >= feature_int(FEAT_MAXCHANNELSPERUSER)
 	&& !HasPriv(sptr, PRIV_CHAN_LIMIT)) {
       send_reply(sptr, ERR_TOOMANYCHANNELS, name);
@@ -279,6 +290,7 @@ int m_join(struct Client *cptr, struct Client *sptr, int parc, char *parv[])
           && !(flags & CHFL_CHANOP)
           && key && !strcmp(key, "OVERRIDE"))
       {
+	  if(chptr->mode.link[0] == '\0') {
         switch (err) {
         case 0:
           if (strcmp(chptr->mode.key, "OVERRIDE")
@@ -299,12 +311,14 @@ int m_join(struct Client *cptr, struct Client *sptr, int parc, char *parv[])
         if (err && chptr->mode.link[0] == '\0')
           sendto_opmask_butone(0, SNO_HACK4, "OPER JOIN: %C JOIN %H "
                                "(overriding +%c)", sptr, chptr, err);
+	  }
 		err = 0;
       }
 
       
       /* Is there some reason the user may not join? */
       if (err) {
+		if(chptr->mode.link[0] == '\0') {
         switch(err) {
 		  case ERR_NEEDREGGEDNICK:
             send_reply(sptr, 
@@ -313,9 +327,11 @@ int m_join(struct Client *cptr, struct Client *sptr, int parc, char *parv[])
                        feature_str(FEAT_URLREG));            
             break;
           default:
+
             send_reply(sptr, err, chptr->chname);
             break;
         }		
+		}
       if(chptr->mode.link[0] != '\0') {
 	    if (!(chptr2 = FindChannel(chptr->mode.link))) {
 	      chptr2 = get_channel(sptr, chptr->mode.link, CGT_CREATE);
@@ -323,28 +339,28 @@ int m_join(struct Client *cptr, struct Client *sptr, int parc, char *parv[])
 	    } 
 		  if(chptr->mode.link[0] != '\0' || chptr->mode.link[0] == '!' || chptr->mode.link[0] == '&' || chptr->mode.link[0] == '+') {
 			err = 0;
-			if (IsInvited(sptr, chptr2)) {
+			if (IsInvited(sptr, chptr)) {
 				/* Invites bypass these other checks. */
 			} else 			
-			if (chptr2->mode.mode & MODE_INVITEONLY)
+			if (chptr->mode.mode & MODE_INVITEONLY)
 				err = ERR_INVITEONLYCHAN;
-			else if (chptr2->mode.limit && (chptr2->users >= chptr->mode.limit))
+			else if (chptr->mode.limit && (chptr->users >= chptr->mode.limit))
 				err = ERR_CHANNELISFULL;
-			else if ((chptr2->mode.mode & MODE_REGONLY) && !IsAccount(sptr))
+			else if ((chptr->mode.mode & MODE_REGONLY) && !IsAccount(sptr))
 				err = ERR_NEEDREGGEDNICK;
-			else if (find_ban(sptr, chptr2->banlist) && !find_ban_exception(sptr, chptr2->banexceptionlist))
+			else if (find_ban(sptr, chptr->banlist) && !find_ban_exception(sptr, chptr ->banexceptionlist))
 				err = ERR_BANNEDFROMCHAN;
-			else if (*chptr2->mode.key && (!key || strcmp(key, chptr2->mode.key)))
+			else if (*chptr->mode.key && (!key || strcmp(key, chptr->mode.key)))
 				err = ERR_BADCHANNELKEY;
 			char *type;	
 			char desc[64];
 			if(err) {
 				switch (err) {
 					case 0:
-					if (strcmp(chptr2->mode.key, "OVERRIDE")
-						&& strcmp(chptr2->mode.apass, "OVERRIDE")
-						&& strcmp(chptr2->mode.upass, "OVERRIDE")) {
-						send_reply(sptr, ERR_DONTCHEAT, chptr2->chname);
+					if (strcmp(chptr->mode.key, "OVERRIDE")
+						&& strcmp(chptr->mode.apass, "OVERRIDE")
+						&& strcmp(chptr->mode.upass, "OVERRIDE")) {
+						send_reply(sptr, ERR_DONTCHEAT, chptr->chname);
 						continue;
 					}
 					break;
@@ -356,7 +372,6 @@ int m_join(struct Client *cptr, struct Client *sptr, int parc, char *parv[])
 					default: ircd_strncpy(desc, "no reason specified", sizeof(desc)); break;
 				}
 				send_reply(sptr, ERR_LINKCHANNEL, chptr->chname, desc, chptr2->chname);
-				continue;
 			}	
 		  chptr = chptr2;
         }
@@ -418,12 +433,14 @@ int ms_join(struct Client *cptr, struct Client *sptr, int parc, char *parv[])
 {
   struct Membership *member;
   struct Channel *chptr;
+  struct Channel *chptr2;
   struct JoinBuf join;
   unsigned int flags;
   time_t creation = 0;
   char *p = 0;
   char *chanlist;
   char *name;
+  int bogus = -1;
 
   if (IsServer(sptr))
   {
@@ -445,22 +462,33 @@ int ms_join(struct Client *cptr, struct Client *sptr, int parc, char *parv[])
 
   chanlist = last0(cptr, sptr, parv[1]); /* find last "JOIN 0" */
   if(strchr(chanlist, ',') && strchr(chanlist, '!'))
-      return protocol_violation(cptr, "%s tried to join a safe channel %s with multiple targets", cli_name(sptr), name); 
+      bogus = 0;
   for (name = ircd_strtok(&p, chanlist, ","); name;
        name = ircd_strtok(&p, 0, ",")) {
     flags = CHFL_DEOPPED;
 
+    if (IsSaveChannel(name) && bogus == 0)
+    {
+      protocol_violation(cptr, "%s tried to join %s", cli_name(sptr), name);
+      continue;
+    }
+	
     if (IsLocalChannel(name) || !IsChannelName(name))
     {
       protocol_violation(cptr, "%s tried to join %s", cli_name(sptr), name);
       continue;
     }
 
-    if (IsSaveChannel(name) && IsService(cptr))
+    if (IsSaveChannel(name) && IsChannelService(cptr))
     {
       protocol_violation(cptr, "%s tried to join %s", cli_name(sptr), name);
       continue;
     }
+
+	if (IsSaveChannel(name) && !(chptr2 = FindSafe(&name[1])) && name[1] != '!') {
+      protocol_violation(cptr, "%s tried to join %s", cli_name(sptr), name);
+      continue;	  
+	}
 	
     if (!(chptr = FindChannel(name)))
     {
