@@ -324,6 +324,9 @@ int m_who(struct Client* cptr, struct Client* sptr, int parc, char* parv[])
     {
       if (IsChannelName(nick) && (chptr = FindChannel(nick)))
       {
+		if ((chptr->mode.mode & MODE_ANONYMOUS)) {
+			continue;
+		}
         isthere = (find_channel_member(sptr, chptr) != 0);
         if (isthere || SEE_CHANNEL(sptr, chptr, bitsel))
         {

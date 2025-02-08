@@ -169,6 +169,8 @@ static void do_whois(struct Client* sptr, struct Client *acptr, int parc)
            && feature_bool(FEAT_HIS_WHOIS_LOCALCHAN) && !IsAnOper(sptr))
 	  continue;
 
+       if (IsSaveChannel(chptr->chname) && !IsAnOper(sptr))
+	      continue;
        if (len+strlen(chptr->chname) + mlen > BUFSIZE - 5)
        {
           send_reply(sptr, SND_EXPLICIT | RPL_WHOISCHANNELS, "%s :%s", name, buf);

@@ -127,7 +127,12 @@ void relay_channel_message(struct Client* sptr, const char* name, const char* te
         send_reply(sptr, ERR_CANNOTSENDTOCHAN, chptr->chname);
         return;
       }
-
+  
+  char *anon = "anonymous!anoymous@anonymous.";
+  if ((chptr->mode.mode & MODE_ANONYMOUS)) {
+	sendhostto_channel_butone(chptr, sptr, anon, "PRIVMSG", "%H :%s",  chptr, text);  
+	return;
+  }
   
   sendcmdto_channel_butone(sptr, CMD_PRIVATE, chptr, cli_from(sptr),
 			   SKIP_DEAF | SKIP_BURST, "%H :%s", chptr, text);
@@ -181,6 +186,12 @@ void relay_channel_notice(struct Client* sptr, const char* name, const char* tex
       if (*ch++==1)
         return;
 
+  char *anon = "anonymous!anoymous@anonymous.";
+  if ((chptr->mode.mode & MODE_ANONYMOUS)) {
+	sendhostto_channel_butone(chptr, sptr, anon, "NOTICE", "%H :%s",  chptr, text);  
+	return;
+  }
+  
   sendcmdto_channel_butone(sptr, CMD_NOTICE, chptr, cli_from(sptr),
 			   SKIP_DEAF | SKIP_BURST, "%H :%s", chptr, text);
 			   

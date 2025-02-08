@@ -206,7 +206,16 @@ static void exit_one_client(struct Client* bcptr, const char* comment)
      * that the client can show the "**signoff" message).
      * (Note: The notice is to the local clients *only*)
      */
-    sendcmdto_common_channels_butone(bcptr, CMD_QUIT, NULL, ":%s", comment);
+    
+    char *anon = "anonymous!anoymous@anonymous.";
+    struct Membership* chan;
+    /* (slug for +u) removed !IsDelayedJoin(chan) as splidge said to */
+    for (chan = cli_user(bcptr)->channel; chan; chan = chan->next_channel) {
+        if ((chan->channel->mode.mode & MODE_ANONYMOUS)) {
+	        sendhostto_channel_butone(chan->channel, bcptr, anon, "PART", "%H :%s", chan->channel, comment);
+		} 
+    }	 
+    sendcmdto_common_channels_anonymous_butone(bcptr, CMD_QUIT, NULL, ":%s", comment);
 
     remove_user_from_all_channels(bcptr);
 

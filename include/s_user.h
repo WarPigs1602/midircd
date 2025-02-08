@@ -78,7 +78,7 @@ extern int whisper(struct Client* source, const char* nick,
                    const char* channel, const char* text, int is_notice);
 extern void send_user_info(struct Client* to, char* names, int rpl,
                            InfoFormatter fmt);
-extern int hide_hostmask_to_anonymous(struct Channel *chptr);
+extern int hide_hostmask_to_anonymous(struct Channel *chptr, struct Client *sptr);
 extern int hide_hostmask(struct Client *cptr, unsigned int flags);
 extern int set_hostmask(struct Client *cptr, char *hostmask, char *password);
 extern int is_hostmask(char *word);

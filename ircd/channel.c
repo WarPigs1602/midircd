@@ -1240,9 +1240,9 @@ void send_channel_modes(struct Client *cptr, struct Channel *chptr)
 	    if (IsChanOp(member))	/* flag_cnt == 2 or 3 */
 	    {
               /* append the absolute value of the oplevel */
-              if (send_oplevels)
+              if (send_oplevels) {
                 loc += ircd_snprintf(0, tbuf + loc, sizeof(tbuf) - loc, "%u", last_oplevel = member->oplevel);
-              else
+              } else
                 tbuf[loc++] = 'o';
 	    }
 	    tbuf[loc] = '\0';
@@ -2942,10 +2942,9 @@ mode_parse_anonymous(struct ParseState *state, int *flag_p)
   if (!state->mbuf)
     return;
 
-  modebuf_mode(state->mbuf, MODE_ADD | MODE_ANONYMOUS);
   state->chptr->mode.mode |= MODE_ANONYMOUS;
   state->chptr->mode.anon = 0;
-  hide_hostmask_to_anonymous(state->chptr);
+  hide_hostmask_to_anonymous(state->chptr, state->sptr);
 }
 
 /*
@@ -4001,6 +4000,10 @@ mode_parse(struct ModeBuf *mbuf, struct Client *cptr, struct Client *sptr,
 	   struct Channel *chptr, int parc, char *parv[], unsigned int flags,
 	   struct Membership* member)
 {
+  if(chptr->mode.mode & MODE_ANONYMOUS) {
+      sendfailto_one(cptr, &me, "MODE", "MODE_ANONYMOUS", "%H :You can't set modes on an anonymous channel", chptr);  	  
+	  return 0;
+  }	
   static int chan_flags[] = {
     MODE_CHANOP,	'o',
     MODE_VOICE,		'v',
@@ -4295,20 +4298,15 @@ joinbuf_join(struct JoinBuf *jbuf, struct Channel *chan, unsigned int flags)
 {
   unsigned int len;
   int is_local;
-  int is_safe;
-
+ 
   assert(0 != jbuf);
-
+    char *anon = "anonymous!anoymous@anonymous.";	
   if (!chan) {
     sendcmdto_serv_butone(jbuf->jb_source, CMD_JOIN, jbuf->jb_connect, "0");
     return;
   }
 
   is_local = IsLocalChannel(chan->chname);
-  is_safe = IsSaveChannel(chan->chname);
-  if(chan->mode.mode & MODE_ANONYMOUS && is_safe) {
-	  
-  }
   if (jbuf->jb_type == JOINBUF_TYPE_PART ||
       jbuf->jb_type == JOINBUF_TYPE_PARTALL) {
     struct Membership *member = find_member_link(chan, jbuf->jb_source);
@@ -4317,12 +4315,23 @@ joinbuf_join(struct JoinBuf *jbuf, struct Channel *chan, unsigned int flags)
     SetUserParting(member);
 
     /* Send notification to channel */
-    if (!(flags & (CHFL_ZOMBIE | CHFL_DELAYED)))
-      sendcmdto_channel_butserv_butone(jbuf->jb_source, CMD_PART, chan, NULL, 0,
+    if (!(flags & (CHFL_ZOMBIE | CHFL_DELAYED))) {
+	  if((chan->mode.mode & MODE_ANONYMOUS)) {
+		sendhostto_channel_butone(chan, jbuf->jb_source, anon, "PART",  (((chan->mode.mode & MODE_NOQUITPARTS)
+		     && !IsChannelService(member->user)) || !jbuf->jb_comment) ?
+		    "%H" : "%H :%s", chan, jbuf->jb_comment);		
+		if (MyUser(jbuf->jb_source))
+		sendcmdto_one(jbuf->jb_source, CMD_PART, jbuf->jb_source,
+		    ((flags & CHFL_BANNED) || (chan->mode.mode & MODE_NOQUITPARTS)
+		     || !jbuf->jb_comment) ?
+		    ":%H" : "%H :%s", chan, jbuf->jb_comment);
+	  } else       
+       sendcmdto_channel_butserv_butone(jbuf->jb_source, CMD_PART, chan, NULL, 0,
 		    ((flags & CHFL_BANNED) || ((chan->mode.mode & MODE_NOQUITPARTS)
 		     && !IsChannelService(member->user)) || !jbuf->jb_comment) ?
 		    "%H" : "%H :%s", chan, jbuf->jb_comment);
-    else if (MyUser(jbuf->jb_source))
+    } else
+	if (MyUser(jbuf->jb_source))
       sendcmdto_one(jbuf->jb_source, CMD_PART, jbuf->jb_source,
 		    ((flags & CHFL_BANNED) || (chan->mode.mode & MODE_NOQUITPARTS)
 		     || !jbuf->jb_comment) ?
@@ -4353,6 +4362,12 @@ joinbuf_join(struct JoinBuf *jbuf, struct Channel *chan, unsigned int flags)
 			    "%H %Tu", chan, chan->creationtime);
 
     if (!((chan->mode.mode & MODE_DELJOINS) && !(flags & CHFL_VOICED_OR_OPPED))) {
+	  if((chan->mode.mode & MODE_ANONYMOUS)) {
+        sendhostto_channel_butone(chan, jbuf->jb_source, anon, "JOIN", ":%H", chan);		
+	    if (MyUser(jbuf->jb_source)) {
+			sendcmdto_one(jbuf->jb_source, CMD_JOIN, jbuf->jb_source, ":%H", chan);
+		}
+	  } else {
       /* Send the notification to the channel */
       sendcmdto_capflag_channel_butserv_butone(jbuf->jb_source, CMD_JOIN, chan, NULL, 0,
         _CAP_LAST_CAP, CAP_EXTJOIN, "%H", chan);
@@ -4369,8 +4384,11 @@ joinbuf_join(struct JoinBuf *jbuf, struct Channel *chan, unsigned int flags)
 	sendcmdto_channel_butserv_butone((chan->mode.apass[0] ? &his : jbuf->jb_source),
                                          CMD_MODE, chan, NULL, 0, "%H +o %C",
 					 chan, jbuf->jb_source);
-    } else if (MyUser(jbuf->jb_source))
+	  }
+    } else
+	if (MyUser(jbuf->jb_source)) {
       sendcmdto_one(jbuf->jb_source, CMD_JOIN, jbuf->jb_source, ":%H", chan);
+	}
   }
 
   if (jbuf->jb_type == JOINBUF_TYPE_PARTALL ||

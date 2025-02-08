@@ -35,9 +35,15 @@ extern void send_queued(struct Client *to);
 extern void sendrawto_one(struct Client *to, const char *pattern, ...);
 
 /* Send command and host to all channel users on this server */
-void sendhostto_channel_butone(struct Channel *to,
+extern void sendhostto_channel_butone(struct Channel *to,
 				      struct Client *one, const char *hostmask, const char *cmd, const char *pattern, ...);
-					  
+
+extern void sendfailto_one(struct Client *to, struct Client *from, const char *command, const char *code, const char *pattern, ...);
+extern void sendwarnto_one(struct Client *to, struct Client *from, const char *command, const char *code, const char *pattern, ...);
+extern void sendnoteto_one(struct Client *to, struct Client *from, const char *command, const char *code, const char *pattern, ...);
+extern void sendcmdto_common_channels_anonymous_butone(struct Client *from, const char *cmd,
+				      const char *tok, struct Client *one,
+				      const char *pattern, ...);
 /* Send a command to one client */
 extern void sendcmdto_one(struct Client *from, const char *cmd,
 			  const char *tok, struct Client *to,

@@ -72,7 +72,7 @@ int m_rename(struct Client *cptr, struct Client *sptr, int parc, char *parv[])
       send_reply(sptr, ERR_NOSUCHCHANNEL, target);
       return 0;
   }
-  send_reply(sptr, ERR_LINKCHANNEL, name, target, reason);  
+  sendfailto_one(sptr, &me, "RENAME", "CHANNEL_NAME_IN_USE", "%s %s :The channel name is already taken", name, target);  
   
   return 0;
 }
