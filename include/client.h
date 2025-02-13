@@ -274,6 +274,8 @@ struct Client {
   unsigned int   cli_hopcount;    /**< number of servers to this 0 = local */
   struct irc_in_addr cli_ip;      /**< Real IP of client */
   short          cli_status;      /**< Client type */
+  int  			 cli_sasl;        /**< Client uses sasl */
+  char cli_saslb64[BUFSIZE + 1];        /**< Client uses sasl */
   char cli_name[HOSTLEN + 1];     /**< Unique name of the client, nick or host */
   char cli_username[USERLEN + 1]; /**< Username determined by ident lookup */
   char cli_info[REALLEN + 1];     /**< Free form additional client information */

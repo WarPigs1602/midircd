@@ -38,6 +38,7 @@
 #include "s_auth.h"
 #include "class.h"
 #include "client.h"
+#include "hash.h"
 #include "IPcheck.h"
 #include "ircd.h"
 #include "ircd_alloc.h"
@@ -46,6 +47,7 @@
 #include "ircd_features.h"
 #include "ircd_log.h"
 #include "ircd_osdep.h"
+#include "ircd_relay.h"
 #include "ircd_reply.h"
 #include "ircd_snprintf.h"
 #include "ircd_string.h"
@@ -66,6 +68,7 @@
 
 #include <errno.h>
 #include <string.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
 #include <fcntl.h>
@@ -314,7 +317,6 @@ static int auth_set_username(struct AuthRequest *auth)
     if (!character)
       goto badid;
   }
-
   return 0;
 
 badid:
@@ -378,6 +380,18 @@ static void iauth_notify(struct AuthRequest *auth, enum AuthRequestFlag flag)
   }
 }
 
+static int auth_sasl(struct Client *sptr) {
+	if(!sptr->cli_saslb64) {
+	 return 1; 
+    } 
+	struct Client *target, *server, *nick;
+    if ((target = FindUser(feature_str(FEAT_SASL_NAME)))) {
+		sendcmdto_one(sptr, CMD_PRIVATE, target, "%s :%s", feature_str(FEAT_SASL_NICK), sptr->cli_saslb64);
+	} else
+		send_reply(sptr, ERR_SERVICESDOWN, feature_str(FEAT_SASL_NAME));
+    return 0;	
+}
+
 /** Check whether an authorization request is complete.
  * This means that no flags from 0 to #AR_LAST_SCAN are set on \a auth.
  * If #AR_IAUTH_PENDING is set, optionally go into "hurry" state.  If
@@ -415,7 +429,6 @@ static int check_auth_finished(struct AuthRequest *auth, int bitclr)
         || FlagHas(&auth->flags, AR_DNS_PENDING)
         || FlagHas(&auth->flags, AR_NEEDS_USER))
       return 0;
-
     /* Copy username to struct User.username for kill checking. */
     sptr = auth->client;
     user = cli_user(sptr);
@@ -440,7 +453,7 @@ static int check_auth_finished(struct AuthRequest *auth, int bitclr)
     } /* else cleaned version of client-provided name is in place */
 
     /* AntiKnocker */
-	if(FEAT_ANTI_KNOCKER) {
+	if(feature_bool(FEAT_ANTI_KNOCKER)) {
 	  /* The pattern to check */
 	  pattern = "(st|sn|cr|pl|pr|fr|fl|qu|br|gr|sh|sk|tr|kl|wr|bl|[bcdfgklmnprstvwz])([aeiou][aeiou][bcdfgklmnprstvwz])(ed|est|er|le|ly|y|ies|iest|ian|ion|est|ing|led|inger|[abcdfgklmnprstvwz])";
 	  /* Got the Ident */
@@ -526,9 +539,8 @@ static int check_auth_finished(struct AuthRequest *auth, int bitclr)
 
     ircd_strncpy(cli_user(cptr)->host, cli_sockhost(cptr), HOSTLEN);
     ircd_strncpy(cli_user(cptr)->realhost, cli_sockhost(cptr), HOSTLEN);
-    res = auth_set_username(auth);
-
-    /* If client has an attached conf, IAuth assigned a class; use it.
+    res = auth_set_username(auth); 
+	/* If client has an attached conf, IAuth assigned a class; use it.
      * Otherwise, assign to a Client block and check password.
      */
     if ((res == 0) && !cli_confs(cptr))
@@ -559,6 +571,7 @@ static int check_auth_finished(struct AuthRequest *auth, int bitclr)
   }
   if (res == 0)
     destroy_auth_request(auth);
+  auth_sasl(auth->client);
   return res;
 }
 

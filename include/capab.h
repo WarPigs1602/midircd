@@ -40,9 +40,12 @@
 	_CAP(ACCOUNTNOTIFY, FEAT_CAP_ACCOUNTNOTIFY, 0, "account-notify"), \
 	_CAP(AWAYNOTIFY, FEAT_CAP_AWAYNOTIFY, 0 , "away-notify"), \
 	_CAP(CHGHOST, FEAT_CAP_CHGHOST, 0, "chghost"), \
+	_CAP(RENAME, FEAT_CAP_RENAME, 0, "draft/channel-rename"), \
 	_CAP(ECHOMESSAGE, FEAT_CAP_ECHOMESSAGE, 0, "echo-message"), \
 	_CAP(EXTJOIN, FEAT_CAP_EXTJOIN, 0, "extended-join"), \
-	_CAP(INVITENOTIFY, FEAT_CAP_INVITENOTIFY, 0, "invite-notify")
+	_CAP(INVITENOTIFY, FEAT_CAP_INVITENOTIFY, 0, "invite-notify"), \
+	_CAP(SASL, FEAT_CAP_SASL, 0, "sasl"), \
+	_CAP(STANDARDREPLYS, FEAT_CAP_STANDARDREPLYS, 0, "standard-replys")
 
 /** Client capabilities */
 enum Capab {

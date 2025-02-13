@@ -36,6 +36,7 @@
 
 struct SLink;
 struct Client;
+struct RenamedChan;
 
 /*
  * General defines
@@ -333,7 +334,6 @@ struct Channel {
   struct Ban*        banlist;      /**< List of bans on this channel */
   struct BanEx*      banexceptionlist;      /**< List of ban exceptions on this channel */
   struct Mode        mode;	   /**< This channels mode */
-  char               cc[USERLEN + 1];
   char               topic[TOPICLEN + 1]; /**< Channels topic */
   char               topic_nick[NICKLEN + 1]; /**< Nick of the person who set
 						*  The topic
@@ -341,9 +341,19 @@ struct Channel {
   char               safe[1];
   char               rnd[5]; /** Random code of ! channels */
   char               link[1];
+  char               cc[USERLEN + 1];
   char               chname[1];	  /**< Dynamically allocated string of the 
 				     * channel name
-				     */
+				     */				 
+};
+
+struct RenamedChan {
+  struct RenamedChan*    next;	/**< next channel in the global channel list */
+  struct RenamedChan*    prev;	/**< previous channel */
+  struct RenamedChan*    hnext;	/**< Next channel in the hash table */	
+  char               chname[CHANNELLEN + 1];
+  char               newname[CHANNELLEN + 1];	
+  char               reason[BUFSIZE + 1];	
 };
 
 /** Information about a /list in progress */
@@ -365,6 +375,7 @@ struct ModeBuf {
   struct Client	       *mb_source;	/**< Source of MODE changes */
   struct Client	       *mb_connect;	/**< Connection of MODE changes */
   struct Channel       *mb_channel;	/**< Channel they affect */
+  struct RenamedChan       *mb_renamed;	/**< Channel they affect */
   unsigned int		mb_dest;	/**< Destination of MODE changes */
   unsigned int		mb_count;	/**< Number of modes w/args */
   char          *mb_link; /**< The Linked Channel >*/
@@ -419,6 +430,7 @@ struct JoinBuf {
 #define JOINBUF_TYPE_PARTALL	3	/**< send local PARTs, but not remote */
 
 extern struct Channel* GlobalChannelList;
+extern struct RenamedChan* GlobalRenamedList;
 extern int             LocalChanOperMode;
 
 /*
@@ -433,7 +445,9 @@ extern int set_mode(struct Client* cptr, struct Client* sptr,
 extern void send_hack_notice(struct Client *cptr, struct Client *sptr,
                              int parc, char *parv[], int badop, int mtype);
 extern struct Channel *get_channel(struct Client *cptr,
-                                   char *chname, ChannelGetType flag);							   
+                                   char *chname, ChannelGetType flag);
+extern struct RenamedChan *get_renamed(struct Client *cptr,
+                                   char *chname, ChannelGetType flag);								   
 								   
 extern int SetAutoChanModes(struct Channel *chptr);
 extern struct Membership* find_member_link(struct Channel * chptr,
@@ -459,7 +473,6 @@ extern void remove_user_from_all_channels(struct Client* cptr);
 
 extern int is_chan_op(struct Client *cptr, struct Channel *chptr);
 extern int is_chan_creator(struct Client *cptr, struct Channel *chptr);
-
 extern int is_zombie(struct Client *cptr, struct Channel *chptr);
 extern int has_voice(struct Client *cptr, struct Channel *chptr);
 /*

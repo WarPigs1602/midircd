@@ -639,6 +639,13 @@ struct Message msgtab[] = {
     { m_unregistered, m_rename, ms_rename, m_rename, m_ignore }
   },
   {
+    MSG_AUTHENTICATE,
+    TOK_AUTHENTICATE,
+    0, MAXPARA, MFLG_SLOW, 0, NULL,
+    /* UNREG, CLIENT, SERVER, OPER, SERVICE */
+    { m_sasl, m_sasl, ms_sasl, m_sasl, m_ignore }
+  },  
+  {
     MSG_XQUERY,
     TOK_XQUERY,
     0, MAXPARA, MFLG_SLOW, 0, NULL,
@@ -652,7 +659,6 @@ struct Message msgtab[] = {
     /* UNREG, CLIENT, SERVER, OPER, SERVICE */
     { m_ignore, m_ignore, ms_xreply, m_ignore, m_ignore }
   },  
-#if WE_HAVE_A_REAL_CAPABILITY_NOW
   {
     MSG_CAP,
     TOK_CAP,
@@ -660,7 +666,6 @@ struct Message msgtab[] = {
     /* UNREG, CLIENT, SERVER, OPER, SERVICE */
     { m_cap, m_cap, m_ignore, m_cap, m_ignore }
   },
-#endif
 
   /*
    * - ASUKA ---------------------------------------------------------------------

@@ -56,24 +56,100 @@
  */
 int m_rename(struct Client *cptr, struct Client *sptr, int parc, char *parv[])
 {
-  struct Membership *member;
-  struct Channel *chptr;
+  struct Membership *member, *nmember;  
+  struct Channel *chptr, *chptr2, *nchptr;
+  
+  struct RenamedChan *ren;
+  struct Client *c2ptr;
   char *name;
   char *target;
-  char **reason; 
+  char *reason; 
   if (parc < 3 || *parv[1] == '\0')
     return need_more_params(sptr, "RENAME");
   name = parv[1];
   target = parv[2];
-  reason = &parv[3];
+  reason = EmptyString(parv[parc - 1]) ? parv[0] : parv[parc - 1];
   if (!IsChannelName(target) || !strIsIrcCh(target))
   {
       /* bad channel name */
       send_reply(sptr, ERR_NOSUCHCHANNEL, target);
       return 0;
   }
-  sendfailto_one(sptr, &me, "RENAME", "CHANNEL_NAME_IN_USE", "%s %s :The channel name is already taken", name, target);  
-  
+  int flags = CHFL_DEOPPED;
+  chptr = FindChannel(target);
+  chptr2 = FindChannel(name);
+  if (!IsChannelName(name) || !chptr2) {
+	 if(CapHas(cli_active(sptr), CAP_STANDARDREPLYS))
+		sendfailto_one(sptr, &me, "RENAME", "CANNOT_RENAME", ":The requesting channel %s doesn't exists", name); 
+	 else
+		send_reply(sptr, ERR_NOSUCHCHANNEL, name);
+  } else if (FindRenamed(name)) {
+	if(CapHas(cli_active(sptr), CAP_STANDARDREPLYS))
+		sendfailto_one(sptr, &me, "RENAME", "CANNOT_RENAME", ":%s channel has been renamed recently", name);  
+	 else
+		send_reply(sptr, ERR_LINKSET, name, target, "Channel has been renamed recently", name);
+  } else if (IsChannelName(target) && chptr) {
+    if(CapHas(cli_active(sptr), CAP_STANDARDREPLYS))
+		sendfailto_one(sptr, &me, "RENAME", "CHANNEL_NAME_IN_USE", ":Channel %s already exists", target);  
+	 else
+		send_reply(sptr, ERR_LINKSET, name, target, "Channel already exists");
+ } else if (name[0] != target[0]) {
+	 if(CapHas(cli_active(sptr), CAP_STANDARDREPLYS))
+		sendfailto_one(sptr, &me, "RENAME", "CANNOT_RENAME", ":You cannot change a channel prefix type"); 
+	 else
+		send_reply(sptr, ERR_LINKSET, name, target, "You cannot change a channel prefix type");
+  } else {
+	if (!(member = find_member_link(chptr2, sptr)) || IsZombie(member)
+          || !IsChanOp(member))
+      return send_reply(sptr, ERR_CHANOPRIVSNEEDED, name);
+	if(!(ren = get_renamed(sptr, name, CGT_CREATE))) {
+      return 0;		
+	}
+	ircd_strncpy(ren->newname, target, CHANNELLEN + 1);
+	ircd_strncpy(ren->reason, reason, BUFSIZE + 1);
+	if(!chptr2) {
+		chptr2 = get_channel(sptr, name, CGT_CREATE);
+	}
+	if(!chptr) {
+		chptr = get_channel(sptr, target, CGT_CREATE);
+	}
+    for (member=chptr2->members;member;member=nmember) {
+        nmember=member->next_member;
+		c2ptr = member->user;
+        if (!MyUser(c2ptr) || IsZombie(member) || IsAnOper(c2ptr))
+          continue;		
+		if (IsChanOp(member))
+			flags = CHFL_CHANOP;
+		else if (HasVoice(member))
+			flags = CHFL_VOICE;
+		struct JoinBuf join;
+		struct JoinBuf parts;
+		joinbuf_init(&parts, c2ptr, cptr, JOINBUF_TYPE_PART, reason,
+	       0);		
+		joinbuf_init(&join, c2ptr, cptr, JOINBUF_TYPE_JOIN, 0, 0); 
+		chptr->topic_time = chptr2->topic_time;		
+		ircd_strncpy(chptr->topic, chptr2->topic, TOPICLEN);
+		ircd_strncpy(chptr->topic_nick, chptr2->topic_nick, TOPICLEN); 
+		chptr->mode = chptr2->mode;	    
+		joinbuf_join(&parts, chptr2, flags); /* part client from channel */	
+		joinbuf_join(&join, chptr, flags);
+		if (IsChanOp(member) && HasVoice(member)) {
+			sendcmdto_channel_butserv_butone(&his, CMD_MODE, chptr, cptr, 0,
+				"%H +ov %C %C", chptr, c2ptr, c2ptr);
+		} else if (IsChanOp(member) || HasVoice(member)) {
+			sendcmdto_channel_butserv_butone(&his, CMD_MODE, chptr, cptr, 0,
+				"%H +%c %C", chptr, IsChanOp(member) ? 'o' : 'v', c2ptr);
+		}		
+		if (chptr->topic[0]) {
+			send_reply(c2ptr, RPL_TOPIC, chptr->chname, chptr->topic);
+			send_reply(c2ptr, RPL_TOPICWHOTIME, chptr->chname, chptr->topic_nick,
+				chptr->topic_time);
+		}
+		do_names(c2ptr, chptr, NAMES_ALL|NAMES_EON);
+		joinbuf_flush(&parts);
+		joinbuf_flush(&join);	
+	}	
+  } 
   return 0;
 }
 

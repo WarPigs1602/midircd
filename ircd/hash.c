@@ -57,6 +57,8 @@
 static struct Client *clientTable[HASHSIZE];
 /** Hash table for channels. */
 static struct Channel *channelTable[HASHSIZE];
+/** Hash table for channels. */
+static struct RenamedChan *renamedTable[HASHSIZE];
 /** CRC-32 update table. */
 static uint32_t crc32hash[256];
 
@@ -140,6 +142,20 @@ int hAddChannel(struct Channel *chptr)
   return 0;
 }
 
+/** Prepend a channel to the appropriate hash bucket.
+ * @param[in] chptr Channel to add to hash table.
+ * @return Zero.
+ */
+int hAddRenamed(struct RenamedChan *chptr)
+{
+  HASHREGS hashv = strhash(chptr->chname);
+
+  chptr->hnext = renamedTable[hashv];
+  renamedTable[hashv] = chptr;
+
+  return 0;
+}
+
 /** Remove a client from its hash bucket.
  * @param[in] cptr Client to remove from hash table.
  * @return Zero if the client is found and removed, -1 if not found.
@@ -208,6 +224,60 @@ int hRemChannel(struct Channel *chptr)
   }
 
   return -1;
+}
+
+/** Prepend a channel to the appropriate hash bucket.
+ * @param[in] chptr Channel to add to hash table.
+ * @return Zero.
+ */
+int hRemRenamed(struct RenamedChan *chptr)
+{
+  HASHREGS hashv = strhash(chptr->chname);
+  struct RenamedChan *tmp = renamedTable[hashv];
+
+  if (tmp == chptr) {
+    renamedTable[hashv] = chptr->hnext;
+    chptr->hnext = chptr;
+    return 0;
+  }
+
+  while (tmp) {
+    if (tmp->hnext == chptr) {
+      tmp->hnext = tmp->hnext->hnext;
+      chptr->hnext = chptr;
+      return 0;
+    }
+    tmp = tmp->hnext;
+  }
+
+  return -1;  
+}
+
+/** Find a channel by name.
+ * If a channel is found, it is moved to the top of its hash bucket.
+ * @param[in] name Channel name to search for.
+ * @return Matching channel, or NULL if none.
+ */
+struct RenamedChan* hSeekRenamed(const char *name)
+{
+  HASHREGS hashv = strhash(name);
+  struct RenamedChan *chptr = renamedTable[hashv];
+
+  if (chptr) {
+    if (0 != ircd_strcmp(name, chptr->chname)) {
+      struct RenamedChan* prev;
+      while (prev = chptr, chptr = chptr->hnext) {
+        if (0 == ircd_strcmp(name, chptr->chname)) {
+          prev->hnext = chptr->hnext;
+          chptr->hnext = renamedTable[hashv];
+          renamedTable[hashv] = chptr;
+          break;
+        }
+      }
+    }
+  }
+  return chptr;
+
 }
 
 /** Find a client by name, filtered by status mask.

@@ -32,6 +32,7 @@ struct UserStatistics {
 
   /* Misc: */
   unsigned int channels;        /**< Existing channels. */
+  unsigned int renamed;        /**< Renamed channels. */  
 };
 
 extern struct UserStatistics UserStats;

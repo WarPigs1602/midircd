@@ -60,6 +60,7 @@
 
 /** Linked list containing the full list of all channels */
 struct Channel* GlobalChannelList = 0;
+struct RenamedChan* GlobalRenamedList = 0;
 
 /** Number of struct Membership*'s allocated */
 static unsigned int membershipAllocCount;
@@ -1509,6 +1510,52 @@ void clean_channelname(char *cn)
     }
   }
 }
+
+/** Get a channel block, creating if necessary.
+ *  Get Channel block for chname (and allocate a new channel
+ *  block, if it didn't exists before).
+ *
+ * @param cptr		Client joining the channel.
+ * @param chname	The name of the channel to join.
+ * @param flag		set to CGT_CREATE to create the channel if it doesn't 
+ * 			exist
+ *
+ * @returns NULL if the channel is invalid, doesn't exist and CGT_CREATE 
+ * 	wasn't specified or a pointer to the channel structure
+ */
+struct RenamedChan *get_renamed(struct Client *cptr, char *chname, ChannelGetType flag)
+{
+  struct RenamedChan *chptr;
+  int len;
+
+  if (EmptyString(chname))
+    return NULL;
+
+  len = strlen(chname);
+  if (MyUser(cptr) && len > CHANNELLEN)
+  {
+    len = CHANNELLEN;
+    *(chname + CHANNELLEN) = '\0';
+  }
+  if ((chptr = FindRenamed(chname)))
+    return (chptr);
+  if (flag == CGT_CREATE)
+  {
+    chptr = (struct RenamedChan*) MyMalloc(sizeof(struct RenamedChan) + len);
+    assert(0 != chptr);
+    ++UserStats.renamed;	
+    memset(chptr, 0, sizeof(struct RenamedChan));
+    strcpy(chptr->chname, chname);
+    if (GlobalRenamedList)
+      GlobalRenamedList->prev = chptr;
+    chptr->prev = NULL;
+    chptr->next = GlobalRenamedList;
+    GlobalRenamedList = chptr;
+    hAddRenamed(chptr);
+  }
+  return chptr;
+}
+
 
 /** Get a channel block, creating if necessary.
  *  Get Channel block for chname (and allocate a new channel

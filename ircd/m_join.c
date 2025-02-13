@@ -109,6 +109,7 @@ int m_join(struct Client *cptr, struct Client *sptr, int parc, char *parv[])
   assert(0 != sptr);	
   struct Channel *chptr;
   struct Channel *chptr2;
+  struct RenamedChan *ren;
   struct JoinBuf join;
   struct JoinBuf create;
   struct Gline *gline;
@@ -116,6 +117,8 @@ int m_join(struct Client *cptr, struct Client *sptr, int parc, char *parv[])
   char *chanlist;
   char *name;
   char *keys;
+  char *target;
+  char *reason;
   char buf[5];
   char cc[HOSTLEN +1];
   char safe[CHANNELLEN];
@@ -124,7 +127,6 @@ int m_join(struct Client *cptr, struct Client *sptr, int parc, char *parv[])
   int bogus = -1;
   if (parc < 2 || *parv[1] == '\0')
     return need_more_params(sptr, "JOIN");
-
   joinbuf_init(&join, sptr, cptr, JOINBUF_TYPE_JOIN, 0, 0);
   joinbuf_init(&create, sptr, cptr, JOINBUF_TYPE_CREATE, 0, TStime());
 
@@ -137,7 +139,7 @@ int m_join(struct Client *cptr, struct Client *sptr, int parc, char *parv[])
     if (IsSaveChannel(name) && bogus == 0)
     {
       /* bad channel name */
-      send_reply(sptr, ERR_NOSUCHCHANNEL, name);
+      sendfailto_one(sptr, &me, "JOIN", "BOGUS_SAFE_CHANNEL", "%s :Cannot join channel (Multiple requests for safe channels are not allowed)", name);  
       continue;
     }
     char *key = 0;
@@ -174,6 +176,14 @@ int m_join(struct Client *cptr, struct Client *sptr, int parc, char *parv[])
       send_reply(sptr, ERR_BANNEDFROMCHAN, name);
       continue;
     }
+	if((ren = FindRenamed(name))) {
+	  if (CapHas(cli_active(sptr), CAP_STANDARDREPLYS) && CapHas(cli_active(sptr), CAP_RENAME)) {
+		 sendfailto_one(sptr, &me, "JOIN", "CHANNEL_RENAMED", "%s %s :The channel has been renamed", name, ren->newname); 
+	     continue;
+	  }	  
+	  send_reply(sptr, ERR_LINKCHANNEL, name, ren->reason, ren->newname);
+	  ircd_strncpy(name, ren->newname, CHANNELLEN + 1);
+	}
     if (name[0] == '!' && name[1] != '!') {
 		if((chptr2 = FindSafe(&name[1]))){
 			found = 0;
@@ -416,7 +426,6 @@ int m_join(struct Client *cptr, struct Client *sptr, int parc, char *parv[])
 
     do_names(sptr, chptr, NAMES_ALL|NAMES_EON); /* send /names list */
   }
-
   joinbuf_flush(&join); /* must be first, if there's a JOIN 0 */
   joinbuf_flush(&create);
   return 0;
@@ -469,7 +478,7 @@ int ms_join(struct Client *cptr, struct Client *sptr, int parc, char *parv[])
 
     if (IsSaveChannel(name) && bogus == 0)
     {
-      protocol_violation(cptr, "%s tried to join %s", cli_name(sptr), name);
+      protocol_violation(cptr, "%s bogus channel %s", cli_name(sptr), name);
       continue;
     }
 	

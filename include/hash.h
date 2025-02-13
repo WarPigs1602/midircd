@@ -26,6 +26,7 @@
 
 struct Client;
 struct Channel;
+struct RenamedChan;
 struct StatDesc;
 
 /*
@@ -54,6 +55,8 @@ struct StatDesc;
 #define SeekSafe(name)          hSeekSafe((name))
 /** Search for a channel by name. */
 #define SeekChannel(name)       hSeekChannel((name))
+/** Search for a channel by name. */
+#define SeekRenamed(name)       hSeekRenamed((name))
 /** Search for any client by name. */
 #define SeekClient(name)        hSeekClient((name), ~0)
 /** Search for a registered user by name. */
@@ -67,6 +70,8 @@ struct StatDesc;
 #define FindSafe(name)          (BadPtr((name)) ? 0 : SeekSafe(name))
 /** Search for a channel by name. */
 #define FindChannel(name)       (BadPtr((name)) ? 0 : SeekChannel(name))
+/** Search for a channel by name. */
+#define FindRenamed(name)       (BadPtr((name)) ? 0 : SeekRenamed(name))
 /** Search for any client by name. */
 #define FindClient(name)        (BadPtr((name)) ? 0 : SeekClient(name))
 /** Search for a registered user by name. */
@@ -81,11 +86,14 @@ struct StatDesc;
 extern void init_hash(void);    /* Call me on startup */
 extern int hAddClient(struct Client *cptr);
 extern int hAddChannel(struct Channel *chptr);
+extern int hAddRenamed(struct RenamedChan *chptr);
 extern int hRemClient(struct Client *cptr);
 extern int hChangeClient(struct Client *cptr, const char *newname);
 extern int hRemChannel(struct Channel *chptr);
+extern int hRemRenamed(struct RenamedChan *chptr);
 extern struct Client *hSeekClient(const char *name, int TMask);
 extern struct Channel *hSeekChannel(const char *name);
+extern struct RenamedChan *hSeekRenamed(const char *name);
 extern struct Channel *hSeekSafe(const char *name);
 
 extern int m_hash(struct Client *cptr, struct Client *sptr, int parc, char *parv[]);

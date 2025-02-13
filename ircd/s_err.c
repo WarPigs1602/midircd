@@ -1832,23 +1832,23 @@ static Numeric replyTable[] = {
 /* 899 */
   { 0 },
 /* 900 */
-  { 0 },
+  { RPL_LOGGEDIN, "%C %s :You are now logged in as %s", "900" },
 /* 901 */
-  { 0 },
+  { RPL_LOGGEDOUT, "%C :You are now logged out", "901" },
 /* 902 */
-  { 0 },
+  { ERR_NICKLOCKED, ":You must use a nick assigned to you", "902" },
 /* 903 */
-  { 0 },
+  { RPL_SASLSUCCESS, ":SASL authentication successful", "903" },
 /* 904 */
-  { 0 },
+  { ERR_SASLFAIL, ":SASL authentication failed", "904" },
 /* 905 */
-  { 0 },
+  { ERR_SASLTOOLONG, ":SASL message too long", "905" },
 /* 909 */
-  { 0 },
+  { ERR_SASLABORTED, ":SASL authentication aborted", "906" },
 /* 907 */
-  { 0 },
+  { ERR_SASLALREADY, ":You have already authenticated using SASL", "907" },
 /* 908 */
-  { 0 },
+  { RPL_SASLMECHS, "%s :are available SASL mechanisms", "908" },
 /* 909 */
   { 0 },
 /* 910 */

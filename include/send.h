@@ -14,6 +14,7 @@
 #endif
 
 struct Channel;
+struct RenamedChan;
 struct Client;
 struct DBuf;
 struct MsgBuf;

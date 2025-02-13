@@ -12,6 +12,7 @@
 struct Client;
 struct User;
 struct Channel;
+struct RenamedChan;
 struct MsgBuf;
 struct Flags;
 

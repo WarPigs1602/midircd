@@ -45,7 +45,6 @@ extern int auth_cap_start(struct AuthRequest *auth);
 extern int auth_cap_done(struct AuthRequest *auth);
 extern int auth_spoof_user(struct AuthRequest *auth, const char *username, const char *hostname, const char *ip);
 extern void destroy_auth_request(struct AuthRequest *req);
-
 extern int auth_spawn(int argc, char *argv[]);
 extern void auth_send_exit(struct Client *cptr);
 extern void auth_send_xreply(struct Client *sptr, const char *routing, const char *reply);
