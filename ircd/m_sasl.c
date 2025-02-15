@@ -94,6 +94,7 @@
 #include "numeric.h"
 #include "numnicks.h"
 #include "send.h"
+#include "s_auth.h"
 #include "s_conf.h"
 #include "s_user.h"
 
@@ -107,12 +108,13 @@
 int m_sasl(struct Client* cptr, struct Client* sptr, int parc, char* parv[])
 {		
   char *buf, *buf1, *arr[3], text[256], *user, nick[NICKLEN], auth[NICKLEN], pass[BUFSIZE];
-  struct Client *server, *target; 
+  struct Client *target; 
   if (parc < 2 || *parv[1] == '\0')
     return need_more_params(sptr, "AUTHENTICATE");	
   if(!CapHas(cli_active(sptr), CAP_SASL)) {
 	 send_reply(sptr, ERR_SASLFAIL); 
   } else {
+	 sptr->cli_sasla = 0;
 	 if(!ircd_strcmp(parv[1], "PLAIN")) {
 		if(sptr->cli_sasl != 1) {
 			sendrawto_one(sptr, "AUTHENTICATE %s", "+");
@@ -133,13 +135,17 @@ int m_sasl(struct Client* cptr, struct Client* sptr, int parc, char* parv[])
 			send_reply(sptr, ERR_SASLFAIL); 
 			return 0;
 		}
-		strcpy(nick, arr[0]);
-        strcpy(auth, arr[1]);
-        strcpy(pass, arr[2]);
-        ircd_snprintf(0, text, 255, "AUTH %s %s", auth, pass);
-		strcpy(sptr->cli_saslb64, text);
-		send_reply(sptr, RPL_LOGGEDIN, sptr, nick, auth);
-		send_reply(sptr, RPL_SASLSUCCESS);
+		ircd_strncpy(nick, arr[0], NICKLEN);
+        ircd_strncpy(auth, arr[1], NICKLEN);
+        ircd_strncpy(pass, arr[2], BUFSIZE);
+		ircd_snprintf(0, text, 255, "SASL %s %s %s", nick, auth, pass);
+		if ((target = FindUser(feature_str(FEAT_SASL_NAME)))) {
+			SetLocalNumNick(sptr);
+			sptr->cli_sasla = 1;
+        	sendcmdto_one(sptr, CMD_PRIVATE, target, "%s :%s", feature_str(FEAT_SASL_NICK), text);
+		} else
+			send_reply(sptr, ERR_SERVICESDOWN, feature_str(FEAT_SASL_NAME));
+
 	 } else {
 	    send_reply(sptr, RPL_SASLMECHS, "PLAIN");	 
 	 }
@@ -152,6 +158,17 @@ int m_sasl(struct Client* cptr, struct Client* sptr, int parc, char* parv[])
  */
 int ms_sasl(struct Client* cptr, struct Client* sptr, int parc, char* parv[])
 {
-	 printf("%s\r\n", parv[1]);
+  if (parc < 5)
+    return need_more_params(sptr, "AUTHENTICATE");
+  char *cmd = parv[2];
+  char *nick = parv[3];
+  char *account = parv[4];
+  struct Client *usr = findNUser(parv[1]);
+  if(usr && ircd_strcmp(cmd, "SUCCESS")) {
+	send_reply(usr, RPL_LOGGEDIN, usr, nick, account);
+	send_reply(usr, RPL_SASLSUCCESS);
+  } else if(usr && ircd_strcmp(cmd, "NOTYOU")) {
+	send_reply(usr, ERR_SASLFAIL); 
+  }
   return 0;
 }

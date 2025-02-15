@@ -371,15 +371,15 @@ static struct FeatureDesc {
   F_B(CAP_ECHOMESSAGE, 0, 1, 0),
   F_B(CAP_EXTJOIN, 0, 1, 0),
   F_B(CAP_INVITENOTIFY, 0, 1, 0),
-  F_B(CAP_RENAME, 0, 0, 0),
+  F_B(CAP_RENAME, 0, 1, 0),
   F_B(CAP_SASL, 0, 1, 0),
-  F_B(CAP_STANDARDREPLYS, 0, 1, 0),
+  F_B(CAP_STANDARDREPLYS, 0, 0, 0),
 
   /* Anonymous mode for safe channels */
   F_B(ANONYMOUS, 0, 0, 0),
 
   /* Spam protection */
-  F_B(ANTI_KNOCKER, 0, 1, 0),
+  F_B(ANTI_KNOCKER, 0, 0, 0),
   
   /* HEAD_IN_SAND Features */
   F_B(HIS_SNOTICES, 0, 1, 0),

@@ -380,18 +380,6 @@ static void iauth_notify(struct AuthRequest *auth, enum AuthRequestFlag flag)
   }
 }
 
-static int auth_sasl(struct Client *sptr) {
-	if(!sptr->cli_saslb64) {
-	 return 1; 
-    } 
-	struct Client *target, *server, *nick;
-    if ((target = FindUser(feature_str(FEAT_SASL_NAME)))) {
-		sendcmdto_one(sptr, CMD_PRIVATE, target, "%s :%s", feature_str(FEAT_SASL_NICK), sptr->cli_saslb64);
-	} else
-		send_reply(sptr, ERR_SERVICESDOWN, feature_str(FEAT_SASL_NAME));
-    return 0;	
-}
-
 /** Check whether an authorization request is complete.
  * This means that no flags from 0 to #AR_LAST_SCAN are set on \a auth.
  * If #AR_IAUTH_PENDING is set, optionally go into "hurry" state.  If
@@ -571,7 +559,6 @@ static int check_auth_finished(struct AuthRequest *auth, int bitclr)
   }
   if (res == 0)
     destroy_auth_request(auth);
-  auth_sasl(auth->client);
   return res;
 }
 
