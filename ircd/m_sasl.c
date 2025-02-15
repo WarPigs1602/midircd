@@ -164,11 +164,11 @@ int ms_sasl(struct Client* cptr, struct Client* sptr, int parc, char* parv[])
   char *nick = parv[3];
   char *account = parv[4];
   struct Client *usr = findNUser(parv[1]);
-  if(usr && ircd_strcmp(cmd, "SUCCESS")) {
+  if(usr && !ircd_strcmp(cmd, "SUCCESS")) {
 	send_reply(usr, RPL_LOGGEDIN, usr, nick, account);
 	send_reply(usr, RPL_SASLSUCCESS);
-  } else if(usr && ircd_strcmp(cmd, "NOTYOU")) {
-	send_reply(usr, ERR_SASLFAIL); 
+  } else if(usr && !ircd_strcmp(cmd, "NOTYOU")) {
+	send_reply(usr, ERR_NICKLOCKED); 
   }
   return 0;
 }
