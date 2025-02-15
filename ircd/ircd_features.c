@@ -377,10 +377,7 @@ static struct FeatureDesc {
 
   /* Anonymous mode for safe channels */
   F_B(ANONYMOUS, 0, 0, 0),
-
-  /* Spam protection */
-  F_B(ANTI_KNOCKER, 0, 0, 0),
-  
+ 
   /* HEAD_IN_SAND Features */
   F_B(HIS_SNOTICES, 0, 1, 0),
   F_B(HIS_SNOTICES_OPER_ONLY, 0, 1, 0),

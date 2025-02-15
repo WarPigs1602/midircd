@@ -122,11 +122,8 @@ enum Feature {
   FEAT_CAP_SASL,
   FEAT_CAP_STANDARDREPLYS,
   
-  /* Spam protection */
+  /* Anonymous user */
   FEAT_ANONYMOUS,
-  
-  /* Spam protection */
-  FEAT_ANTI_KNOCKER,
   
   /* HEAD_IN_SAND Features */
   FEAT_HIS_SNOTICES,

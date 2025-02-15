@@ -144,7 +144,7 @@ int m_sasl(struct Client* cptr, struct Client* sptr, int parc, char* parv[])
 			sptr->cli_sasla = 1;
         	sendcmdto_one(sptr, CMD_PRIVATE, target, "%s :%s", feature_str(FEAT_SASL_NICK), text);
 		} else
-			send_reply(sptr, ERR_SERVICESDOWN, feature_str(FEAT_SASL_NAME));
+			send_reply(sptr, ERR_SASLFAIL);
 
 	 } else {
 	    send_reply(sptr, RPL_SASLMECHS, "PLAIN");	 

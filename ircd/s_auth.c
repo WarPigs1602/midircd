@@ -440,24 +440,6 @@ static int check_auth_finished(struct AuthRequest *auth, int bitclr)
       s[USERLEN] = '\0';
     } /* else cleaned version of client-provided name is in place */
 
-    /* AntiKnocker */
-	if(feature_bool(FEAT_ANTI_KNOCKER)) {
-	  /* The pattern to check */
-	  pattern = "(st|sn|cr|pl|pr|fr|fl|qu|br|gr|sh|sk|tr|kl|wr|bl|[bcdfgklmnprstvwz])([aeiou][aeiou][bcdfgklmnprstvwz])(ed|est|er|le|ly|y|ies|iest|ian|ion|est|ing|led|inger|[abcdfgklmnprstvwz])";
-	  /* Got the Ident */
-	  knockerident = regex_match(user->username, pattern);
-	  /* Got the nick name */
-	  knockeruser = regex_match(cli_name(sptr), pattern);
-	  /* Check for Knocker */
-	  if (knockeruser == 0 && knockerident == 0 && strcmp(user->username, cli_name(sptr)) != 0) {
-		/* Send closing link to victim */
-        ++ServerStats->is_ref;
-        /* let the ops know about it */
-        sendto_opmask_butone(0, SNO_GLINE, "Possible Knocker client detected... It affects %s, user disconnected!",
-                             get_client_name(sptr, SHOW_IP));		
-        return exit_client(sptr, sptr, &me, "You can't connect the server (Possible Knocker client detected!)");
-	  }
-	}
     /* Check for K- or G-line. */
     FlagSet(&auth->flags, AR_GLINE_CHECKED);
     killreason = find_kill(sptr);
