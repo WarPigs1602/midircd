@@ -169,6 +169,8 @@ int ms_sasl(struct Client* cptr, struct Client* sptr, int parc, char* parv[])
 	send_reply(usr, RPL_SASLSUCCESS);
   } else if(usr && !ircd_strcmp(cmd, "NOTYOU")) {
 	send_reply(usr, ERR_NICKLOCKED); 
+  } else if(usr && !ircd_strcmp(cmd, "ALREADY")) {
+	send_reply(usr, ERR_SASLALREADY); 
   }
   return 0;
 }
