@@ -313,10 +313,10 @@ struct Client* hSeekSasl(const char *name, int TMask)
   struct Client *cptr = clientTable[hashv];
 
   if (cptr) {
-    if (0 != ircd_strcmp(name, cptr->cli_saslnick)) {
+    if (cptr->cli_saslnick != NULL && 0 != ircd_strcmp(name, cptr->cli_saslnick)) {
       struct Client* prev;
       while (prev = cptr, cptr = cli_hnext(cptr)) {
-        if (0 == ircd_strcmp(name, cptr->cli_saslnick)) {
+        if (cptr->cli_saslnick != NULL && 0 == ircd_strcmp(name, cptr->cli_saslnick)) {
           cli_hnext(prev) = cli_hnext(cptr);
           cli_hnext(cptr) = clientTable[hashv];
           clientTable[hashv] = cptr;
