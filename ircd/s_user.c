@@ -372,8 +372,7 @@ int register_user(struct Client *cptr, struct Client *sptr)
 
     SetUser(sptr);
     cli_handler(sptr) = CLIENT_HANDLER;
-	if(cli_yxx(sptr))
-		SetLocalNumNick(sptr);
+	SetLocalNumNick(sptr);
     send_reply(sptr,
                RPL_WELCOME,
                feature_str(FEAT_NETWORK),

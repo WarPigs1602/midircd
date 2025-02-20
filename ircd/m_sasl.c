@@ -140,9 +140,9 @@ int m_sasl(struct Client* cptr, struct Client* sptr, int parc, char* parv[])
         ircd_strncpy(pass, arr[2], BUFSIZE);
 		ircd_snprintf(0, text, 255, "SASL %s %s %s", nick, auth, pass);
 		if ((target = FindUser(feature_str(FEAT_SASL_NAME)))) {
-			SetLocalNumNick(sptr);
-			sptr->cli_sasla = 1;
-        	sendcmdto_one(sptr, CMD_PRIVATE, target, "%s :%s", feature_str(FEAT_SASL_NICK), text);
+			sendrawto_one(target, "%s %s", cli_yxx(&me), text);
+            ircd_strncpy(sptr->cli_saslnick, nick, NICKLEN);
+            ircd_strncpy(sptr->cli_saslacc, auth, NICKLEN);
 		} else
 			send_reply(sptr, ERR_SASLFAIL);
 
@@ -163,8 +163,10 @@ int ms_sasl(struct Client* cptr, struct Client* sptr, int parc, char* parv[])
   char *cmd = parv[2];
   char *nick = parv[3];
   char *account = parv[4];
-  struct Client *usr = findNUser(parv[1]);
+  struct Client *usr = FindSasl(nick);
   if(usr && !ircd_strcmp(cmd, "SUCCESS")) {
+    ircd_strncpy(cli_user(usr)->account, account, ACCOUNTLEN);
+    SetAccount(usr);
 	send_reply(usr, RPL_LOGGEDIN, usr, nick, account);
 	send_reply(usr, RPL_SASLSUCCESS);
   } else if(usr && !ircd_strcmp(cmd, "NOTYOU")) {

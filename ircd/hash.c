@@ -307,6 +307,27 @@ struct Client* hSeekClient(const char *name, int TMask)
   return cptr;
 }
 
+struct Client* hSeekSasl(const char *name, int TMask)
+{
+  HASHREGS hashv      = strhash(name);
+  struct Client *cptr = clientTable[hashv];
+
+  if (cptr) {
+    if (0 != ircd_strcmp(name, cptr->cli_saslnick)) {
+      struct Client* prev;
+      while (prev = cptr, cptr = cli_hnext(cptr)) {
+        if (0 == ircd_strcmp(name, cptr->cli_saslnick)) {
+          cli_hnext(prev) = cli_hnext(cptr);
+          cli_hnext(cptr) = clientTable[hashv];
+          clientTable[hashv] = cptr;
+          break;
+        }
+      }
+    }
+  }
+  return cptr;
+}
+
 /** Find a channel by name.
  * If a channel is found, it is moved to the top of its hash bucket.
  * @param[in] name Channel name to search for.

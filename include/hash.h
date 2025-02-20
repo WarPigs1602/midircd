@@ -61,6 +61,8 @@ struct StatDesc;
 #define SeekClient(name)        hSeekClient((name), ~0)
 /** Search for a registered user by name. */
 #define SeekUser(name)          hSeekClient((name), (STAT_USER))
+/** Search for a registered user by name. */
+#define SeekSasl(name)          hSeekSasl((name), (STAT_USER))
 /** Search for a server by name. */
 #define SeekServer(name)        hSeekClient((name), (STAT_ME | STAT_SERVER))
 
@@ -74,6 +76,8 @@ struct StatDesc;
 #define FindRenamed(name)       (BadPtr((name)) ? 0 : SeekRenamed(name))
 /** Search for any client by name. */
 #define FindClient(name)        (BadPtr((name)) ? 0 : SeekClient(name))
+/** Search for any client by name. */
+#define FindSasl(name)        (BadPtr((name)) ? 0 : SeekSasl(name))
 /** Search for a registered user by name. */
 #define FindUser(name)          (BadPtr((name)) ? 0 : SeekUser(name))
 /** Search for a server by name. */
@@ -92,6 +96,7 @@ extern int hChangeClient(struct Client *cptr, const char *newname);
 extern int hRemChannel(struct Channel *chptr);
 extern int hRemRenamed(struct RenamedChan *chptr);
 extern struct Client *hSeekClient(const char *name, int TMask);
+extern struct Client* hSeekSasl(const char *name, int TMask);
 extern struct Channel *hSeekChannel(const char *name);
 extern struct RenamedChan *hSeekRenamed(const char *name);
 extern struct Channel *hSeekSafe(const char *name);

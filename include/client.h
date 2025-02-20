@@ -277,6 +277,7 @@ struct Client {
   int  			 cli_sasl;        /**< Client uses sasl */
   int  			 cli_sasla;        /**< Client uses sasl */
   char cli_saslacc[BUFSIZE + 1];        /**< Client uses sasl */
+  char cli_saslnick[BUFSIZE + 1];        /**< Client uses sasl */
   char cli_name[HOSTLEN + 1];     /**< Unique name of the client, nick or host */
   char cli_username[USERLEN + 1]; /**< Username determined by ident lookup */
   char cli_info[REALLEN + 1];     /**< Free form additional client information */
