@@ -354,6 +354,10 @@ int ms_burst(struct Client *cptr, struct Client *sptr, int parc, char *parv[])
       modebuf_mode_string(mbuf, MODE_DEL | MODE_APASS, chptr->mode.apass, 0);
       chptr->mode.apass[0] = '\0';
     }
+    if (chptr->mode.link[0]) {
+      modebuf_mode_string(mbuf, MODE_DEL | MODE_LINK, chptr->mode.link, 0);
+      chptr->mode.link[0] = '\0';
+    }
 
     parse_flags |= (MODE_PARSE_SET | MODE_PARSE_WIPEOUT); /* wipeout keys */
 
@@ -390,10 +394,8 @@ int ms_burst(struct Client *cptr, struct Client *sptr, int parc, char *parv[])
 
     case '%': /* parameter contains bans */
       if (parse_flags & MODE_PARSE_SET) {
-	char *banlist = parv[param] + 1, *banexceptionlist = parv[param] + 1, *p = 0, *ban, *banex, *ptr;
+	char *banlist = parv[param] + 1, *p = 0, *ban, *ptr;
 	struct Ban *newban;
-    struct BanEx *newbanex;
-
 	for (ban = ircd_strtok(&p, banlist, " "); ban;
 	     ban = ircd_strtok(&p, 0, " ")) {
 	  ban = collapse(pretty_mask(ban));
@@ -443,9 +445,11 @@ int ms_burst(struct Client *cptr, struct Client *sptr, int parc, char *parv[])
 	    else
 	      chptr->banlist = newban;
 	  }
-	}
+	}      
+	char *banexceptionlist = parv[param] + 1, *banex;
+    struct BanEx *newbanex;	
 for (banex = ircd_strtok(&p, banexceptionlist, " "); banex;
-	     ban = ircd_strtok(&p, 0, " ")) {
+	     banex = ircd_strtok(&p, 0, " ")) {
 	  banex = collapse(pretty_mask(banex));
 
 	    /*
@@ -477,7 +481,7 @@ for (banex = ircd_strtok(&p, banexceptionlist, " "); banex;
 	    if (!banexpos) {
 	      banexceptstr[banexpos++] = ' ';
 	      banexceptstr[banexpos++] = ':';
-	      banexceptstr[banexpos++] = '%';
+	      banexceptstr[banexpos++] = '$';
 	    } else
 	      banexceptstr[banexpos++] = ' ';
 	    for (ptr = banex; *ptr; ptr++) /* add ban to buffer */
@@ -653,14 +657,11 @@ for (banex = ircd_strtok(&p, banexceptionlist, " "); banex;
   } else
     modestr[0] = '\0';
 
-  sendcmdto_serv_butone(sptr, CMD_BURST, cptr, "%H %Tu%s%s%s", chptr,
-			chptr->creationtime, modestr, nickstr, banstr);
+  sendcmdto_serv_butone(sptr, CMD_BURST, cptr, "%H %Tu%s%s%s%s", chptr,
+			chptr->creationtime, modestr, nickstr, banstr, banexceptstr);
 
   if (parse_flags & MODE_PARSE_WIPEOUT || banpos)
     mode_ban_invalidate(chptr);
-
-  sendcmdto_serv_butone(sptr, CMD_BURST, cptr, "%H %Tu%s%s%s", chptr,
-			chptr->creationtime, modestr, nickstr, banexceptstr);
 
   if (parse_flags & MODE_PARSE_WIPEOUT || banexpos)
     mode_ban_exception_invalidate(chptr);

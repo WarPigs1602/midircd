@@ -1062,6 +1062,13 @@ void channel_modes(struct Client *cptr, char *mbuf, char *pbuf, int buflen,
     ircd_snprintf(0, pbuf, buflen, "%u", chptr->mode.limit);
     previous_parameter = 1;
   }
+  if (*chptr->mode.link) {
+    *mbuf++ = 'L';
+    if (previous_parameter)
+      strcat(pbuf, " ");
+    strcat(pbuf, chptr->mode.link);
+    previous_parameter = 1;
+  }
   if (*chptr->mode.key) {
     *mbuf++ = 'k';
     if (previous_parameter)
