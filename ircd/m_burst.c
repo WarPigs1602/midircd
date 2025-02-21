@@ -102,6 +102,7 @@
 #include "ircd_snprintf.h"
 
 /* #include <assert.h> -- Now using assert in ircd_log.h */
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
@@ -399,8 +400,7 @@ int ms_burst(struct Client *cptr, struct Client *sptr, int parc, char *parv[])
 	for (ban = ircd_strtok(&p, banlist, " "); ban;
 	     ban = ircd_strtok(&p, 0, " ")) {
 	  ban = collapse(pretty_mask(ban));
-
-	    /*
+         /*
 	     * Yeah, we should probably do this elsewhere, and make it better
 	     * and more general; this will hold until we get there, though.
 	     * I dislike the current add_banid API... -Kev
@@ -445,13 +445,17 @@ int ms_burst(struct Client *cptr, struct Client *sptr, int parc, char *parv[])
 	    else
 	      chptr->banlist = newban;
 	  }
-	}      
-	char *banexceptionlist = parv[param] + 1, *banex;
+	}
+      } 
+      param++; /* look at next param */
+      break;	
+    case '$': /* parameter contains bans */
+      if (parse_flags & MODE_PARSE_SET) {	
+	char *banexceptionlist = parv[param] + 1, *p = 0, *banex, *ptr;
     struct BanEx *newbanex;	
 for (banex = ircd_strtok(&p, banexceptionlist, " "); banex;
 	     banex = ircd_strtok(&p, 0, " ")) {
 	  banex = collapse(pretty_mask(banex));
-
 	    /*
 	     * Yeah, we should probably do this elsewhere, and make it better
 	     * and more general; this will hold until we get there, though.

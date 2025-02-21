@@ -297,7 +297,7 @@ void sendfailto_one(struct Client *to, struct Client *from, const char *command,
 
   vd.vd_format = pattern; /* set up the struct VarData for %v */
   va_start(vd.vd_args, pattern);
-  mb = msgq_make(to, "%:#C FAIL %s %s %v", command, code, &vd);
+  mb = msgq_make(to, "%:#C FAIL %s %s %v", from, command, code, &vd);
 
   va_end(vd.vd_args);
 

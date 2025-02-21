@@ -1333,7 +1333,7 @@ void send_channel_modes(struct Client *cptr, struct Channel *chptr)
           full = 1;
           break;
         }
-	msgq_append(&me, mb, " %s%s", first ? ":%" : "",
+	msgq_append(&me, mb, " %s%s", first ? ":$" : "",
 		    lp3->banexceptstr);
 	first = 0;
       }
