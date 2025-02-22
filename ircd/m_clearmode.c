@@ -235,7 +235,7 @@ do_clearmode(struct Client *cptr, struct Client *sptr, struct Channel *chptr,
       if (del_mode & MODE_BAN_EXCEPTION) /* If we cleared bans, clear the valid flags */
 	ClearBanExceptionValid(member);
       /* Drop channel operator status */
-      if (!IsChannelCreator(member) && IsChanOp(member) && del_mode & MODE_CHANOP) {
+      if (IsChanOp(member) && del_mode & MODE_CHANOP) {
 	modebuf_mode_client(&mbuf, MODE_DEL | MODE_CHANOP, member->user, MAXOPLEVEL + 1);
 	member->status &= ~CHFL_CHANOP;
       }

@@ -540,7 +540,7 @@ for (banex = ircd_strtok(&p, banexceptionlist, " "); banex;
 		    current_mode = base_mode;
 		    current_mode_needs_reset = 0;
 		  }
-		  current_mode = (current_mode & ~(CHFL_DEOPPED | CHFL_DELAYED | CHFL_CHAN_CREATOR));
+		  current_mode = (current_mode & ~(CHFL_DEOPPED | CHFL_DELAYED));
 		}
 		else 
 		if (*ptr == 'o') { /* has oper status */

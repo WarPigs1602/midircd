@@ -84,18 +84,18 @@ struct RenamedChan;
 #define CHFL_DELAYED            0x40000 /**< User's join message is delayed */
 #define CHFL_BAN_EXCEPTION      0x80000 /**< Channel member as a ban exception */
 #define CHFL_BAN_EXCEPTIONVALID 0x100000 /**< CHFL_BANEXCEPTION bit is valid */
-#define CHFL_CHAN_CREATOR 		0x200000 /**< Channel creator */
 #define CHFL_FORWARD 		    0x400000 /**< Channel forward */
 #define CHFL_ANONYMOUS 		    0x800000 /**< Anonymous channel */
 
-#define CHFL_OVERLAP         (CHFL_CHANOP | CHFL_VOICE | CHFL_CHAN_CREATOR)
+#define CHFL_OVERLAP         (CHFL_CHANNEL_MANAGER | CHFL_CHANOP | CHFL_VOICE)
 #define CHFL_BANVALIDMASK    (CHFL_BANVALID | CHFL_BANNED)
 #define CHFL_BANEXCEPTIONVALIDMASK    (CHFL_BAN_EXCEPTIONVALID | CHFL_BAN_EXCEPTION)
-#define CHFL_VOICED_OR_OPPED (CHFL_CHANOP | CHFL_VOICE | CHFL_CHAN_CREATOR)
+#define CHFL_VOICED_OR_OPPED (CHFL_CHANNEL_MANAGER | CHFL_CHANOP | CHFL_VOICE)
 
 /* Channel Visibility macros */
 
-#define MODE_CHAN_CREATOR     CHFL_CHAN_CREATOR	/**< +O Chan Creator */
+
+#define MODE_CHANNEL_MANAGER     CHFL_CHANNEL_MANAGER	/**< +O Chanop */
 #define MODE_CHANOP     CHFL_CHANOP	/**< +o Chanop */
 #define MODE_VOICE      CHFL_VOICE	/**< +v Voice */
 #define MODE_PRIVATE    0x0004		/**< +p Private */
@@ -132,7 +132,7 @@ struct RenamedChan;
 
 /** mode flags which take another parameter (With PARAmeterS)
  */
-#define MODE_WPARAS     (MODE_CHANOP|MODE_CHAN_CREATOR|MODE_VOICE|MODE_BAN|MODE_KEY|MODE_LIMIT|MODE_APASS|MODE_UPASS|MODE_BAN_EXCEPTION|MODE_LINK)
+#define MODE_WPARAS     (MODE_CHANOP|MODE_VOICE|MODE_BAN|MODE_KEY|MODE_LIMIT|MODE_APASS|MODE_UPASS|MODE_BAN_EXCEPTION|MODE_LINK)
 
 /** Available Channel modes */
 #define infochanmodes feature_bool(FEAT_OPLEVELS) ? "aAbeiklLmnopstUvrDcCNuMT" : "abeiklLmnopstvrDcCNuMT"
@@ -237,7 +237,6 @@ struct Membership {
 #define IsBurstJoined(x)    ((x)->status & CHFL_BURST_JOINED)
 #define IsVoicedOrOpped(x)  ((x)->status & CHFL_VOICED_OR_OPPED)
 #define IsChannelManager(x) ((x)->status & CHFL_CHANNEL_MANAGER)
-#define IsChannelCreator(x) ((x)->status & CHFL_CHAN_CREATOR)
 #define IsUserParting(x)    ((x)->status & CHFL_USER_PARTING)
 #define IsDelayedJoin(x)    ((x)->status & CHFL_DELAYED)
 #define IsAnonymous(x)      ((x)->status & CHFL_ANONYMOUS)
@@ -252,7 +251,6 @@ struct Membership {
 #define SetBurstJoined(x)   ((x)->status |= CHFL_BURST_JOINED)
 #define SetZombie(x)        ((x)->status |= CHFL_ZOMBIE)
 #define SetChannelManager(x) ((x)->status |= CHFL_CHANNEL_MANAGER)
-#define SetChannelCreator(x) ((x)->status |= CHFL_CHAN_CREATOR)
 #define SetOpLevel(x, v)    (void)((x)->oplevel = (v))
 #define SetUserParting(x)   ((x)->status |= CHFL_USER_PARTING)
 #define SetDelayedJoin(x)   ((x)->status |= CHFL_DELAYED)
@@ -472,7 +470,6 @@ extern void remove_user_from_channel(struct Client *sptr, struct Channel *chptr)
 extern void remove_user_from_all_channels(struct Client* cptr);
 
 extern int is_chan_op(struct Client *cptr, struct Channel *chptr);
-extern int is_chan_creator(struct Client *cptr, struct Channel *chptr);
 extern int is_zombie(struct Client *cptr, struct Channel *chptr);
 extern int has_voice(struct Client *cptr, struct Channel *chptr);
 /*

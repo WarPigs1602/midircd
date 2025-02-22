@@ -179,7 +179,7 @@ void do_names(struct Client* sptr, struct Channel* chptr, int filter)
     if (needs_space)
       buf[idx++] = ' ';
     needs_space=1;
-    if (IsChannelCreator(member))
+    if (IsChannelService(c2ptr) || IsChannelManager(member))
       buf[idx++] = '!';
     else if (IsZombie(member))
 	  buf[idx++] = '$';

@@ -123,7 +123,6 @@ int m_join(struct Client *cptr, struct Client *sptr, int parc, char *parv[])
   char cc[HOSTLEN +1];
   char safe[CHANNELLEN];
   int found = -1;
-  int creator = -1;
   int bogus = -1;
   if (parc < 2 || *parv[1] == '\0')
     return need_more_params(sptr, "JOIN");
@@ -209,8 +208,6 @@ int m_join(struct Client *cptr, struct Client *sptr, int parc, char *parv[])
 		ircd_strncpy(safe, buf2, CHANNELLEN);
 		ircd_strncpy(cc, sptr->cli_name, HOSTLEN + 1);
 		free(buf2);
-		creator = 0;
-
       }
       if (((name[0] == '&') && !feature_bool(FEAT_LOCAL_CHANNELS))
           || strlen(name) >= IRCD_MIN(CHANNELLEN, feature_int(FEAT_CHANNELLEN))) {
@@ -234,10 +231,7 @@ int m_join(struct Client *cptr, struct Client *sptr, int parc, char *parv[])
 	  ircd_strncpy(chptr->rnd, buf, 5);
 	  ircd_strncpy(chptr->safe, safe, CHANNELLEN);
       chptr->mode.anon = -1;
-      if(creator == 0)  
-        joinbuf_join(&create, chptr, CHFL_CHAN_CREATOR | CHFL_CHANOP | CHFL_CHANNEL_MANAGER);
-	  else
-        joinbuf_join(&create, chptr, CHFL_CHANOP | CHFL_CHANNEL_MANAGER);
+      joinbuf_join(&create, chptr, CHFL_CHANOP | CHFL_CHANNEL_MANAGER);
 	  do_names(sptr, chptr, NAMES_ALL|NAMES_EON); 
       if (feature_bool(FEAT_AUTOCHANMODES) && feature_str(FEAT_AUTOCHANMODES_LIST) && strlen(feature_str(FEAT_AUTOCHANMODES_LIST)) > 0)
         SetAutoChanModes(chptr);
@@ -260,9 +254,6 @@ int m_join(struct Client *cptr, struct Client *sptr, int parc, char *parv[])
 
       /* Check Apass/Upass -- since we only ever look at a single
        * "key" per channel now, this hampers brute force attacks. */
-      if (cc != '\0' && !strcmp(cc, sptr->cli_name))
-        flags = CHFL_CHANOP | CHFL_CHAN_CREATOR;	
-      else if(cc != '\0');
 	  if (key && !strcmp(key, chptr->mode.apass))
         flags = CHFL_CHANOP | CHFL_CHANNEL_MANAGER;
       else if (key && !strcmp(key, chptr->mode.upass))
@@ -400,17 +391,9 @@ int m_join(struct Client *cptr, struct Client *sptr, int parc, char *parv[])
            (There is also no particularly good reason to have the user op himself.)
         */
 	
-    if (flags & CHFL_CHAN_CREATOR) {
-		modebuf_init(&mbuf, &me, cptr, chptr, MODEBUF_DEST_SERVER | MODEBUF_DEST_CHANNEL);
-	    modebuf_mode_client(&mbuf, MODE_ADD | MODE_CHAN_CREATOR, sptr, 
-                            chptr->mode.apass[0] ? ((flags & CHFL_CHANNEL_MANAGER) ? 0 : 1) : MAXOPLEVEL);		
-        sendcmdto_channel_butserv_butone(&his, CMD_MODE, chptr, sptr, 0,
-        "%H +O %C", chptr, sptr);	
-	} else {
-		modebuf_init(&mbuf, &me, cptr, chptr, MODEBUF_DEST_SERVER);
+    	modebuf_init(&mbuf, &me, cptr, chptr, MODEBUF_DEST_SERVER);
 	    modebuf_mode_client(&mbuf, MODE_ADD | MODE_CHANOP, sptr, 
                             chptr->mode.apass[0] ? ((flags & CHFL_CHANNEL_MANAGER) ? 0 : 1) : MAXOPLEVEL);		
-	}
 		
 	modebuf_flush(&mbuf);
       }
@@ -584,10 +567,6 @@ int ms_join(struct Client *cptr, struct Client *sptr, int parc, char *parv[])
 
         for (member = chptr->members; member; member = member->next_member)
         {
-          if (IsChannelCreator(member)) {
-            modebuf_mode_client(&mbuf, MODE_DEL | MODE_CHAN_CREATOR, member->user, OpLevel(member));
-	    member->status &= ~CHFL_CHAN_CREATOR;
-          }
           if (IsChanOp(member)) {
             modebuf_mode_client(&mbuf, MODE_DEL | MODE_CHANOP, member->user, OpLevel(member));
 	    member->status &= ~CHFL_CHANOP;

@@ -803,24 +803,6 @@ int is_chan_op(struct Client *cptr, struct Channel *chptr)
   return 0;
 }
 
-/** Check if this user is a legitimate chanop
- *
- * @param cptr	Client to check
- * @param chptr	Channel to check
- *
- * @returns True if the user is a chanop (And not a zombie), False otherwise.
- * @see \ref zombie
- */
-int is_chan_creator(struct Client *cptr, struct Channel *chptr)
-{
-  struct Membership* member;
-  assert(chptr);
-  if ((member = find_member_link(chptr, cptr)))
-    return (!IsZombie(member) && IsChannelCreator(member));
-
-  return 0;
-}
-
 /** Check if a user is a Zombie on a specific channel.
  *
  * @param cptr		The client to check.
@@ -1245,6 +1227,14 @@ void send_channel_modes(struct Client *cptr, struct Channel *chptr)
 
 	    if (HasVoice(member))	/* flag_cnt == 1 or 3 */
 	      tbuf[loc++] = 'v';
+	    if (IsChannelService(member->user))	/* flag_cnt == 2 or 3 */
+	    {
+              /* append the absolute value of the oplevel */
+              if (send_oplevels) {
+                loc += ircd_snprintf(0, tbuf + loc, sizeof(tbuf) - loc, "%u", last_oplevel = member->oplevel);
+              } else
+                tbuf[loc++] = 'O';
+	    }		  
 	    if (IsChanOp(member))	/* flag_cnt == 2 or 3 */
 	    {
               /* append the absolute value of the oplevel */
@@ -2000,7 +1990,7 @@ modebuf_flush_int(struct ModeBuf *mbuf, int all)
       bufptr_i = &rembuf_i;
     }
 
-    if (MB_TYPE(mbuf, i) & (MODE_CHAN_CREATOR | MODE_CHANOP | MODE_VOICE)) {
+    if (MB_TYPE(mbuf, i) & (MODE_CHANOP | MODE_VOICE)) {
       tmp = strlen(cli_name(MB_CLIENT(mbuf, i)));
 
       if ((totalbuflen - IRCD_MAX(9, tmp)) <= 0) /* don't overflow buffer */
@@ -2101,7 +2091,7 @@ modebuf_flush_int(struct ModeBuf *mbuf, int all)
       }
 
       /* deal with clients... */
-      if (MB_TYPE(mbuf, i) & (MODE_CHANOP | MODE_VOICE | MODE_CHAN_CREATOR))
+      if (MB_TYPE(mbuf, i) & (MODE_CHANOP | MODE_VOICE))
 	build_string(strptr, strptr_i, cli_name(MB_CLIENT(mbuf, i)), 0, ' ');
 
       /* deal with ban exceptions... */
@@ -2215,7 +2205,7 @@ modebuf_flush_int(struct ModeBuf *mbuf, int all)
                                      MB_OPLEVEL(mbuf, i));
 
       /* deal with other modes that take clients */
-      else if (MB_TYPE(mbuf, i) & (MODE_CHAN_CREATOR | MODE_CHANOP | MODE_VOICE))
+      else if (MB_TYPE(mbuf, i) & (MODE_CHANOP | MODE_VOICE))
 	build_string(strptr, strptr_i, NumNick(MB_CLIENT(mbuf, i)), ' ');
 
       /* deal with modes that take strings */
@@ -2977,9 +2967,12 @@ mode_parse_anonymous(struct ParseState *state, int *flag_p)
     send_notoper(state);
     return;
   }
-  
-  if (state->dir == MODE_ADD && !IsChannelCreator(state->member)) {
-         send_reply(state->sptr, ERR_UNIQOPRIVSNEEDED, state->chptr->chname);  
+  if (!IsSaveChannel(state->chptr->chname)) {
+         send_reply(state->sptr, ERR_UNIQOPRIVSNEEDED, (state->chptr->chname));  
+    return; /* no link change */	  
+  }
+  if (state->dir == MODE_ADD && !IsChannelManager(state->member)) {
+         send_reply(state->sptr, ERR_UNIQOPRIVSNEEDED, (state->chptr->chname));  
     return; /* no link change */
   }
   if (state->dir == MODE_ADD)
@@ -4059,6 +4052,7 @@ mode_parse(struct ModeBuf *mbuf, struct Client *cptr, struct Client *sptr,
 	  return 0;
   }	
   static int chan_flags[] = {
+    MODE_CHANNEL_MANAGER,	'O',
     MODE_CHANOP,	'o',
     MODE_VOICE,		'v',
     MODE_PRIVATE,	'p',
@@ -4415,7 +4409,7 @@ joinbuf_join(struct JoinBuf *jbuf, struct Channel *chan, unsigned int flags)
       sendcmdto_serv_butone(jbuf->jb_source, CMD_JOIN, jbuf->jb_connect,
 			    "%H %Tu", chan, chan->creationtime);
 
-    if (!((chan->mode.mode & MODE_DELJOINS) && !(flags & CHFL_VOICED_OR_OPPED))) {
+    if ((!(chan->mode.mode & MODE_DELJOINS) && !(flags & CHFL_VOICED_OR_OPPED)) || IsChannelService(jbuf->jb_source)) {
 	  if((chan->mode.mode & MODE_ANONYMOUS)) {
         sendhostto_channel_butone(chan, jbuf->jb_source, anon, "JOIN", ":%H", chan);		
 	    if (MyUser(jbuf->jb_source)) {
@@ -4434,6 +4428,11 @@ joinbuf_join(struct JoinBuf *jbuf, struct Channel *chan, unsigned int flags)
           CAP_AWAYNOTIFY, _CAP_LAST_CAP, ":%s", cli_user(jbuf->jb_source)->away);
 
       /* send an op, too, if needed */
+      if (IsChannelService(jbuf->jb_source))
+	sendcmdto_channel_butserv_butone(&his,
+                                         CMD_MODE, chan, NULL, 0, "%H +O %C",
+					 chan, jbuf->jb_source);
+	  else
       if (flags & CHFL_CHANOP && (oplevel < MAXOPLEVEL || !MyUser(jbuf->jb_source)))
 	sendcmdto_channel_butserv_butone((chan->mode.apass[0] ? &his : jbuf->jb_source),
                                          CMD_MODE, chan, NULL, 0, "%H +o %C",
