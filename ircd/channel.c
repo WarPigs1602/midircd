@@ -1212,7 +1212,7 @@ void send_channel_modes(struct Client *cptr, struct Channel *chptr)
     {
       while (member)
       {
-	if (flag_cnt < 2 && IsChanOp(member))
+	if (flag_cnt < 2 && (IsChannelManager(member) || IsChanOp(member) || IsHalfOp(member)))
 	{
 	  /*
 	   * The first loop (to find all non-voice/op), we count the ops.
@@ -1264,7 +1264,11 @@ void send_channel_modes(struct Client *cptr, struct Channel *chptr)
 	    if (HasVoice(member))	/* flag_cnt == 1 or 3 */
 	      tbuf[loc++] = 'v';
 	    if (IsHalfOp(member)) {
-           tbuf[loc++] = 'h';
+              /* append the absolute value of the oplevel */
+              if (send_oplevels) {
+                loc += ircd_snprintf(0, tbuf + loc, sizeof(tbuf) - loc, "%u", last_oplevel = member->oplevel);
+              } else
+                tbuf[loc++] = 'h';    
 		}
 		if (IsChanOp(member))	/* flag_cnt == 2 or 3 */
 	    {
@@ -1281,6 +1285,14 @@ void send_channel_modes(struct Client *cptr, struct Channel *chptr)
                 loc += ircd_snprintf(0, tbuf + loc, sizeof(tbuf) - loc, "%u", last_oplevel = member->oplevel);
               } else
                 tbuf[loc++] = 'O';
+	    }
+	    if (IsChannelManager(member))	/* flag_cnt == 2 or 3 */
+	    {
+              /* append the absolute value of the oplevel */
+              if (send_oplevels) {
+                loc += ircd_snprintf(0, tbuf + loc, sizeof(tbuf) - loc, "%u", last_oplevel = member->oplevel);
+              } else
+                tbuf[loc++] = 'q';
 	    }	
 	    tbuf[loc] = '\0';
 	    msgq_append(&me, mb, tbuf);
@@ -2036,7 +2048,7 @@ modebuf_flush_int(struct ModeBuf *mbuf, int all)
 	MB_TYPE(mbuf, i) |= MODE_SAVE; /* save for later */
       else {
     if (MB_TYPE(mbuf, i) & (MODE_CHANNEL_MANAGER))
-	bufptr[(*bufptr_i)++] = 'O';	  
+	bufptr[(*bufptr_i)++] = 'q';	  
     else if (MB_TYPE(mbuf, i) & (MODE_HALFOP))
 	bufptr[(*bufptr_i)++] = 'h';	  
     else
@@ -4106,7 +4118,7 @@ mode_parse(struct ModeBuf *mbuf, struct Client *cptr, struct Client *sptr,
 	  return 0;
   }	
   static int chan_flags[] = {
-    MODE_CHANNEL_MANAGER,	'O',
+    MODE_CHANNEL_MANAGER,	'q',
     MODE_CHANOP,	'o',
     MODE_HALFOP,	'h',
     MODE_VOICE,		'v',
@@ -4238,6 +4250,10 @@ mode_parse(struct ModeBuf *mbuf, struct Client *cptr, struct Client *sptr,
 	if (state.member && IsChannelManager(state.member))	  
 	mode_parse_anonymous(&state, flag_p);
 	break;
+	  case 'q':
+	if (state.member && IsChannelManager(state.member))	  
+	mode_parse_client(&state, flag_p);
+    break;	  
       case 'o':
       case 'h': /* deal with ops/voice */
 	if (state.member && (IsChanOp(state.member) || IsChannelManager(state.member)))	  
@@ -4491,6 +4507,11 @@ joinbuf_join(struct JoinBuf *jbuf, struct Channel *chan, unsigned int flags)
           CAP_AWAYNOTIFY, _CAP_LAST_CAP, ":%s", cli_user(jbuf->jb_source)->away);
 
       /* send an op, too, if needed */
+      if (flags & CHFL_CHANNEL_MANAGER)
+	sendcmdto_channel_butserv_butone(&his,
+                                         CMD_MODE, chan, NULL, 0, "%H +q %C",
+					 chan, jbuf->jb_source);
+	  else
       if (IsChannelService(jbuf->jb_source))
 	sendcmdto_channel_butserv_butone(&his,
                                          CMD_MODE, chan, NULL, 0, "%H +O %C",

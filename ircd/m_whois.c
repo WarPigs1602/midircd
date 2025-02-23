@@ -183,8 +183,10 @@ static void do_whois(struct Client* sptr, struct Client *acptr, int parc)
          *(buf + len++) = '*';
        if (IsDelayedJoin(chan) && (sptr != acptr))
          *(buf + len++) = '<';
-       else if (IsChannelService(acptr) || IsChannelManager(chan))
+       else if (IsChannelService(acptr))
          *(buf + len++) = '!';
+       else if (IsChannelManager(chan))
+         *(buf + len++) = '~';
        else if (IsChanOp(chan))
          *(buf + len++) = '@';
        else if (IsHalfOp(chan))
