@@ -422,7 +422,7 @@ extern const struct Numeric* get_error_numeric(int err);
 /*	ERR_HTMDISABLED      486	   unreal */
 #define ERR_ACCOUNTONLY      486	/* QuakeNet/ASUKA extension */
 #define ERR_UNIQOPRIVSNEEDED    487 /*          IRCnet extension (?) */
-/*      ERR_TSLESSCHAN       488           IRCnet extension (?) */
+#define ERR_NOANON           488           /* midirc extension  */
 #define ERR_VOICENEEDED      489        /* Undernet extension */
 
 #define ERR_NOOPERHOST       491

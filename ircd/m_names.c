@@ -185,6 +185,8 @@ void do_names(struct Client* sptr, struct Channel* chptr, int filter)
 	  buf[idx++] = '$';
     else if (IsChanOp(member))
       buf[idx++] = '@';
+    else if (IsHalfOp(member))
+      buf[idx++] = '%';
     else if (HasVoice(member))
       buf[idx++] = '+';
     strcpy(buf + idx, cli_name(c2ptr));

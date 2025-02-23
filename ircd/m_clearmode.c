@@ -111,7 +111,9 @@ do_clearmode(struct Client *cptr, struct Client *sptr, struct Channel *chptr,
 	     char *control)
 {
   static int flags[] = {
+    MODE_CHANNEL_MANAGER,	'O',
     MODE_CHANOP,	'o',
+	MODE_HALFOP,    'h',
     MODE_VOICE,		'v',
     MODE_PRIVATE,	'p',
     MODE_SECRET,	's',

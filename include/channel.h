@@ -86,11 +86,12 @@ struct RenamedChan;
 #define CHFL_BAN_EXCEPTIONVALID 0x100000 /**< CHFL_BANEXCEPTION bit is valid */
 #define CHFL_FORWARD 		    0x400000 /**< Channel forward */
 #define CHFL_ANONYMOUS 		    0x800000 /**< Anonymous channel */
+#define CHFL_HALFOP 		    0x1000000 /**< Anonymous channel */
 
-#define CHFL_OVERLAP         (CHFL_CHANNEL_MANAGER | CHFL_CHANOP | CHFL_VOICE)
+#define CHFL_OVERLAP         (CHFL_CHANNEL_MANAGER | CHFL_CHANOP | CHFL_HALFOP | CHFL_VOICE)
 #define CHFL_BANVALIDMASK    (CHFL_BANVALID | CHFL_BANNED)
 #define CHFL_BANEXCEPTIONVALIDMASK    (CHFL_BAN_EXCEPTIONVALID | CHFL_BAN_EXCEPTION)
-#define CHFL_VOICED_OR_OPPED (CHFL_CHANNEL_MANAGER | CHFL_CHANOP | CHFL_VOICE)
+#define CHFL_VOICED_OR_OPPED (CHFL_CHANNEL_MANAGER | CHFL_CHANOP | CHFL_HALFOP | CHFL_VOICE)
 
 /* Channel Visibility macros */
 
@@ -98,6 +99,7 @@ struct RenamedChan;
 #define MODE_CHANNEL_MANAGER     CHFL_CHANNEL_MANAGER	/**< +O Chanop */
 #define MODE_CHANOP     CHFL_CHANOP	/**< +o Chanop */
 #define MODE_VOICE      CHFL_VOICE	/**< +v Voice */
+#define MODE_HALFOP     CHFL_HALFOP	/**< +o Chanop */
 #define MODE_PRIVATE    0x0004		/**< +p Private */
 #define MODE_SECRET     0x0008		/**< +s Secret */
 #define MODE_MODERATED  0x0010		/**< +m Moderated */
@@ -231,6 +233,7 @@ struct Membership {
 #define IsBanException(x)   ((x)->status & CHFL_BAN_EXCEPTION)
 #define IsBanExceptionValid(x)   ((x)->status & CHFL_BAN_EXCEPTIONVALID)
 #define IsChanOp(x)         ((x)->status & CHFL_CHANOP)
+#define IsHalfOp(x)         ((x)->status & CHFL_HALFOP)
 #define OpLevel(x)          ((x)->oplevel)
 #define HasVoice(x)         ((x)->status & CHFL_VOICE)
 #define IsServOpOk(x)       ((x)->status & CHFL_SERVOPOK)
@@ -469,6 +472,8 @@ extern int client_can_send_to_channel(struct Client *cptr, struct Channel *chptr
 extern void remove_user_from_channel(struct Client *sptr, struct Channel *chptr);
 extern void remove_user_from_all_channels(struct Client* cptr);
 
+extern int is_manager_op(struct Client *cptr, struct Channel *chptr);
+extern int is_half_op(struct Client *cptr, struct Channel *chptr);
 extern int is_chan_op(struct Client *cptr, struct Channel *chptr);
 extern int is_zombie(struct Client *cptr, struct Channel *chptr);
 extern int has_voice(struct Client *cptr, struct Channel *chptr);

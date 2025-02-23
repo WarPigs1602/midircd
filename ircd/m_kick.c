@@ -124,7 +124,7 @@ int m_kick(struct Client *cptr, struct Client *sptr, int parc, char *parv[])
     return send_reply(sptr, ERR_NOSUCHCHANNEL, name);
 
   if (!(member2 = find_member_link(chptr, sptr)) || IsZombie(member2)
-      || !IsChanOp(member2))
+      || !IsChanOp(member2) && !IsHalfOp(member2) && !IsChannelManager(member2))
     return send_reply(sptr, ERR_CHANOPRIVSNEEDED, name);
 
   if (!(who = find_chasing(sptr, parv[2], 0)))
@@ -153,9 +153,9 @@ int m_kick(struct Client *cptr, struct Client *sptr, int parc, char *parv[])
   /* Don't allow to kick member with a higher op-level,
    * or members with the same op-level unless both are MAXOPLEVEL.
    */
-  if (OpLevel(member) < OpLevel(member2)
+  if (!IsHalfOp(member2) && (OpLevel(member) < OpLevel(member2)
       || (OpLevel(member) == OpLevel(member2)
-          && OpLevel(member) < MAXOPLEVEL))
+          && OpLevel(member) < MAXOPLEVEL)))
     return send_reply(sptr, ERR_NOTLOWEROPLEVEL, cli_name(who), chptr->chname,
 	OpLevel(member2), OpLevel(member), "kick",
 	OpLevel(member) == OpLevel(member2) ? "the same" : "a higher");

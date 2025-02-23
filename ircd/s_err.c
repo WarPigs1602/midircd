@@ -1008,7 +1008,7 @@ static Numeric replyTable[] = {
 /* 487 */
   { ERR_UNIQOPRIVSNEEDED, "%s :You’re not the original channel operator", "487" },
 /* 488 */
-  { 0 },
+  { ERR_NOANON, "%s :The requested channel doesn't support anonymous channel mode", "488" },
 /* 489 */
   { ERR_VOICENEEDED, "%s :You're neither voiced nor channel operator", "489" },
 /* 490 */
