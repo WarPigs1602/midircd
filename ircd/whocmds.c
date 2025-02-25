@@ -1,6 +1,8 @@
 /*
  * IRC - Internet Relay Chat, ircd/s_user.c (formerly ircd/s_msg.c)
  * Copyright (C) 1990 Jarkko Oikarinen and
+ * IRC - Internet Relay Chat, ircd/s_user.c (formerly ircd/s_msg.c)
+ * Copyright (C) 1990 Jarkko Oikarinen and
  *                    University of Oulu, Computing Center
  *
  * See file AUTHORS in IRC package for additional names of
@@ -180,6 +182,8 @@ void do_who(struct Client* sptr, struct Client* acptr, struct Channel* repchan,
         *(p1++) = '!';
       if (IsChannelManager(chan))
         *(p1++) = '~';
+      if (IsAdmin(chan))
+        *(p1++) = '&';
       if (IsChanOp(chan))
         *(p1++) = '@';
       if (IsHalfOp(chan))
@@ -194,6 +198,8 @@ void do_who(struct Client* sptr, struct Client* acptr, struct Channel* repchan,
         *(p1++) = '!';
       else if (IsChannelManager(chan))
         *(p1++) = '~';
+      else if (IsAdmin(chan))
+        *(p1++) = '&';
       else if (IsChanOp(chan))
         *(p1++) = '@';
       else if (IsHalfOp(chan))

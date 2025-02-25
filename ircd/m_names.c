@@ -183,6 +183,8 @@ void do_names(struct Client* sptr, struct Channel* chptr, int filter)
       buf[idx++] = '!';
     else if (IsChannelManager(member))
       buf[idx++] = '~';
+    else if (IsAdmin(member))
+      buf[idx++] = '&';
     else if (IsZombie(member))
 	  buf[idx++] = '$';
     else if (IsChanOp(member))

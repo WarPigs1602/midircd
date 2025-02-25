@@ -187,6 +187,8 @@ static void do_whois(struct Client* sptr, struct Client *acptr, int parc)
          *(buf + len++) = '!';
        else if (IsChannelManager(chan))
          *(buf + len++) = '~';
+       else if (IsAdmin(chan))
+         *(buf + len++) = '&';
        else if (IsChanOp(chan))
          *(buf + len++) = '@';
        else if (IsHalfOp(chan))

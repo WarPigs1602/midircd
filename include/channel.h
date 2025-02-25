@@ -86,20 +86,22 @@ struct RenamedChan;
 #define CHFL_BAN_EXCEPTIONVALID 0x100000 /**< CHFL_BANEXCEPTION bit is valid */
 #define CHFL_FORWARD 		    0x400000 /**< Channel forward */
 #define CHFL_ANONYMOUS 		    0x800000 /**< Anonymous channel */
-#define CHFL_HALFOP 		    0x1000000 /**< Anonymous channel */
+#define CHFL_HALFOP 		    0x1000000 /**< Halfop */
+#define CHFL_ADMIN  		    0x2000000 /**< Admin */
 
-#define CHFL_OVERLAP         (CHFL_CHANNEL_MANAGER | CHFL_CHANOP | CHFL_HALFOP | CHFL_VOICE)
+#define CHFL_OVERLAP         (CHFL_CHANNEL_MANAGER | CHFL_ADMIN | CHFL_CHANOP | CHFL_HALFOP | CHFL_VOICE)
 #define CHFL_BANVALIDMASK    (CHFL_BANVALID | CHFL_BANNED)
 #define CHFL_BANEXCEPTIONVALIDMASK    (CHFL_BAN_EXCEPTIONVALID | CHFL_BAN_EXCEPTION)
-#define CHFL_VOICED_OR_OPPED (CHFL_CHANNEL_MANAGER | CHFL_CHANOP | CHFL_HALFOP | CHFL_VOICE)
+#define CHFL_VOICED_OR_OPPED (CHFL_CHANNEL_MANAGER | CHFL_ADMIN | CHFL_CHANOP | CHFL_HALFOP | CHFL_VOICE)
 
 /* Channel Visibility macros */
 
 
-#define MODE_CHANNEL_MANAGER     CHFL_CHANNEL_MANAGER	/**< +O Chanop */
+#define MODE_CHANNEL_MANAGER     CHFL_CHANNEL_MANAGER	/**< +q Chanop */
 #define MODE_CHANOP     CHFL_CHANOP	/**< +o Chanop */
 #define MODE_VOICE      CHFL_VOICE	/**< +v Voice */
-#define MODE_HALFOP     CHFL_HALFOP	/**< +o Chanop */
+#define MODE_HALFOP     CHFL_HALFOP	/**< +h Halfop */
+#define MODE_ADMIN      CHFL_ADMIN	/**< +a Admin*/
 #define MODE_PRIVATE    0x0004		/**< +p Private */
 #define MODE_SECRET     0x0008		/**< +s Secret */
 #define MODE_MODERATED  0x0010		/**< +m Moderated */
@@ -114,7 +116,7 @@ struct RenamedChan;
 #define MODE_NOCOLOUR   0x2000          /**< No mIRC/ANSI colors/bold */
 #define MODE_NOCTCP     0x4000          /**< No channel CTCPs */
 #define MODE_NONOTICE   0x8000          /**< No channel notices */
-#define MODE_ANONYMOUS  0x10000    /**< +a anonymous channnel */
+#define MODE_ANONYMOUS  0x10000    /**< +y anonymous channnel */
 
 #define MODE_SAVE	0x20000		/**< save this mode-with-arg 'til 
 					 * later */
@@ -234,6 +236,7 @@ struct Membership {
 #define IsBanExceptionValid(x)   ((x)->status & CHFL_BAN_EXCEPTIONVALID)
 #define IsChanOp(x)         ((x)->status & CHFL_CHANOP)
 #define IsHalfOp(x)         ((x)->status & CHFL_HALFOP)
+#define IsAdmin(x)         ((x)->status & CHFL_ADMIN)
 #define OpLevel(x)          ((x)->oplevel)
 #define HasVoice(x)         ((x)->status & CHFL_VOICE)
 #define IsServOpOk(x)       ((x)->status & CHFL_SERVOPOK)
