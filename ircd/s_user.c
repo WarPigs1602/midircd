@@ -1035,13 +1035,22 @@ hide_hostmask(struct Client *cptr, unsigned int flag)
     if (!IsDelayedJoin(chan))
       sendcmdto_capflag_channel_butserv_butone(cptr, CMD_JOIN, chan->channel, cptr, 0,
                                          _CAP_LAST_CAP, CAP_CHGHOST, "%H", chan->channel);
-    if (IsChanOp(chan) && HasVoice(chan))
+    if (IsChannelManager(chan))
+      sendcmdto_capflag_channel_butserv_butone(&his, CMD_MODE, chan->channel, cptr, 0,
+                                       _CAP_LAST_CAP, CAP_CHGHOST, "%H +q %C", chan->channel, cptr);
+    if (IsAdmin(chan))
+      sendcmdto_capflag_channel_butserv_butone(&his, CMD_MODE, chan->channel, cptr, 0,
+                                       _CAP_LAST_CAP, CAP_CHGHOST, "%H +a %C", chan->channel, cptr);
+    if (IsChanOp(chan))
       sendcmdto_capflag_channel_butserv_butone(&his, CMD_MODE, chan->channel, cptr, 0,
                                        _CAP_LAST_CAP, CAP_CHGHOST, "%H +ov %C %C", chan->channel, cptr,
-                                       cptr);
-    else if (IsChanOp(chan) || HasVoice(chan))
+                                       cptr);    
+    if (IsHalfOp(chan))
       sendcmdto_capflag_channel_butserv_butone(&his, CMD_MODE, chan->channel, cptr, 0,
-        _CAP_LAST_CAP, CAP_CHGHOST, "%H +%c %C", chan->channel, IsChanOp(chan) ? 'o' : 'v', cptr);
+                                       _CAP_LAST_CAP, CAP_CHGHOST, "%H +h %C", chan->channel, cptr);
+    if (HasVoice(chan))
+      sendcmdto_capflag_channel_butserv_butone(&his, CMD_MODE, chan->channel, cptr, 0,
+        _CAP_LAST_CAP, CAP_CHGHOST, "%H +v %C", chan->channel, cptr);
   }
   return 0;
 }
@@ -1205,13 +1214,26 @@ int set_hostmask(struct Client *cptr, char *hostmask, char *password)
       continue;
     sendcmdto_channel_butserv_butone(cptr, CMD_JOIN, chan->channel, cptr,
       "%H", chan->channel);
-    if (IsChanOp(chan) && HasVoice(chan)) {
+    if (IsChannelManager(chan)) {
       sendcmdto_channel_butserv_butone(&me, CMD_MODE, chan->channel, cptr,
-        "%H +ov %C %C", chan->channel, cptr, cptr);
-    } else if (IsChanOp(chan) || HasVoice(chan)) {
-      sendcmdto_channel_butserv_butone(&me, CMD_MODE, chan->channel, cptr,
-        "%H +%c %C", chan->channel, IsChanOp(chan) ? 'o' : 'v', cptr);
+        "%H +q %C", chan->channel, cptr);
     }
+	if (IsAdmin(chan)) {
+      sendcmdto_channel_butserv_butone(&me, CMD_MODE, chan->channel, cptr,
+        "%H +a %C", chan->channel, cptr);
+    }
+	if (IsChanOp(chan)) {
+      sendcmdto_channel_butserv_butone(&me, CMD_MODE, chan->channel, cptr,
+        "%H +o %C", chan->channel, cptr);
+    }
+	if (IsHalfOp(chan)) {
+      sendcmdto_channel_butserv_butone(&me, CMD_MODE, chan->channel, cptr,
+        "%H +h %C", chan->channel, cptr);
+    }
+	if (HasVoice(chan)) {
+      sendcmdto_channel_butserv_butone(&me, CMD_MODE, chan->channel, cptr,
+        "%H +v %C", chan->channel, cptr);
+    }		
   }
 #endif
 
@@ -1225,19 +1247,32 @@ int set_hostmask(struct Client *cptr, char *hostmask, char *password)
     /* If this channel has delayed joins and the user has no modes, just set
      * the delayed join flag rather than showing the join, even if the user
      * was visible before */
-    if (!IsChanOp(chan) && !HasVoice(chan)
+    if (!IsChannelManager(chan) && !IsAdmin(chan) && !IsChanOp(chan) && !IsHalfOp(chan) && !HasVoice(chan)
         && (chan->channel->mode.mode & MODE_DELJOINS)) {
       SetDelayedJoin(chan);
     } else {
       sendcmdto_channel_butserv_butone(cptr, CMD_JOIN, chan->channel, cptr, 0,
         "%H", chan->channel);
     }
-    if (IsChanOp(chan) && HasVoice(chan)) {
+    if (IsChannelManager(chan)) {
       sendcmdto_channel_butserv_butone(&his, CMD_MODE, chan->channel, cptr, 0,
-        "%H +ov %C %C", chan->channel, cptr, cptr);
-    } else if (IsChanOp(chan) || HasVoice(chan)) {
+        "%H +q %C", chan->channel, cptr);
+    }
+    if (IsAdmin(chan)) {
       sendcmdto_channel_butserv_butone(&his, CMD_MODE, chan->channel, cptr, 0,
-        "%H +%c %C", chan->channel, IsChanOp(chan) ? 'o' : 'v', cptr);
+        "%H +a %C", chan->channel, cptr);
+    }
+    if (IsHalfOp(chan)) {
+      sendcmdto_channel_butserv_butone(&his, CMD_MODE, chan->channel, cptr, 0,
+        "%H +h %C", chan->channel, cptr);
+    } 
+    if (IsChanOp(chan)) {
+      sendcmdto_channel_butserv_butone(&his, CMD_MODE, chan->channel, cptr, 0,
+        "%H +o %C", chan->channel, cptr);
+    } 
+    if (HasVoice(chan)) {
+      sendcmdto_channel_butserv_butone(&his, CMD_MODE, chan->channel, cptr, 0,
+        "%H +v %C", chan->channel, cptr);
     }
   }
   return 1;

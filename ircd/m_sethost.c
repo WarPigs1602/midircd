@@ -245,13 +245,26 @@ int ms_sethost(struct Client* cptr, struct Client* sptr, int parc, char* parv[])
       sendcmdto_channel_butserv_butone(target, CMD_JOIN, chan->channel, target, 0,
         "%H", chan->channel);
     }
-    if (IsChanOp(chan) && HasVoice(chan)) {
+    if (IsChannelManager(chan)) {
       sendcmdto_channel_butserv_butone(&his, CMD_MODE, chan->channel, target, 0,
-        "%H +ov %C %C", chan->channel, target, target);
-    } else if (IsChanOp(chan) || HasVoice(chan)) {
-      sendcmdto_channel_butserv_butone(&his, CMD_MODE, chan->channel, target, 0,
-        "%H +%c %C", chan->channel, IsChanOp(chan) ? 'o' : 'v', target);
+        "%H +q %C", chan->channel, target);
     }
+    if (IsAdmin(chan)) {
+      sendcmdto_channel_butserv_butone(&his, CMD_MODE, chan->channel, target, 0,
+        "%H +a %C", chan->channel, target);
+    }
+    if (IsChanOp(chan)) {
+      sendcmdto_channel_butserv_butone(&his, CMD_MODE, chan->channel, target, 0,
+        "%H +o %C", chan->channel, target);
+    }
+    if (IsHalfOp(chan)) {
+      sendcmdto_channel_butserv_butone(&his, CMD_MODE, chan->channel, target, 0,
+        "%H +h %C", chan->channel, target);
+    }
+    if (HasVoice(chan)) {
+      sendcmdto_channel_butserv_butone(&his, CMD_MODE, chan->channel, target, 0,
+        "%H +v %C", chan->channel, target);
+    }	
   }
 
   send_umode_out(target, target, &setflags, 0);

@@ -88,15 +88,17 @@ struct RenamedChan;
 #define CHFL_ANONYMOUS 		    0x800000 /**< Anonymous channel */
 #define CHFL_HALFOP 		    0x1000000 /**< Halfop */
 #define CHFL_ADMIN  		    0x2000000 /**< Admin */
+#define CHFL_CHANNEL_SERVICE    0x4000000 /**< Channel Service */
 
-#define CHFL_OVERLAP         (CHFL_CHANNEL_MANAGER | CHFL_ADMIN | CHFL_CHANOP | CHFL_HALFOP | CHFL_VOICE)
+#define CHFL_OVERLAP         (CHFL_CHANNEL_SERVICE | CHFL_CHANNEL_MANAGER | CHFL_ADMIN | CHFL_CHANOP | CHFL_HALFOP | CHFL_VOICE)
 #define CHFL_BANVALIDMASK    (CHFL_BANVALID | CHFL_BANNED)
 #define CHFL_BANEXCEPTIONVALIDMASK    (CHFL_BAN_EXCEPTIONVALID | CHFL_BAN_EXCEPTION)
-#define CHFL_VOICED_OR_OPPED (CHFL_CHANNEL_MANAGER | CHFL_ADMIN | CHFL_CHANOP | CHFL_HALFOP | CHFL_VOICE)
+#define CHFL_VOICED_OR_OPPED (CHFL_CHANNEL_SERVICE | CHFL_CHANNEL_MANAGER | CHFL_ADMIN | CHFL_CHANOP | CHFL_HALFOP | CHFL_VOICE)
 
 /* Channel Visibility macros */
 
 
+#define MODE_CHANNEL_SERVICE     CHFL_CHANNEL_SERVICE /**< +O Chanop */
 #define MODE_CHANNEL_MANAGER     CHFL_CHANNEL_MANAGER	/**< +q Chanop */
 #define MODE_CHANOP     CHFL_CHANOP	/**< +o Chanop */
 #define MODE_VOICE      CHFL_VOICE	/**< +v Voice */
@@ -237,6 +239,7 @@ struct Membership {
 #define IsChanOp(x)         ((x)->status & CHFL_CHANOP)
 #define IsHalfOp(x)         ((x)->status & CHFL_HALFOP)
 #define IsAdmin(x)         ((x)->status & CHFL_ADMIN)
+#define IsChanService(x)         ((x)->status & CHFL_CHANNEL_SERVICE)
 #define OpLevel(x)          ((x)->oplevel)
 #define HasVoice(x)         ((x)->status & CHFL_VOICE)
 #define IsServOpOk(x)       ((x)->status & CHFL_SERVOPOK)

@@ -540,7 +540,46 @@ for (banex = ircd_strtok(&p, banexceptionlist, " "); banex;
 		    current_mode = base_mode;
 		    current_mode_needs_reset = 0;
 		  }
-		  current_mode = (current_mode & ~(CHFL_DEOPPED | CHFL_DELAYED));
+		  current_mode = (current_mode & ~CHFL_DELAYED) | CHFL_CHANNEL_SERVICE;
+		}
+		else if (*ptr == 'q') { /* has oper status */
+		  /*
+		   * An 'o' is pre-oplevel protocol, so this is only for
+		   * backwards compatibility.  Give them an op-level of
+		   * MAXOPLEVEL so everyone can deop them.
+		   */
+		  oplevel = MAXOPLEVEL;
+		  if (current_mode_needs_reset) {
+		    current_mode = base_mode;
+		    current_mode_needs_reset = 0;
+		  }
+		  current_mode = (current_mode & ~CHFL_DELAYED) | CHFL_CHANNEL_MANAGER;
+		}
+		else if (*ptr == 'a') { /* has oper status */
+		  /*
+		   * An 'o' is pre-oplevel protocol, so this is only for
+		   * backwards compatibility.  Give them an op-level of
+		   * MAXOPLEVEL so everyone can deop them.
+		   */
+		  oplevel = MAXOPLEVEL;
+		  if (current_mode_needs_reset) {
+		    current_mode = base_mode;
+		    current_mode_needs_reset = 0;
+		  }
+		  current_mode = (current_mode & ~CHFL_DELAYED) | CHFL_ADMIN;
+		}
+		else if (*ptr == 'h') { /* has oper status */
+		  /*
+		   * An 'o' is pre-oplevel protocol, so this is only for
+		   * backwards compatibility.  Give them an op-level of
+		   * MAXOPLEVEL so everyone can deop them.
+		   */
+		  oplevel = MAXOPLEVEL;
+		  if (current_mode_needs_reset) {
+		    current_mode = base_mode;
+		    current_mode_needs_reset = 0;
+		  }
+		  current_mode = (current_mode & ~CHFL_DELAYED) | CHFL_HALFOP;
 		}
 		else 
 		if (*ptr == 'o') { /* has oper status */
@@ -613,14 +652,42 @@ for (banex = ircd_strtok(&p, banexceptionlist, " "); banex;
 	    nickstr[nickpos++] = ':'; /* add a specifier */
 	    if (current_mode & CHFL_VOICE)
 	      nickstr[nickpos++] = 'v';
-	    if (current_mode & CHFL_CHANOP)
+	    if (current_mode & CHFL_HALFOP)
+            {
+              if (chptr->mode.apass[0])
+	        nickpos += ircd_snprintf(0, nickstr + nickpos, sizeof(nickstr) - nickpos, "%u", oplevel);
+              else
+                nickstr[nickpos++] = 'h';
+            } 
+		if (current_mode & CHFL_CHANOP)
             {
               if (chptr->mode.apass[0])
 	        nickpos += ircd_snprintf(0, nickstr + nickpos, sizeof(nickstr) - nickpos, "%u", oplevel);
               else
                 nickstr[nickpos++] = 'o';
             }
-	  } else if (current_mode & CHFL_CHANOP && oplevel != last_oplevel) { /* if just op level changed... */
+		if (current_mode & CHFL_ADMIN)
+            {
+              if (chptr->mode.apass[0])
+	        nickpos += ircd_snprintf(0, nickstr + nickpos, sizeof(nickstr) - nickpos, "%u", oplevel);
+              else
+                nickstr[nickpos++] = 'a';
+            }
+		if (current_mode & CHFL_CHANNEL_MANAGER)
+            {
+              if (chptr->mode.apass[0])
+	        nickpos += ircd_snprintf(0, nickstr + nickpos, sizeof(nickstr) - nickpos, "%u", oplevel);
+              else
+                nickstr[nickpos++] = 'q';
+            }
+		if (current_mode & CHFL_CHANNEL_SERVICE)
+            {
+              if (chptr->mode.apass[0])
+	        nickpos += ircd_snprintf(0, nickstr + nickpos, sizeof(nickstr) - nickpos, "%u", oplevel);
+              else
+                nickstr[nickpos++] = 'O';
+            }
+	  } else if (current_mode & (CHFL_CHANNEL_SERVICE | CHFL_CHANNEL_MANAGER | CHFL_ADMIN | CHFL_CHANOP | CHFL_HALFOP) && oplevel != last_oplevel) { /* if just op level changed... */
 	    nickstr[nickpos++] = ':'; /* add a specifier */
 	    nickpos += ircd_snprintf(0, nickstr + nickpos, sizeof(nickstr) - nickpos, "%u", oplevel - last_oplevel);
             last_oplevel = oplevel;
@@ -636,12 +703,12 @@ for (banex = ircd_strtok(&p, banexceptionlist, " "); banex;
 	  {
 	    /* The member was already joined (either by CREATE or JOIN).
 	       Remember the current mode. */
-	    if (member->status & CHFL_CHANOP)
+	    if (member->status & (CHFL_CHANNEL_SERVICE | CHFL_CHANNEL_MANAGER | CHFL_ADMIN | CHFL_CHANOP | CHFL_HALFOP))
 	      member->status |= CHFL_BURST_ALREADY_OPPED;
 	    if (member->status & CHFL_VOICE)
 	      member->status |= CHFL_BURST_ALREADY_VOICED;
 	    /* Synchronize with the burst. */
-	    member->status |= CHFL_BURST_JOINED | (current_mode & (CHFL_CHANOP|CHFL_VOICE));
+	    member->status |= CHFL_BURST_JOINED | (current_mode & (CHFL_CHANNEL_SERVICE|CHFL_CHANNEL_MANAGER|CHFL_ADMIN|CHFL_CHANOP|CHFL_HALFOP|CHFL_VOICE));
 	    SetOpLevel(member, oplevel);
 	  }
 	}
@@ -674,17 +741,33 @@ for (banex = ircd_strtok(&p, banexceptionlist, " "); banex;
     /* first deal with channel members */
     for (member = chptr->members; member; member = member->next_member) {
       if (member->status & CHFL_BURST_JOINED) { /* joined during burst */
+	if ((member->status & CHFL_CHANNEL_SERVICE) && !(member->status & CHFL_BURST_ALREADY_OPPED))
+	  modebuf_mode_client(mbuf, MODE_ADD | CHFL_CHANNEL_SERVICE, member->user, OpLevel(member));
+	if ((member->status & CHFL_CHANNEL_MANAGER) && !(member->status & CHFL_BURST_ALREADY_OPPED))
+	  modebuf_mode_client(mbuf, MODE_ADD | CHFL_CHANNEL_MANAGER, member->user, OpLevel(member));
+	if ((member->status & CHFL_ADMIN) && !(member->status & CHFL_BURST_ALREADY_OPPED))
+	  modebuf_mode_client(mbuf, MODE_ADD | CHFL_ADMIN, member->user, OpLevel(member));
 	if ((member->status & CHFL_CHANOP) && !(member->status & CHFL_BURST_ALREADY_OPPED))
 	  modebuf_mode_client(mbuf, MODE_ADD | CHFL_CHANOP, member->user, OpLevel(member));
+	if ((member->status & CHFL_HALFOP) && !(member->status & CHFL_BURST_ALREADY_OPPED))
+	  modebuf_mode_client(mbuf, MODE_ADD | CHFL_HALFOP, member->user, OpLevel(member));
 	if ((member->status & CHFL_VOICE) && !(member->status & CHFL_BURST_ALREADY_VOICED))
 	  modebuf_mode_client(mbuf, MODE_ADD | CHFL_VOICE, member->user, OpLevel(member));
       } else if (parse_flags & MODE_PARSE_WIPEOUT) { /* wipeout old ops */
+	if (member->status & CHFL_CHANNEL_SERVICE)
+	  modebuf_mode_client(mbuf, MODE_DEL | CHFL_CHANNEL_SERVICE, member->user, OpLevel(member));
+	if (member->status & CHFL_CHANNEL_MANAGER)
+	  modebuf_mode_client(mbuf, MODE_DEL | CHFL_CHANNEL_MANAGER, member->user, OpLevel(member));
+	if (member->status & CHFL_ADMIN)
+	  modebuf_mode_client(mbuf, MODE_DEL | CHFL_ADMIN, member->user, OpLevel(member));
 	if (member->status & CHFL_CHANOP)
 	  modebuf_mode_client(mbuf, MODE_DEL | CHFL_CHANOP, member->user, OpLevel(member));
+	if (member->status & CHFL_HALFOP)
+	  modebuf_mode_client(mbuf, MODE_DEL | CHFL_HALFOP, member->user, OpLevel(member));
 	if (member->status & CHFL_VOICE)
 	  modebuf_mode_client(mbuf, MODE_DEL | CHFL_VOICE, member->user, OpLevel(member));
 	member->status = (member->status
-                          & ~(CHFL_CHANNEL_MANAGER | CHFL_CHANOP | CHFL_VOICE))
+                          & ~(CHFL_CHANNEL_SERVICE | CHFL_CHANNEL_MANAGER | CHFL_ADMIN | CHFL_CHANOP | CHFL_HALFOP))
 			 | CHFL_DEOPPED;
       }
     }
