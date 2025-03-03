@@ -69,7 +69,7 @@ int m_rename(struct Client *cptr, struct Client *sptr, int parc, char *parv[])
   name = parv[1];
   target = parv[2];
   reason = EmptyString(parv[parc - 1]) ? parv[0] : parv[parc - 1];
-  if (!IsChannelName(target) || !strIsIrcCh(target))
+  if (!IsGlobalChannel(target) || !IsChannelName(target) || !strIsIrcCh(target))
   {
       /* bad channel name */
       send_reply(sptr, ERR_NOSUCHCHANNEL, target);
@@ -118,8 +118,16 @@ int m_rename(struct Client *cptr, struct Client *sptr, int parc, char *parv[])
 		c2ptr = member->user;
         if (!MyUser(c2ptr) || IsZombie(member) || IsAnOper(c2ptr))
           continue;		
-		if (IsChanOp(member))
+		if (IsChanService(member))
+			flags = CHFL_CHANNEL_SERVICE;
+		else if (IsChannelManager(member))
+			flags = CHFL_CHANNEL_MANAGER;
+		else if (IsAdmin(member))
+			flags = CHFL_ADMIN;
+		else if (IsChanOp(member))
 			flags = CHFL_CHANOP;
+		else if (IsHalfOp(member))
+			flags = CHFL_HALFOP;
 		else if (HasVoice(member))
 			flags = CHFL_VOICE;
 		struct JoinBuf join;

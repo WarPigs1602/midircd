@@ -138,12 +138,12 @@ struct RenamedChan;
 
 /** mode flags which take another parameter (With PARAmeterS)
  */
-#define MODE_WPARAS     (MODE_CHANOP|MODE_VOICE|MODE_BAN|MODE_KEY|MODE_LIMIT|MODE_APASS|MODE_UPASS|MODE_BAN_EXCEPTION|MODE_LINK)
+#define MODE_WPARAS     (MODE_CHANNEL_SERVICE|MODE_CHANNEL_MANAGER|MODE_ADMIN|MODE_CHANOP|MODE_HALFOP|MODE_VOICE|MODE_BAN|MODE_KEY|MODE_LIMIT|MODE_APASS|MODE_UPASS|MODE_BAN_EXCEPTION|MODE_LINK)
 
 /** Available Channel modes */
-#define infochanmodes feature_bool(FEAT_OPLEVELS) ? "aAbeiklLmnopstUvrDcCNuMT" : "abeiklLmnopstvrDcCNuMT"
+#define infochanmodes feature_bool(FEAT_OPLEVELS) ? "aAbehiklLmnopqstUvyrDcCNuMT" : "abehiklLmnopqstvyrDcCNuMT"
 /** Available Channel modes that take parameters */
-#define infochanmodeswithparams feature_bool(FEAT_OPLEVELS) ? "aAbeklLoUv" : "abeklLov"
+#define infochanmodeswithparams feature_bool(FEAT_OPLEVELS) ? "aAbehklLoOqUvy" : "abehklLoOqvy"
 
 #define HoldChannel(x)          (!(x))
 /** Anonymous channel */

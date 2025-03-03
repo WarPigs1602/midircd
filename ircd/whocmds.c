@@ -178,7 +178,7 @@ void do_who(struct Client* sptr, struct Client* acptr, struct Channel* repchan,
        * multiple channel status flags, as this is currently the only
        * way to know if someone has @'s *and* is +'d.
        */
-	  if (IsChannelService(acptr))
+	  if (IsChanService(chan))
         *(p1++) = '!';
       if (IsChannelManager(chan))
         *(p1++) = '~';
@@ -194,7 +194,7 @@ void do_who(struct Client* sptr, struct Client* acptr, struct Channel* repchan,
         *(p1++) = '<';
     }
     else {
-      if (IsChannelService(acptr))
+	  if (IsChanService(chan))
         *(p1++) = '!';
       else if (IsChannelManager(chan))
         *(p1++) = '~';
@@ -262,7 +262,7 @@ void do_who(struct Client* sptr, struct Client* acptr, struct Channel* repchan,
 
   if (fields & WHO_FIELD_OPL)
   {
-      if (!chan || !IsChanOp(chan))
+      if (!chan || (!IsChanService(chan) && !IsAdmin(chan) && !IsChanOp(chan) && !IsHalfOp(chan)))
       {
         strcpy(p1, " n/a");
         p1 += 4;

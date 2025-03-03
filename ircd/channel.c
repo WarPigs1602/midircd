@@ -643,7 +643,9 @@ void add_user_to_channel(struct Channel* chptr, struct Client* who,
 {
   assert(0 != chptr);
   assert(0 != who);
-
+  
+  if(!IsChannelName(chptr->chname) || !strIsIrcCh(chptr->chname))
+	  return;
   if (cli_user(who)) {
    
     struct Membership* member = membershipFreeList;
@@ -1166,7 +1168,7 @@ void send_channel_modes(struct Client *cptr, struct Channel *chptr)
 {
   /* The order in which modes are generated is now mandatory */
   static unsigned int current_flags[8] =
-      { 0, CHFL_VOICE, CHFL_HALFOP, CHFL_CHANOP, CHFL_ADMIN, CHFL_CHANNEL_MANAGER, CHFL_CHANNEL_MANAGER, CHFL_CHANNEL_SERVICE, CHFL_CHANNEL_SERVICE | CHFL_ADMIN |CHFL_CHANOP | CHFL_HALFOP | CHFL_VOICE };
+      { 0, CHFL_VOICE, CHFL_HALFOP, CHFL_CHANOP, CHFL_ADMIN, CHFL_CHANNEL_MANAGER, CHFL_CHANNEL_SERVICE, CHFL_CHANNEL_SERVICE | CHFL_CHANNEL_MANAGER | CHFL_ADMIN |CHFL_CHANOP | CHFL_HALFOP | CHFL_VOICE };
   int                first = 1;
   int                full  = 1;
   int                flag_cnt = 0;
@@ -1187,7 +1189,7 @@ void send_channel_modes(struct Client *cptr, struct Channel *chptr)
   assert(0 != cptr);
   assert(0 != chptr); 
 
-  if (IsLocalChannel(chptr->chname))
+  if (!IsGlobalChannel(chptr->chname) || !strIsIrcCh(chptr->chname))
     return;
 
   member = chptr->members;
@@ -1230,7 +1232,7 @@ void send_channel_modes(struct Client *cptr, struct Channel *chptr)
     {
       while (member)
       {
-	if (flag_cnt < 2 && (IsChannelManager(member) || IsAdmin(member) || IsChanOp(member) || IsHalfOp(member)))
+	if (flag_cnt < 2 && (IsChanService(member) || IsChannelManager(member) || IsAdmin(member) || IsChanOp(member) || IsHalfOp(member)))
 	{
 	  /*
 	   * The first loop (to find all non-voice/op), we count the ops.
@@ -3038,7 +3040,7 @@ mode_parse_links(struct ParseState *state, int *flag_p)
       send_reply(state->sptr, ERR_CANNOTCHANGECHANMODE, "L", "a channel cannot linked to multiple channels"); 		  
     return; /* no link change */
   }
-  if (state->dir == MODE_ADD && (IsSaveChannel(t_str) || IsLocalChannel(t_str))) {
+  if (state->dir == MODE_ADD && (!IsGlobalChannel(t_str) || !IsChannelName(t_str) || !strIsIrcCh(t_str))) {
          send_reply(state->sptr, ERR_NOSUCHCHANNEL, t_str);  
     return; /* no link change */
   }  
@@ -3051,7 +3053,7 @@ mode_parse_links(struct ParseState *state, int *flag_p)
       send_reply(state->sptr, ERR_CANNOTCHANGECHANMODE, "L", "a link was allready setted");  
     return; /* no link change */
   }
-
+  
   /* Skip if this is a burst, we have a link already and the new link is
    * after the old one alphabetically */
   if ((state->flags & MODE_PARSE_BURST) &&

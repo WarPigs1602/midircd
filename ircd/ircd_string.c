@@ -130,6 +130,14 @@ int string_has_wildcards(const char* str)
 
 const char chars[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
 
+void ircd_time_str(char *dest) {
+	time_t now;
+	time(&now);
+	size_t length = sizeof(now);
+	size_t chr1 = sizeof(chars);
+    itoa(now, dest, chr1);
+}
+
 /** Creates a random string.
  * @param[in] len String lenght.
  * @return The random string.
@@ -145,14 +153,6 @@ void ircd_rand_str(char *dest, size_t length) {
         *dest++ = charset[index];
     }
     *dest = '\0';
-}
-
-void ircd_time_str(char *dest) {
-	time_t now;
-	time(&now);
-	size_t length = sizeof(now);
-	size_t chr1 = sizeof(chars);
-    itoa(now, dest, chr1);
 }
 
 /** Split a string on certain delimiters.

@@ -30,6 +30,7 @@
 #include "gline.h"
 #include "hash.h"
 #include "ircd.h"
+#include "ircd_alloc.h"
 #include "ircd_chattr.h"
 #include "ircd_features.h"
 #include "ircd_log.h"
@@ -159,7 +160,12 @@ int m_join(struct Client *cptr, struct Client *sptr, int parc, char *parv[])
       continue;
     }
 
-	if (IsSaveChannel(name) && !(chptr2 = FindSafe(&name[1])) && name[1] != '!') {
+	if (!feature_bool(FEAT_SECURE_CHANNELS) && IsSaveChannel(name)) {
+      send_reply(sptr, ERR_NOSUCHCHANNEL, name);
+      continue;	  
+	}
+	
+	if (feature_bool(FEAT_SECURE_CHANNELS) && IsSaveChannel(name) && !(chptr2 = FindSafe(&name[1])) && name[1] != '!') {
       send_reply(sptr, ERR_NOSUCHCHANNEL, name);
       continue;	  
 	}
@@ -183,7 +189,7 @@ int m_join(struct Client *cptr, struct Client *sptr, int parc, char *parv[])
 	  send_reply(sptr, ERR_LINKCHANNEL, name, ren->reason, ren->newname);
 	  ircd_strncpy(name, ren->newname, CHANNELLEN + 1);
 	}
-    if (name[0] == '!' && name[1] != '!') {
+    if (name[0] == '!' && name[1] != '!' && feature_bool(FEAT_SECURE_CHANNELS)) {
 		if((chptr2 = FindSafe(&name[1]))){
 			found = 0;
 		} 
@@ -192,22 +198,22 @@ int m_join(struct Client *cptr, struct Client *sptr, int parc, char *parv[])
 	     continue;		   
 	   }
 	}
-    if (name[0] == '!' && name[1] == '!') {
+    if (name[0] == '!' && name[1] == '!' && feature_bool(FEAT_SECURE_CHANNELS)) {
 	  if(FindSafe(&name[2])) {
         send_reply(sptr, ERR_NOSUCHCHANNEL, name);
         continue;		   
 	  }
 	}	
     if (found != 0 && !(chptr = FindChannel(name))) {
-	  if (name[0] == '!' && name[1] == '!') {
-		char *buf2 = malloc(strlen(&name[2]));
+	  if (name[0] == '!' && name[1] == '!' && feature_bool(FEAT_SECURE_CHANNELS)) {
+		char *buf2 = MyMalloc(strlen(&name[2]));
 		ircd_strncpy(buf2, &name[2], CHANNELLEN);
 		ircd_time_str(buf);
         ircd_strncpy(buf, &buf[1], 5);		
 	    ircd_snprintf(sptr, name, CHANNELLEN, "!%s%s", buf, buf2);
 		ircd_strncpy(safe, buf2, CHANNELLEN);
 		ircd_strncpy(cc, sptr->cli_name, HOSTLEN + 1);
-		free(buf2);
+		MyFree(buf2);
       }
       if (((name[0] == '&') && !feature_bool(FEAT_LOCAL_CHANNELS))
           || strlen(name) >= IRCD_MIN(CHANNELLEN, feature_int(FEAT_CHANNELLEN))) {
@@ -231,7 +237,7 @@ int m_join(struct Client *cptr, struct Client *sptr, int parc, char *parv[])
 	  ircd_strncpy(chptr->rnd, buf, 5);
 	  ircd_strncpy(chptr->safe, safe, CHANNELLEN);
       chptr->mode.anon = -1;
-      joinbuf_join(&create, chptr, CHFL_CHANOP | CHFL_CHANNEL_MANAGER);
+      joinbuf_join(&create, chptr, CHFL_HALFOP | CHFL_CHANOP | CHFL_ADMIN | CHFL_CHANNEL_MANAGER);
 	  do_names(sptr, chptr, NAMES_ALL|NAMES_EON); 
       if (feature_bool(FEAT_AUTOCHANMODES) && feature_str(FEAT_AUTOCHANMODES_LIST) && strlen(feature_str(FEAT_AUTOCHANMODES_LIST)) > 0)
         SetAutoChanModes(chptr);
@@ -255,12 +261,12 @@ int m_join(struct Client *cptr, struct Client *sptr, int parc, char *parv[])
       /* Check Apass/Upass -- since we only ever look at a single
        * "key" per channel now, this hampers brute force attacks. */
 	  if (key && !strcmp(key, chptr->mode.apass))
-        flags = CHFL_CHANOP | CHFL_CHANNEL_MANAGER;
+        flags = CHFL_CHANOP | CHFL_ADMIN | CHFL_CHANNEL_MANAGER;
       else if (key && !strcmp(key, chptr->mode.upass))
-        flags = CHFL_CHANOP;
+        flags = CHFL_CHANOP | CHFL_ADMIN | CHFL_CHANNEL_MANAGER;
       else if (chptr->users == 0 && !chptr->mode.apass[0]) {
         /* Joining a zombie channel (zannel): give ops and increment TS. */
-        flags = CHFL_CHANOP;
+        flags = CHFL_CHANOP | CHFL_ADMIN | CHFL_CHANNEL_MANAGER;
         chptr->creationtime++;
       } else if (IsInvited(sptr, chptr)) {
         /* Invites bypass these other checks. */
@@ -320,7 +326,8 @@ int m_join(struct Client *cptr, struct Client *sptr, int parc, char *parv[])
       /* Is there some reason the user may not join? */
       if (err) {
 		if(chptr->mode.link[0] == '\0') {
-        switch(err) {
+        
+		switch(err) {
 		  case ERR_NEEDREGGEDNICK:
             send_reply(sptr, 
                        ERR_NEEDREGGEDNICK, 
@@ -382,7 +389,7 @@ int m_join(struct Client *cptr, struct Client *sptr, int parc, char *parv[])
       }
 
       joinbuf_join(&join, chptr, flags);
-      if (flags & CHFL_CHANOP) {
+      if (flags & (CHFL_HALFOP | CHFL_CHANOP | CHFL_ADMIN | CHFL_CHANNEL_MANAGER)) {
         struct ModeBuf mbuf;
 	/* Always let the server op him: this is needed on a net with older servers
 	   because they 'destruct' channels immediately when they become empty without
@@ -458,7 +465,10 @@ int ms_join(struct Client *cptr, struct Client *sptr, int parc, char *parv[])
   for (name = ircd_strtok(&p, chanlist, ","); name;
        name = ircd_strtok(&p, 0, ",")) {
     flags = CHFL_DEOPPED;
-
+    if (!strIsIrcCh(name))  {
+      protocol_violation(cptr, "%s tried to join %s", cli_name(sptr), name);
+	  continue;
+    }
     if (IsSaveChannel(name) && bogus == 0)
     {
       protocol_violation(cptr, "%s bogus channel %s", cli_name(sptr), name);

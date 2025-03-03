@@ -218,6 +218,8 @@ int ms_burst(struct Client *cptr, struct Client *sptr, int parc, char *parv[])
   if (parc < 3)
     return protocol_violation(sptr,"Too few parameters for BURST");
 
+  if (!IsGlobalChannel(parv[1]) || !strIsIrcCh(parv[1]))
+    return 0;
   if (!(chptr = get_channel(sptr, parv[1], CGT_CREATE)))
     return 0; /* can't create the channel? */
 
@@ -754,8 +756,6 @@ for (banex = ircd_strtok(&p, banexceptionlist, " "); banex;
 	if ((member->status & CHFL_VOICE) && !(member->status & CHFL_BURST_ALREADY_VOICED))
 	  modebuf_mode_client(mbuf, MODE_ADD | CHFL_VOICE, member->user, OpLevel(member));
       } else if (parse_flags & MODE_PARSE_WIPEOUT) { /* wipeout old ops */
-	if (member->status & CHFL_CHANNEL_SERVICE)
-	  modebuf_mode_client(mbuf, MODE_DEL | CHFL_CHANNEL_SERVICE, member->user, OpLevel(member));
 	if (member->status & CHFL_CHANNEL_MANAGER)
 	  modebuf_mode_client(mbuf, MODE_DEL | CHFL_CHANNEL_MANAGER, member->user, OpLevel(member));
 	if (member->status & CHFL_ADMIN)

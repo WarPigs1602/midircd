@@ -21,8 +21,8 @@ struct irc_in_addr;
 
 extern int string_has_wildcards(const char* str);
 
-extern void        ircd_rand_str(char *dest, size_t len);
 extern void        ircd_time_str(char *dest);
+extern void        ircd_rand_str(char *dest, size_t len);
 extern char*       ircd_strtok(char** save, char* str, char* fs);
 
 extern char*       canonize(char* buf);
