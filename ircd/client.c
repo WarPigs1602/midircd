@@ -135,9 +135,10 @@ static int privs_defaults_set;
  * @param[in] oper Configuration item describing oper's privileges.
  */
 void
-client_set_privs(struct Client *client, struct ConfItem *oper)
+client_set_privs(struct Client *client, struct ConfItem *oper, int forceOper)
 {
   struct Privs *source, *defaults;
+  struct ConnectionClass *class;
   enum Priv priv;
 
   if (!MyConnect(client))
@@ -146,14 +147,13 @@ client_set_privs(struct Client *client, struct ConfItem *oper)
   /* Clear out client's privileges. */
   memset(cli_privs(client), 0, sizeof(struct Privs));
 
-  if (!IsAnOper(client) || !oper)
+  if (!IsAnOper(client) || (!oper && !forceOper))
       return;
 
   if (!privs_defaults_set)
   {
     memset(&privs_global, -1, sizeof(privs_global));
     FlagClr(&privs_global, PRIV_WALK_LCHAN);
-    FlagClr(&privs_global, PRIV_UNLIMIT_QUERY);
     FlagClr(&privs_global, PRIV_SET);
     FlagClr(&privs_global, PRIV_BADCHAN);
     FlagClr(&privs_global, PRIV_LOCAL_BADCHAN);
@@ -176,11 +176,33 @@ client_set_privs(struct Client *client, struct ConfItem *oper)
     privs_defaults_set = 1;
   }
 
+  /* Should we look up the default remote oper block? */
+  if (oper)
+  {
+    class = oper->conn_class;
+  }
+  else
+  {
+    class = find_class("RemoteOpers");
+    if (class && (!FlagHas(&class->privs_dirty, PRIV_PROPAGATE)
+              || !FlagHas(&class->privs, PRIV_PROPAGATE)))
+      class = NULL;
+
+    /* For remote opers, we need to also set their max sendq and flood because
+     * we will not be attaching an Operator block to their client.
+     */
+    if (class && MaxSendq(class))
+      cli_max_sendq(client) = MaxSendq(class);
+
+    if (class && MaxFlood(class))
+      cli_max_flood(client) = MaxFlood(class);
+  }
+
   /* Decide whether to use global or local oper defaults. */
-  if (FlagHas(&oper->privs_dirty, PRIV_PROPAGATE))
+  if (oper && FlagHas(&oper->privs_dirty, PRIV_PROPAGATE))
     defaults = FlagHas(&oper->privs, PRIV_PROPAGATE) ? &privs_global : &privs_local;
-  else if (FlagHas(&oper->conn_class->privs_dirty, PRIV_PROPAGATE))
-    defaults = FlagHas(&oper->conn_class->privs, PRIV_PROPAGATE) ? &privs_global : &privs_local;
+  else if (!class || FlagHas(&class->privs_dirty, PRIV_PROPAGATE))
+    defaults = (!class || FlagHas(&class->privs, PRIV_PROPAGATE)) ? &privs_global : &privs_local;
   else {
     assert(0 && "Oper has no propagation and neither does connection class");
     return;
@@ -192,10 +214,10 @@ client_set_privs(struct Client *client, struct ConfItem *oper)
   for (priv = 0; priv < PRIV_LAST_PRIV; ++priv)
   {
     /* Figure out most applicable definition for the privilege. */
-    if (FlagHas(&oper->privs_dirty, priv))
+    if (oper && FlagHas(&oper->privs_dirty, priv))
       source = &oper->privs;
-    else if (FlagHas(&oper->conn_class->privs_dirty, priv))
-      source = &oper->conn_class->privs;
+    else if (class && FlagHas(&class->privs_dirty, priv))
+      source = &class->privs;
     else
       source = defaults;
 

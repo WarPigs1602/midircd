@@ -35,6 +35,11 @@
  * they cleverly hide IPPROTO_IPV6.  If you don't ask for anything,
  * they give you everything.
  */
+#elif defined (__APPLE__) && defined(__MACH__)
+/* Mac OS X / Darwin hides most details of struct rusage if you ask for
+ * any particular standard.  And like FreeBSD, if you don't ask for
+ * anything, they give you everything.
+ */
 #else
 #define _XOPEN_SOURCE   600
 #endif
@@ -252,8 +257,7 @@ int os_get_rusage(struct Client *cptr, int uptime, EnumFn enumerator)
           rus.ru_nsignals, rus.ru_nvcsw, rus.ru_nivcsw);
   (*enumerator)(cptr, buf);
 
-#else /* HAVE_GETRUSAGE */
-#if HAVE_TIMES
+#elif HAVE_TIMES
   char buf[256];
   struct tms tmsbuf;
   time_t secs, mins;
@@ -281,8 +285,7 @@ int os_get_rusage(struct Client *cptr, int uptime, EnumFn enumerator)
   sprintf(buf, "CPU Secs %d:%d User %d:%d System %d:%d", 
           mins, secs, umin, usec, smin, ssec);
   (*enumerator)(cptr, buf);
-#endif /* HAVE_TIMES */
-#endif /* HAVE_GETRUSAGE */
+#endif /* HAVE_GETRUSAGE, elif HAVE_TIMES */
   return 1;
 }
 #endif
@@ -369,16 +372,22 @@ int os_set_sockbufs(int fd, unsigned int ssize, unsigned int rsize)
 /** Set a socket's "type of service" value.
  * @param[in] fd %Socket file descriptor to manipulate.
  * @param[in] tos New type of service value to use.
+ * @param[in] family Address family of \a fd (AF_INET or AF_INET6).
  * @return Non-zero on success, or zero on failure.
  */
-int os_set_tos(int fd,int tos)
+int os_set_tos(int fd, int tos, int family)
 {
+  if (family == AF_INET) {
 #if defined(IP_TOS) && defined(IPPROTO_IP)
-  unsigned int opt = tos;
-  return (0 == setsockopt(fd, IPPROTO_IP, IP_TOS, &opt, sizeof(opt)));
-#else
-  return 1;
+    return (0 == setsockopt(fd, IPPROTO_IP, IP_TOS, &tos, sizeof(tos)));
 #endif
+#if defined(AF_INET6) && defined(IPV6_TCLASS) && defined(IPPROTO_IPV6)
+  } else if (family == AF_INET6) {
+    return (0 == setsockopt(fd, IPPROTO_IPV6, IPV6_TCLASS, &tos, sizeof(tos)));
+#endif
+  }
+
+  return 1;
 }
 
 /** Disable IP options on a socket.

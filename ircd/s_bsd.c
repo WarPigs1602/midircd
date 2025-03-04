@@ -182,7 +182,7 @@ int init_connection_limits(void)
   if (0 == limit)
     return 1;
   if (limit < 0) {
-    fprintf(stderr, "error setting max fd's to %d\n", limit);
+    fprintf(stderr, "error setting max fds to %d: %s\n", limit, strerror(errno));
   }
   else if (limit > 0) {
     fprintf(stderr, "ircd fd table too big\nHard Limit: %d IRC max: %d\n",
@@ -219,6 +219,12 @@ static int connect_inet(struct ConfItem* aconf, struct Client* cptr)
   cli_fd(cptr) = os_socket(local, SOCK_STREAM, cli_name(cptr), family);
   if (cli_fd(cptr) < 0)
     return 0;
+#ifdef AF_INET6
+  if ((family == 0) && !irc_in_addr_is_ipv4(&local->addr))
+    family = AF_INET6;
+  else
+#endif
+    family = AF_INET;
 
   /*
    * save connection info in client
@@ -238,7 +244,7 @@ static int connect_inet(struct ConfItem* aconf, struct Client* cptr)
   /*
    * Set the TOS bits - this is nonfatal if it doesn't stick.
    */
-  if (!os_set_tos(cli_fd(cptr), FEAT_TOS_SERVER)) {
+  if (!os_set_tos(cli_fd(cptr), feature_int(FEAT_TOS_SERVER), family)) {
     report_error(TOS_ERROR_MSG, cli_name(cptr), errno);
   }
   if ((result = os_connect_nonb(cli_fd(cptr), &aconf->address)) == IO_FAILURE) {
@@ -315,7 +321,9 @@ static int completed_connection(struct Client* cptr)
    * get the socket status from the fd first to check if
    * connection actually succeeded
    */
-  if ((cli_error(cptr) = os_get_sockerr(cli_fd(cptr)))) {
+  if (cli_fd(cptr) >= 0)
+      cli_error(cptr) = os_get_sockerr(cli_fd(cptr));
+  if (cli_error(cptr) != 0) {
     const char* msg = strerror(cli_error(cptr));
     if (!msg)
       msg = "Unknown error";
@@ -354,7 +362,7 @@ static int completed_connection(struct Client* cptr)
   cli_lasttime(cptr) = CurrentTime;
   ClearPingSent(cptr);
 
-  sendrawto_one(cptr, MSG_SERVER " %s 1 %Tu %Tu J%s %s%s +%s6n :%s",
+  sendrawto_one(cptr, MSG_SERVER " %s 1 %Tu %Tu J%s %s%s +%s6 :%s",
                 cli_name(&me), cli_serv(&me)->timestamp, newts,
 		MAJOR_PROTOCOL, NumServCap(&me),
 		feature_bool(FEAT_HUB) ? "h" : "", cli_info(&me));
@@ -511,7 +519,7 @@ void add_connection(struct Listener* listener, int fd) {
     if (!IPcheck_local_connect(&addr.addr, &next_target))
     {
       ++ServerStats->is_ref;
-      if(write(fd, throttle_message, strlen(throttle_message)));
+      write(fd, throttle_message, strlen(throttle_message));
       close(fd);
       return;
     }
@@ -534,7 +542,7 @@ void add_connection(struct Listener* listener, int fd) {
   if (!socket_add(&(cli_socket(new_client)), client_sock_callback,
 		  (void*) cli_connect(new_client), SS_CONNECTED, 0, fd)) {
     ++ServerStats->is_ref;
-    if(write(fd, register_message, strlen(register_message)));
+    write(fd, register_message, strlen(register_message));
     close(fd);
     cli_fd(new_client) = -1;
     return;
@@ -579,8 +587,8 @@ static int read_packet(struct Client *cptr, int socket_ready)
   unsigned int length = 0;
 
   if (socket_ready &&
-      !(IsUser(cptr) && !IsOper(cptr) &&
-	DBufLength(&(cli_recvQ(cptr))) > feature_int(FEAT_CLIENT_FLOOD))) {
+      !(IsUser(cptr) &&
+        DBufLength(&(cli_recvQ(cptr))) > GetMaxFlood(cptr))) {
     switch (os_recv_nonb(cli_fd(cptr), readbuf, sizeof(readbuf), &length)) {
     case IO_SUCCESS:
       if (length)
@@ -619,11 +627,9 @@ static int read_packet(struct Client *cptr, int socket_ready)
     if (length > 0 && dbuf_put(&(cli_recvQ(cptr)), readbuf, length) == 0)
       return exit_client(cptr, cptr, &me, "dbuf_put fail");
 
-    if (IsUser(cptr)) {
-      if (DBufLength(&(cli_recvQ(cptr))) > feature_int(FEAT_CLIENT_FLOOD)
-	&& !IsOper(cptr))
+    Debug((DEBUG_DEBUG, "dbuf: %u maxfl: %u", DBufLength(&(cli_recvQ(cptr))), GetMaxFlood(cptr)));
+    if (DBufLength(&(cli_recvQ(cptr))) > GetMaxFlood(cptr))
       return exit_client(cptr, cptr, &me, "Excess Flood");
-    }
 
     while (DBufLength(&(cli_recvQ(cptr))) && !NoNewLine(cptr) && 
            (IsTrusted(cptr) || cli_since(cptr) - CurrentTime < 10))
@@ -658,22 +664,14 @@ static int read_packet(struct Client *cptr, int socket_ready)
        */
       if (IsHandshake(cptr) || IsServer(cptr))
       {
-        while (-1)
+        while (1)
         {
           dolen = dbuf_get(&(cli_recvQ(cptr)), readbuf, sizeof(readbuf));
-          if (dolen <= 0)
+          if (dolen == 0)
             return 1;
-          else if (dolen == 0)
-          {
-            if (DBufLength(&(cli_recvQ(cptr))) < 510)
-              SetFlag(cptr, FLAG_NONL);
-            else
-              DBufClear(&(cli_recvQ(cptr)));
-          }
-          else if ((IsServer(cptr) &&
-                    server_dopacket(cptr, readbuf, dolen) == CPTR_KILLED) ||
-                   (!IsServer(cptr) &&
-                    connect_dopacket(cptr, readbuf, dolen) == CPTR_KILLED))
+          if ((IsServer(cptr)
+               ? server_dopacket(cptr, readbuf, dolen)
+               : connect_dopacket(cptr, readbuf, dolen)) == CPTR_KILLED)
             return CPTR_KILLED;
         }
       }
@@ -869,6 +867,11 @@ static void client_sock_callback(struct Event* ev)
   case ET_ERROR: /* an error occurred */
     fallback = cli_info(cptr);
     cli_error(cptr) = ev_data(ev);
+    /* If the OS told us we have a bad file descriptor, we should
+     * record that for future reference.
+     */
+    if (cli_error(cptr) == EBADF)
+      cli_fd(cptr) = -1;
     if (s_state(&(con_socket(con))) == SS_CONNECTING) {
       completed_connection(cptr);
       /* for some reason, the os_get_sockerr() in completed_connect()
