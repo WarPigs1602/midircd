@@ -1314,7 +1314,7 @@ void send_channel_modes(struct Client *cptr, struct Channel *chptr)
               } else
                 tbuf[loc++] = 'q';
 	    }
-	    if (IsChanService(member))	/* flag_cnt == 2 or 3 */
+	    if (IsServer(cptr) || IsChannelService(cptr) || IsChanService(member))	/* flag_cnt == 2 or 3 */
 	    {
               /* append the absolute value of the oplevel */
               if (send_oplevels) {

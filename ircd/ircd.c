@@ -62,6 +62,7 @@
 #include "whowas.h"
 
 /* #include <assert.h> -- Now using assert in ircd_log.h */
+#include <ctype.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <netdb.h>
@@ -104,8 +105,6 @@ struct Connection me_con;		/**< That's me too */
 struct Client *GlobalClientList  = &me; /**< Pointer to beginning of
 					   Client list */
 time_t         TSoffset          = 0;   /**< Offset of timestamps to system clock */
-int            GlobalRehashFlag  = 0;   /**< do a rehash if set */
-int            GlobalRestartFlag = 0;   /**< do a restart if set */
 time_t         CurrentTime;             /**< Updated every time we leave select() */
 
 char          *configfile        = CPATH; /**< Server configuration file */
@@ -348,13 +347,36 @@ static void check_pings(struct Event* ev) {
       continue;
     }
 
-    max_ping = IsRegistered(cptr) ? client_get_ping(cptr) :
-      feature_int(FEAT_CONNECTTIMEOUT);
-   
-    Debug((DEBUG_DEBUG, "check_pings(%s)=status:%s limit: %d current: %d",
+    Debug((DEBUG_DEBUG, "check_pings(%s)=status:%s current: %d",
 	   cli_name(cptr),
 	   IsPingSent(cptr) ? "[Ping Sent]" : "[]", 
-	   max_ping, (int)(CurrentTime - cli_lasttime(cptr))));
+	   (int)(CurrentTime - cli_lasttime(cptr))));
+
+    /* Unregistered clients pingout after max_ping seconds, they don't
+     * get given a second chance - if they were then people could not quite
+     * finish registration and hold resources without being subject to k/g
+     * lines
+     */
+    if (!IsRegistered(cptr)) {
+      assert(!IsServer(cptr));
+      max_ping = feature_int(FEAT_CONNECTTIMEOUT);
+      /* If client authorization time has expired, ask auth whether they
+       * should be checked again later. */
+      if ((CurrentTime-cli_firsttime(cptr) >= max_ping)
+          && auth_ping_timeout(cptr))
+        continue;
+      if (!IsRegistered(cptr)) {
+	/* OK, they still have enough time left, so we'll just skip to the
+	 * next client.  Set the next check to be when their time is up, if
+	 * that's before the currently scheduled next check -- hikari */
+	expire = cli_firsttime(cptr) + max_ping;
+	if (expire < next_check)
+	  next_check = expire;
+	continue;
+      }
+    }
+
+    max_ping = client_get_ping(cptr);
 
     /* If it's a server and we have not sent an AsLL lately, do so. */
     if (IsServer(cptr)) {
@@ -387,27 +409,6 @@ static void check_pings(struct Event* ev) {
       expire = cli_lasttime(cptr) + max_ping;
       if (expire < next_check) 
 	next_check = expire;
-      continue;
-    }
-
-    /* Unregistered clients pingout after max_ping seconds, they don't
-     * get given a second chance - if they were then people could not quite
-     * finish registration and hold resources without being subject to k/g
-     * lines
-     */
-    if (!IsRegistered(cptr)) {
-      assert(!IsServer(cptr));
-      /* If client authorization time has expired, ask auth whether they
-       * should be checked again later. */
-      if ((CurrentTime-cli_firsttime(cptr) >= max_ping)
-          && auth_ping_timeout(cptr))
-        continue;
-      /* OK, they still have enough time left, so we'll just skip to the
-       * next client.  Set the next check to be when their time is up, if
-       * that's before the currently scheduled next check -- hikari */
-      expire = cli_firsttime(cptr) + max_ping;
-      if (expire < next_check)
-        next_check = expire;
       continue;
     }
 
@@ -567,7 +568,7 @@ static char check_file_access(const char *path, char which, int mode) {
 	  "Check on %cPATH (%s) failed: %s\n"
 	  "Please create this file and/or rerun `configure' "
 	  "using --with-%cpath and recompile to correct this.\n",
-	  which, path, strerror(errno), which);
+	  toupper(which), path, strerror(errno), which);
 
   return 0;
 }
@@ -653,7 +654,7 @@ int main(int argc, char **argv) {
 
   /* Check paths for accessibility */
   if (!check_file_access(SPATH, 'S', X_OK) ||
-      !check_file_access(configfile, 'C', R_OK))
+      !check_file_access(configfile, 'c', R_OK))
     return 4;
 
   if (!init_connection_limits())
@@ -752,6 +753,7 @@ int main(int argc, char **argv) {
   cli_lasttime(&me) = cli_since(&me) = cli_firsttime(&me) = CurrentTime;
 
   hAddClient(&me);
+  SetIPv6(&me);
 
   write_pidfile();
   init_counters();

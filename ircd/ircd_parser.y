@@ -182,6 +182,11 @@ static void free_slist(struct SLink **link) {
 %token TOK_IPV4 TOK_IPV6
 %token DNS
 %token WEBIRC
+%token IPCHECK
+%token EXCEPT
+%token INCLUDE
+%token TEOF
+%token TOKERR
 /* and now a lot of privileges... */
 %token TPRIV_CHAN_LIMIT TPRIV_MODE_LCHAN TPRIV_DEOP_LCHAN TPRIV_WALK_LCHAN
 %token TPRIV_LOCAL_KILL TPRIV_REHASH TPRIV_RESTART TPRIV_DIE
