@@ -643,9 +643,7 @@ void add_user_to_channel(struct Channel* chptr, struct Client* who,
 {
   assert(0 != chptr);
   assert(0 != who);
-  
-  if(!IsChannelName(chptr->chname) || !strIsIrcCh(chptr->chname))
-	  return;
+
   if (cli_user(who)) {
    
     struct Membership* member = membershipFreeList;

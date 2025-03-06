@@ -128,14 +128,10 @@ int string_has_wildcards(const char* str)
   return 0;
 }
 
-const char chars[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
-
 void ircd_time_str(char *dest) {
 	time_t now;
 	time(&now);
-	size_t length = sizeof(now);
-	size_t chr1 = sizeof(chars);
-    itoa(now, dest, chr1);
+    itoa(now, dest, 36);
 }
 
 /** Creates a random string.

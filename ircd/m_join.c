@@ -206,14 +206,13 @@ int m_join(struct Client *cptr, struct Client *sptr, int parc, char *parv[])
 	}	
     if (found != 0 && !(chptr = FindChannel(name))) {
 	  if (name[0] == '!' && name[1] == '!' && feature_bool(FEAT_SECURE_CHANNELS)) {
-		char *buf2 = MyMalloc(strlen(&name[2]));
-		ircd_strncpy(buf2, &name[2], CHANNELLEN);
+		char buf2[strlen(&name[2])];
+		ircd_strncpy(buf2, &name[2], strlen(&name[2]));
 		ircd_time_str(buf);
         ircd_strncpy(buf, &buf[1], 5);		
 	    ircd_snprintf(sptr, name, CHANNELLEN, "!%s%s", buf, buf2);
 		ircd_strncpy(safe, buf2, CHANNELLEN);
 		ircd_strncpy(cc, sptr->cli_name, HOSTLEN + 1);
-		MyFree(buf2);
       }
       if (((name[0] == '&') && !feature_bool(FEAT_LOCAL_CHANNELS))
           || strlen(name) >= IRCD_MIN(CHANNELLEN, feature_int(FEAT_CHANNELLEN))) {
