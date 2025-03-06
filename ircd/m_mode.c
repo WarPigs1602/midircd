@@ -99,6 +99,7 @@
 #include "send.h"
 
 /* #include <assert.h> -- Now using assert in ircd_log.h */
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -134,11 +135,6 @@ m_mode(struct Client *cptr, struct Client *sptr, int parc, char *parv[])
 
   member = find_member_link(chptr, sptr);
 
-  if (!member) {
-    send_reply(sptr, ERR_NOTONCHANNEL, chptr->chname);
-    return 0;
-  }
-
   if (parc < 3) {
     char modebuf[MODEBUFLEN];
     char parabuf[MODEBUFLEN];
@@ -151,7 +147,7 @@ m_mode(struct Client *cptr, struct Client *sptr, int parc, char *parv[])
     return 0;
   }
 
-  if (!member || (!IsChanService(member) &&!IsAdmin(member) && !IsChanOp(member) && !IsHalfOp(member) && !IsChannelManager(member))) {
+  if (!member || (!IsChannelManager(member) && !IsAdmin(member) && !IsHalfOp(member) && !IsChanOp(member) && !IsChanService(member))) {
     if (IsLocalChannel(chptr->chname) && HasPriv(sptr, PRIV_MODE_LCHAN)) {
       modebuf_init(&mbuf, sptr, cptr, chptr,
 		   (MODEBUF_DEST_CHANNEL | /* Send mode to channel */
@@ -166,7 +162,7 @@ m_mode(struct Client *cptr, struct Client *sptr, int parc, char *parv[])
 		 (member ? MODE_PARSE_NOTOPER : MODE_PARSE_NOTMEMBER), member);
     return 0;
   }
- 
+
   modebuf_init(&mbuf, sptr, cptr, chptr,
 	       (MODEBUF_DEST_CHANNEL | /* Send mode to channel */
 		MODEBUF_DEST_SERVER)); /* Send mode to servers */

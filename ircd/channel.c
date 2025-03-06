@@ -831,6 +831,24 @@ int is_admin(struct Client *cptr, struct Channel *chptr)
  * @returns True if the user is a channel manager (And not a zombie), False otherwise.
  * @see \ref zombie
  */
+static int is_service(struct Client *cptr, struct Channel *chptr)
+{
+  struct Membership* member;
+  assert(chptr);
+  if ((member = find_member_link(chptr, cptr)))
+    return (!IsZombie(member) && IsChanService(member));
+
+  return 0;
+}
+
+/** Check if this user is a legitimate channel manager
+ *
+ * @param cptr	Client to check
+ * @param chptr	Channel to check
+ *
+ * @returns True if the user is a channel manager (And not a zombie), False otherwise.
+ * @see \ref zombie
+ */
 int is_manager(struct Client *cptr, struct Channel *chptr)
 {
   struct Membership* member;
@@ -1232,7 +1250,7 @@ void send_channel_modes(struct Client *cptr, struct Channel *chptr)
     {
       while (member)
       {
-	if (flag_cnt < 2 && (IsChanService(member) || IsChannelManager(member) || IsAdmin(member) || IsChanOp(member) || IsHalfOp(member)))
+	if (flag_cnt < 2 && (IsMe(cptr) || IsServer(cptr) || IsChannelService(cptr) || IsChanService(member) || IsChannelManager(member) || IsAdmin(member) || IsChanOp(member) || IsHalfOp(member)))
 	{
 	  /*
 	   * The first loop (to find all non-voice/op), we count the ops.
@@ -1281,30 +1299,13 @@ void send_channel_modes(struct Client *cptr, struct Channel *chptr)
 	    char tbuf[3 + MAXOPLEVELDIGITS] = ":";
 	    int loc = 1;
 
-	    if (HasVoice(member))	/* flag_cnt == 1 or 3 */
-	      tbuf[loc++] = 'v';
-	    if (IsHalfOp(member)) {
-              /* append the absolute value of the oplevel */
-              if (send_oplevels) {
-                loc += ircd_snprintf(0, tbuf + loc, sizeof(tbuf) - loc, "%u", last_oplevel = member->oplevel);
-              } else
-                tbuf[loc++] = 'h';    
-		}
-		if (IsChanOp(member))	/* flag_cnt == 2 or 3 */
+	    if (IsChanService(member))	/* flag_cnt == 2 or 3 */
 	    {
               /* append the absolute value of the oplevel */
               if (send_oplevels) {
                 loc += ircd_snprintf(0, tbuf + loc, sizeof(tbuf) - loc, "%u", last_oplevel = member->oplevel);
               } else
-                tbuf[loc++] = 'o';
-	    }
-	    if (IsAdmin(member))	/* flag_cnt == 2 or 3 */
-	    {
-              /* append the absolute value of the oplevel */
-              if (send_oplevels) {
-                loc += ircd_snprintf(0, tbuf + loc, sizeof(tbuf) - loc, "%u", last_oplevel = member->oplevel);
-              } else
-                tbuf[loc++] = 'a';
+                tbuf[loc++] = 'O';
 	    }
 	    if (IsChannelManager(member))	/* flag_cnt == 2 or 3 */
 	    {
@@ -1314,14 +1315,31 @@ void send_channel_modes(struct Client *cptr, struct Channel *chptr)
               } else
                 tbuf[loc++] = 'q';
 	    }
-	    if (IsServer(cptr) || IsChannelService(cptr) || IsChanService(member))	/* flag_cnt == 2 or 3 */
+		if (IsAdmin(member))	/* flag_cnt == 2 or 3 */
 	    {
               /* append the absolute value of the oplevel */
               if (send_oplevels) {
                 loc += ircd_snprintf(0, tbuf + loc, sizeof(tbuf) - loc, "%u", last_oplevel = member->oplevel);
               } else
-                tbuf[loc++] = 'O';
+                tbuf[loc++] = 'a';
 	    }
+		if (IsChanOp(member))	/* flag_cnt == 2 or 3 */
+	    {
+              /* append the absolute value of the oplevel */
+              if (send_oplevels) {
+                loc += ircd_snprintf(0, tbuf + loc, sizeof(tbuf) - loc, "%u", last_oplevel = member->oplevel);
+              } else
+                tbuf[loc++] = 'o';
+	    }
+		if (IsHalfOp(member)) {
+              /* append the absolute value of the oplevel */
+              if (send_oplevels) {
+                loc += ircd_snprintf(0, tbuf + loc, sizeof(tbuf) - loc, "%u", last_oplevel = member->oplevel);
+              } else
+                tbuf[loc++] = 'h';    
+		}
+		if (HasVoice(member))	/* flag_cnt == 1 or 3 */
+	      tbuf[loc++] = 'v';
 	    tbuf[loc] = '\0';
 	    msgq_append(&me, mb, tbuf);
 	    new_mode = 0;
@@ -2288,7 +2306,7 @@ modebuf_flush_int(struct ModeBuf *mbuf, int all)
       }
 
       /* if we're changing oplevels and we know the oplevel, pass it on */
-      if ((MB_TYPE(mbuf, i) & (MODE_CHANNEL_MANAGER | MODE_CHANOP | MODE_HALFOP))
+      if ((MB_TYPE(mbuf, i) & (MODE_CHANNEL_SERVICE | MODE_CHANNEL_MANAGER | MODE_CHANOP | MODE_HALFOP))
           && MB_OPLEVEL(mbuf, i) < MAXOPLEVEL)
           *strptr_i += ircd_snprintf(0, strptr + *strptr_i, BUFSIZE - *strptr_i,
                                      " %s%s:%d",
@@ -3925,11 +3943,45 @@ mode_parse_client(struct ParseState *state, int *flag_p)
   state->max_args--;
 
   /* If they're not an oper, they can't change modes */
-  if (state->flags & (MODE_PARSE_NOTOPER | MODE_PARSE_NOTMEMBER)) {
-    send_notoper(state);
+  if (flag_p[0] == MODE_CHANNEL_SERVICE && !IsServer(state->sptr) && !IsService(state->sptr) && 
+		!IsChannelService(state->sptr) && !is_service(state->sptr, state->chptr)) {
+    send_notpriv(state);
     return;
   }
+  
+  if ((flag_p[0] == MODE_CHANNEL_MANAGER) && !IsServer(state->sptr) && !IsService(state->sptr) && 
+		!IsChannelService(state->sptr) && !is_manager(state->sptr, state->chptr) && !is_service(state->sptr, state->chptr)) {
+    send_notpriv(state);
+    return;
+  }  
 
+  if ((flag_p[0] == MODE_ADMIN) && !IsServer(state->sptr) && !IsService(state->sptr) && 
+		!IsChannelService(state->sptr) && !is_admin(state->sptr, state->chptr) && !is_manager(state->sptr, state->chptr) && !is_service(state->sptr, state->chptr)) {
+    send_notpriv(state);
+    return;
+  }  
+
+  if ((flag_p[0] == MODE_CHANOP) && !IsServer(state->sptr) && !IsService(state->sptr) && 
+		!IsChannelService(state->sptr) && !is_chan_op(state->sptr, state->chptr)
+		&& !is_admin(state->sptr, state->chptr) && !is_manager(state->sptr, state->chptr) && !is_service(state->sptr, state->chptr)) {
+    send_notpriv(state);
+    return;
+  }  
+  
+  if ((flag_p[0] == MODE_HALFOP) && !IsServer(state->sptr) && !IsService(state->sptr) && 
+		!IsChannelService(state->sptr) && !is_chan_op(state->sptr, state->chptr)
+		&& !is_admin(state->sptr, state->chptr) && !is_manager(state->sptr, state->chptr) && !is_service(state->sptr, state->chptr)) {
+    send_notpriv(state);
+    return;
+  }  
+  
+  if ((flag_p[0] == MODE_VOICE) && !IsServer(state->sptr) && !IsService(state->sptr) && 
+		!IsChannelService(state->sptr) && !is_half_op(state->sptr, state->chptr) && !is_chan_op(state->sptr, state->chptr)
+		&& !is_admin(state->sptr, state->chptr) && !is_manager(state->sptr, state->chptr) && !is_service(state->sptr, state->chptr)) {
+    send_notpriv(state);
+    return;
+  }    
+  
   if (MyUser(state->sptr)) {
     colon = strchr(t_str, ':');
     if (colon != NULL) {
@@ -3958,9 +4010,9 @@ mode_parse_client(struct ParseState *state, int *flag_p)
     acptr = findNUser(t_str);
   }
 
-  if (!acptr)
-    return; /* find_chasing() already reported an error to the user */
-
+  if (!acptr) {
+	return; /* find_chasing() already reported an error to the user */
+  }
   for (i = 0; i < MAXPARA; i++) /* find an element to stick them in */
     if (!state->cli_change[i].flag || (state->cli_change[i].client == acptr &&
 				       state->cli_change[i].flag & flag_p[0]))
@@ -3969,7 +4021,7 @@ mode_parse_client(struct ParseState *state, int *flag_p)
   /* If we are going to bounce this deop, mark the correct oplevel. */
   if (state->flags & MODE_PARSE_BOUNCE
       && state->dir == MODE_DEL
-      && flag_p[0] == MODE_CHANOP
+      && flag_p[0] == (MODE_CHANNEL_SERVICE|MODE_CHANNEL_MANAGER|MODE_ADMIN|MODE_CHANOP|MODE_HALFOP)
       && (member = find_member_link(state->chptr, acptr)))
       oplevel = OpLevel(member);
 
@@ -4139,7 +4191,7 @@ mode_parse_mode(struct ParseState *state, int *flag_p)
 		state->del |= flag_p[0];
 	  }	  
 	  assert(0 == (state->add & state->del));  
-  } else if(is_chan_op(state->sptr, state->chptr) || is_manager(state->sptr, state->chptr)){
+  } else if(IsServer(state->sptr) || IsService(state->sptr) || IsChannelService(state->sptr) || is_half_op(state->sptr, state->chptr) || is_chan_op(state->sptr, state->chptr) || is_admin(state->sptr, state->chptr) || is_manager(state->sptr, state->chptr) || is_service(state->sptr, state->chptr)){
 	  if (state->dir == MODE_ADD) { 
 		state->add |= flag_p[0];
 		state->del &= ~flag_p[0];
@@ -4263,7 +4315,7 @@ mode_parse(struct ModeBuf *mbuf, struct Client *cptr, struct Client *sptr,
 	  break;
 
       if (!flag_p[0]) { /* didn't find it?  complain and continue */
-	if (MyUser(state.sptr))
+	if (MyUser(state.cptr))
 	  send_reply(state.sptr, ERR_UNKNOWNMODE, *modestr);
 	continue;
       }
@@ -4302,7 +4354,7 @@ mode_parse(struct ModeBuf *mbuf, struct Client *cptr, struct Client *sptr,
 	break;
 
       case 'L': /* deal with linked channels */
-	if (state.member && (IsMe(state.cptr) || IsServer(state.cptr) || IsChanOp(state.member) || IsChannelManager(state.member) || IsAdmin(state.member) || IsChannelService(state.cptr))) {
+	if (state.member && (IsMe(state.cptr) || IsServer(state.cptr) || IsChannelService(state.cptr)  || IsChanOp(state.member) || IsChannelManager(state.member) || IsAdmin(state.member) || IsChanService(state.member))) {
 	  state.link = state.chptr->chname;
 	mode_parse_links(&state, flag_p);
 	}
@@ -4313,21 +4365,11 @@ mode_parse(struct ModeBuf *mbuf, struct Client *cptr, struct Client *sptr,
 	mode_parse_anonymous(&state, flag_p);
 	break;
 	  case 'O':
-	if (state.member && (IsMe(state.cptr) || IsServer(state.cptr) || IsChannelService(state.cptr)))	  
-	mode_parse_client(&state, flag_p);
-    break;
 	  case 'q':
-	  case 'a':
-	if (state.member && (IsMe(state.cptr) || IsServer(state.cptr) || IsChannelManager(state.member) || IsChannelService(state.cptr)))	  
-	mode_parse_client(&state, flag_p);
-    break;	  
+	  case 'a': 
       case 'o':
       case 'h': /* deal with ops/voice */
-	if (state.member && (IsMe(cptr) || IsServer(cptr) || IsChanOp(state.member) || IsChannelManager(state.member) || IsAdmin(state.member) || IsChannelService(state.cptr)))	  
-	mode_parse_client(&state, flag_p);
-    break;
       case 'v':
-	if (state.member && (IsMe(cptr) || IsServer(cptr) || IsChanOp(state.member) || IsChannelManager(state.member) || IsAdmin(state.member) || IsHalfOp(state.member) || IsChannelService(state.cptr)))	  
 	mode_parse_client(&state, flag_p);
 	break;
 
@@ -4387,7 +4429,7 @@ mode_parse(struct ModeBuf *mbuf, struct Client *cptr, struct Client *sptr,
 
 	break; /* break out of while loop */
       } else if (state.flags & MODE_PARSE_STRICT ||
-		 (MyUser(state.sptr) && state.max_args <= 0)) {
+		 (MyUser(state.cptr) && state.max_args <= 0)) {
 	state.parc++; /* we didn't actually gobble the argument */
 	state.args_used--;
 	break; /* break out of while loop */

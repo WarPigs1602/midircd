@@ -89,7 +89,22 @@ struct RenamedChan;
 #define CHFL_HALFOP 		    0x1000000 /**< Halfop */
 #define CHFL_ADMIN  		    0x2000000 /**< Admin */
 #define CHFL_CHANNEL_SERVICE    0x4000000 /**< Channel Service */
-
+#define CHFL_BURST_ALREADY_ADMIN    0x8000000  
+					/**< In oob BURST, but was already 
+					 * joined and admin 
+					 */
+#define CHFL_BURST_ALREADY_OWNER	0x10000000  
+					/**, In oob BURST, but was already 
+					 * joined and owner 
+					 */
+#define CHFL_BURST_ALREADY_HOP	0x20000000  
+					/**, In oob BURST, but was already 
+					 * joined and owner 
+                    */
+#define CHFL_BURST_ALREADY_SERVICE	0x40000000  
+					/**, In oob BURST, but was already 
+					 * joined and owner 
+                    */
 #define CHFL_OVERLAP         (CHFL_CHANNEL_SERVICE | CHFL_CHANNEL_MANAGER | CHFL_ADMIN | CHFL_CHANOP | CHFL_HALFOP | CHFL_VOICE)
 #define CHFL_BANVALIDMASK    (CHFL_BANVALID | CHFL_BANNED)
 #define CHFL_BANEXCEPTIONVALIDMASK    (CHFL_BAN_EXCEPTIONVALID | CHFL_BAN_EXCEPTION)
