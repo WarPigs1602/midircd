@@ -438,8 +438,7 @@ static struct FeatureDesc {
   F_B(HIS_USERGLINE, 0, 1, 0),
   F_B(HIS_LUSERS_ME, 0, 0, 0),
   F_B(HIS_USERIP, 0, 1, 0),
-  F_S(SASL_NICK, 0, "M@services.midiandmore.net", 0),
-  F_S(SASL_NAME, 0, "M", 0),
+  F_S(SASL_SERVER, 0, "services.midiandmore.net", 0),
 
   /* Misc. random stuff */
   F_S(NETWORK, 0, "UnderNet", 0),

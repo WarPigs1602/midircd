@@ -139,8 +139,8 @@ int m_sasl(struct Client* cptr, struct Client* sptr, int parc, char* parv[])
         ircd_strncpy(auth, arr[1], NICKLEN);
         ircd_strncpy(pass, arr[2], BUFSIZE);
 		ircd_snprintf(0, text, 255, "SASL %s %s %s", nick, auth, pass);
-		if ((target = FindUser(feature_str(FEAT_SASL_NAME)))) {
-			sendrawto_one(target, "%s %s", cli_yxx(&me), text);
+		if ((target = FindServer(feature_str(FEAT_SASL_SERVER)))) {
+			sendrawto_one(target, "%s %s %s %s", cli_yxx(&me), text, cli_username(sptr), cli_sockhost(sptr));
             ircd_strncpy(sptr->cli_saslnick, nick, NICKLEN);
             ircd_strncpy(sptr->cli_saslacc, auth, NICKLEN);
 		} else
@@ -173,6 +173,8 @@ int ms_sasl(struct Client* cptr, struct Client* sptr, int parc, char* parv[])
 	send_reply(usr, ERR_NICKLOCKED); 
   } else if(usr && !ircd_strcmp(cmd, "ALREADY")) {
 	send_reply(usr, ERR_SASLALREADY); 
+  } else if(usr && !ircd_strcmp(cmd, "FAIL")) {
+	send_reply(usr, ERR_SASLFAIL); 
   }
   return 0;
 }
