@@ -140,7 +140,7 @@ int m_sasl(struct Client* cptr, struct Client* sptr, int parc, char* parv[])
         ircd_strncpy(pass, arr[2], BUFSIZE);
 		ircd_snprintf(0, text, 255, "SASL %s %s %s", nick, auth, pass);
 		if ((target = FindServer(feature_str(FEAT_SASL_SERVER)))) {
-			sendrawto_one(target, "%s %s %s %s", cli_yxx(&me), text, cli_username(sptr), cli_sockhost(sptr));
+			sendrawto_one(target, "%s %s %s", cli_yxx(&me), text, cli_yxx(&me));
             ircd_strncpy(sptr->cli_saslnick, nick, NICKLEN);
             ircd_strncpy(sptr->cli_saslacc, auth, NICKLEN);
 		} else
@@ -164,17 +164,21 @@ int ms_sasl(struct Client* cptr, struct Client* sptr, int parc, char* parv[])
   char *nick = parv[3];
   char *account = parv[4];
   struct Client *usr = FindSasl(nick);
-  if(usr && !ircd_strcmp(cmd, "SUCCESS")) {
-    ircd_strncpy(cli_user(usr)->account, account, ACCOUNTLEN);
-    SetAccount(usr);
-	send_reply(usr, RPL_LOGGEDIN, usr, nick, account);
-	send_reply(usr, RPL_SASLSUCCESS);
-  } else if(usr && !ircd_strcmp(cmd, "NOTYOU")) {
-	send_reply(usr, ERR_NICKLOCKED); 
-  } else if(usr && !ircd_strcmp(cmd, "ALREADY")) {
-	send_reply(usr, ERR_SASLALREADY); 
-  } else if(usr && !ircd_strcmp(cmd, "FAIL")) {
-	send_reply(usr, ERR_SASLFAIL); 
+  if(usr) {
+	if(!ircd_strcmp(cmd, "SUCCESS")) {
+		ircd_strncpy(cli_user(usr)->account, account, ACCOUNTLEN);
+		SetAccount(usr);
+		send_reply(usr, RPL_LOGGEDIN, usr, nick, account);
+		send_reply(usr, RPL_SASLSUCCESS);
+	} else if(usr && !ircd_strcmp(cmd, "NOTYOU")) {
+		send_reply(usr, ERR_NICKLOCKED); 
+	} else if(usr && !ircd_strcmp(cmd, "ALREADY")) {
+		send_reply(usr, ERR_SASLALREADY); 
+	} else {
+		send_reply(usr, ERR_SASLFAIL); 
+	}
+  } else {
+	  send_reply(sptr, ERR_SASLFAIL); 
   }
   return 0;
 }
