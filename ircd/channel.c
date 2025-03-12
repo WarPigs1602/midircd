@@ -2096,14 +2096,16 @@ modebuf_flush_int(struct ModeBuf *mbuf, int all)
       else {
     if (MB_TYPE(mbuf, i) & (MODE_CHANNEL_SERVICE))
 	bufptr[(*bufptr_i)++] = 'O';
-    else if (MB_TYPE(mbuf, i) & (MODE_ADMIN))
-	bufptr[(*bufptr_i)++] = 'a';
     else if (MB_TYPE(mbuf, i) & (MODE_CHANNEL_MANAGER))
 	bufptr[(*bufptr_i)++] = 'q';	  
+    else if (MB_TYPE(mbuf, i) & (MODE_ADMIN))
+	bufptr[(*bufptr_i)++] = 'a';
+    else if (MB_TYPE(mbuf, i) & (MODE_CHANOP))
+	bufptr[(*bufptr_i)++] = 'o';
     else if (MB_TYPE(mbuf, i) & (MODE_HALFOP))
-	bufptr[(*bufptr_i)++] = 'h';	  
-    else
-	bufptr[(*bufptr_i)++] = MB_TYPE(mbuf, i) & MODE_CHANOP ? 'o' : 'v';
+	bufptr[(*bufptr_i)++] = 'h';
+    else if (MB_TYPE(mbuf, i) & (MODE_VOICE))
+	bufptr[(*bufptr_i)++] = 'v';	  
 	totalbuflen -= IRCD_MAX(9, tmp) + 1;
       }
     } else if (MB_TYPE(mbuf, i) & (MODE_BAN | MODE_BAN_EXCEPTION | MODE_APASS | MODE_UPASS | MODE_LINK)) {

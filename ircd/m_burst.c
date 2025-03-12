@@ -713,7 +713,7 @@ for (banex = ircd_strtok(&p, banexceptionlist, " "); banex;
 	    if (member->status & CHFL_VOICE)
 	      member->status |= CHFL_BURST_ALREADY_VOICED;
 	    /* Synchronize with the burst. */
-	    member->status |= CHFL_BURST_JOINED | (current_mode & (CHFL_CHANNEL_SERVICE|CHFL_CHANNEL_MANAGER|CHFL_ADMIN|CHFL_CHANOP|CHFL_HALFOP|CHFL_VOICE));
+	    member->status |= CHFL_BURST_JOINED | (current_mode & (CHFL_VOICED_OR_OPPED));
 	    SetOpLevel(member, oplevel);
 	  }
 	}

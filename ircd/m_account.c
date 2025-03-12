@@ -126,7 +126,7 @@ int ms_account(struct Client* cptr, struct Client* sptr, int parc,
     return protocol_violation(cptr, "ACCOUNT from non-server %s",
 			      cli_name(sptr));
 
-  if (!(acptr = findNUser(parv[1])) && !(acptr = FindSasl(parv[1])))
+  if (!(acptr = findNUser(parv[1])) && !(acptr = FindClient(parv[1])))
     return 0; /* Ignore ACCOUNT for a user that QUIT; probably crossed */
 
   if (IsAccount(acptr) && ((parc < 5) || (parc >= 5 && cli_user(acptr)->acc_id)))

@@ -553,7 +553,8 @@ static const struct UserMode {
   { FLAG_NOCHAN,      'n' },
   { FLAG_NOIDLE,      'I' },
   { FLAG_SETHOST,     'h' },
-  { FLAG_PARANOID,    'P' }
+  { FLAG_PARANOID,    'P' },
+  { FLAG_CLOAK,       'c' }
 };
 
 /** Length of #userModeList. */
@@ -1432,6 +1433,12 @@ int set_user_mode(struct Client *cptr, struct Client *sptr, int parc,
           SetDeaf(sptr);
         else
           ClearDeaf(sptr);
+        break;
+      case 'c':
+        if (what == MODE_ADD)
+          SetCloak(sptr);
+        else
+          ClearCloak(sptr);
         break;
       case 'k':
         if (what == MODE_ADD)

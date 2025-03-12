@@ -90,7 +90,7 @@ typedef unsigned long flagpage_t;
 #define FlagClr(set,flag) ((set)->bits[FLAGSET_INDEX(flag)] &= ~FLAGSET_MASK(flag))
 
 /** String containing valid user modes, in no particular order. */
-#define infousermodes "dioswkgxRXInP"
+#define infousermodes "dioswkgxRXInPc"
 
 /** Character to indicate no oper name available */
 #define NOOPERNAMECHARACTER '-'
@@ -135,6 +135,7 @@ enum Priv
     PRIV_FREEFORM,       /* oper can use freeform sethost */
     PRIV_PARANOID,       /* oper can set paranoid */
     PRIV_CHECK,          /* oper can use /check */
+    PRIV_CLOAK,          /* oper can use /check */
     PRIV_LAST_PRIV /**< number of privileges */
   };
 
@@ -177,6 +178,7 @@ enum Flag
     FLAG_ACCOUNTONLY,               /**< ASUKA_R: hide privmsgs/notices if
 				      user is not authed or opered */
     FLAG_PARANOID,                  /**< ASUKA_P: sends notices on whois */
+    FLAG_CLOAK,                  /**< ASUKA_P: sends cloak */
     FLAG_HIDDENHOST,                /**< user's host is hidden */
     FLAG_SETHOST,                   /**< ASUKA_h: oper's host is changed */
     FLAG_NOCHAN,                    /**< user's channels are hidden */
@@ -631,6 +633,8 @@ struct Client {
 /** Return non-zero if the client should receive notices when someone
  * does a whois on it. */
 #define IsParanoid(x)           HasFlag(x, FLAG_PARANOID)
+/** Return non-zero if the client should be cloaked. */
+#define IsCloak(x)           HasFlag(x, FLAG_CLOAK)
 /** Return non-zero if the server should send opername information */
 #define IsSendOperName(x)         HasFlag(x, FLAG_OPERNAME)
 
@@ -696,6 +700,8 @@ struct Client {
 #define SetAccountOnly(x)       SetFlag(x, FLAG_ACCOUNTONLY)
 /** Mark a client as having mode +P (paranoid). */
 #define SetParanoid(x)          SetFlag(x, FLAG_PARANOID)
+/** Mark a client as having mode +C (cloak). */
+#define SetCloak(x)          SetFlag(x, FLAG_CLOAK)
 
 /** Return non-zero if \a sptr sees \a acptr as an operator. */
 #define SeeOper(sptr,acptr) (IsAnOper(acptr) && (HasPriv(acptr, PRIV_DISPLAY) \
@@ -741,6 +747,8 @@ struct Client {
 #define ClearAccountOnly(x)     ClrFlag(x, FLAG_ACCOUNTONLY)
 /** Remove mode +P (paranoid) from a client */
 #define ClearParanoid(x)        ClrFlag(x, FLAG_PARANOID)
+/** Remove mode +C (cloak) from a client */
+#define ClearCloak(x)        ClrFlag(x, FLAG_CLOAK)
 
 /* free flags */
 #define FREEFLAG_SOCKET	0x0001	/**< socket needs to be freed */
