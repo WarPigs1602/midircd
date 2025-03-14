@@ -232,11 +232,13 @@ int m_join(struct Client *cptr, struct Client *sptr, int parc, char *parv[])
         destruct_channel(chptr);
         continue;
       }
-	  ircd_strncpy(chptr->cc, cc, HOSTLEN + 1);
-	  ircd_strncpy(chptr->rnd, buf, 5);
-	  ircd_strncpy(chptr->safe, safe, CHANNELLEN);
+	  if (feature_bool(FEAT_SECURE_CHANNELS) &&name[0] == '!') {
+		ircd_strncpy(chptr->cc, cc, HOSTLEN + 1);
+		ircd_strncpy(chptr->rnd, buf, 5);
+		ircd_strncpy(chptr->safe, safe, CHANNELLEN);
+	  }
       chptr->mode.anon = -1;
-      joinbuf_join(&create, chptr, CHFL_HALFOP | CHFL_CHANOP | CHFL_ADMIN | CHFL_CHANNEL_MANAGER);
+      joinbuf_join(&create, chptr, CHFL_CHANNEL_MANAGER);
 	  do_names(sptr, chptr, NAMES_ALL|NAMES_EON); 
       if (feature_bool(FEAT_AUTOCHANMODES) && feature_str(FEAT_AUTOCHANMODES_LIST) && strlen(feature_str(FEAT_AUTOCHANMODES_LIST)) > 0)
         SetAutoChanModes(chptr);

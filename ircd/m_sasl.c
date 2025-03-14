@@ -83,6 +83,7 @@
 #include "client.h"
 #include "hash.h"
 #include "ircd.h"
+#include "ircd_alloc.h"
 #include "ircd_crypt_b64.h"
 #include "ircd_features.h"
 #include "ircd_log.h"
@@ -101,13 +102,14 @@
 /* #include <assert.h> -- Now using assert in ircd_log.h */
 #include <stdlib.h>
 #include <stdio.h>
+#include <stddef.h>
 
 /*
  * m_sasl - client message handler
  */
 int m_sasl(struct Client* cptr, struct Client* sptr, int parc, char* parv[])
 {		
-  char *buf, *buf1, *arr[3], text[256], *user, nick[NICKLEN], auth[NICKLEN], pass[BUFSIZE];
+  char *buf, *arr[3], text[256], *user, nick[NICKLEN], auth[NICKLEN], pass[BUFSIZE];
   struct Client *target; 
   if (parc < 2 || *parv[1] == '\0')
     return need_more_params(sptr, "AUTHENTICATE");	
@@ -125,27 +127,35 @@ int m_sasl(struct Client* cptr, struct Client* sptr, int parc, char* parv[])
 	 } else if(*parv[1] == '*') {
 		send_reply(sptr, ERR_SASLABORTED);
 	 } else if(sptr->cli_sasl == 1){
-		buf = base64_decode(parv[1]);
+		Base64Decode(parv[1], &buf);
 		int cnt = 0;
+		if(sizeof(buf) < 1) {
+			send_reply(sptr, ERR_SASLFAIL); 			
+            MyFree(buf);			
+			return 0;			
+		}
 		for (user = buf; *user; user += strlen(user) + 1) {
+			if(cnt == 3)
+				break;
 			arr[cnt] = user;
 			cnt++;
 		}
-		if(!arr) {
+		if(!arr || cnt < 3) {
 			send_reply(sptr, ERR_SASLFAIL); 
+            MyFree(buf);			
 			return 0;
 		}
 		ircd_strncpy(nick, arr[0], NICKLEN);
         ircd_strncpy(auth, arr[1], NICKLEN);
         ircd_strncpy(pass, arr[2], BUFSIZE);
-		ircd_snprintf(0, text, 255, "SASL %s %s %s", nick, auth, pass);
+		ircd_snprintf(0, text, BUFSIZE, "SASL %s %s %s", nick, auth, pass);
 		if ((target = FindServer(feature_str(FEAT_SASL_SERVER)))) {
 			sendrawto_one(target, "%s %s %s %s", cli_yxx(&me), text, cli_yxx(&me), cli_name(sptr));
             ircd_strncpy(sptr->cli_saslnick, nick, NICKLEN);
             ircd_strncpy(sptr->cli_saslacc, auth, NICKLEN);
 		} else
 			send_reply(sptr, ERR_SASLFAIL);
-
+        MyFree(buf);			
 	 } else {
 	    send_reply(sptr, RPL_SASLMECHS, "PLAIN");	 
 	 }

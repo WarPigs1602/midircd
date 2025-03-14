@@ -244,7 +244,7 @@ build: ircd convert-conf
 
 ircd: ${OBJS} ../include/patchlevel.h version.o
 	${PURIFY} ${CC} ${OBJS} version.o ${RINGLOG_O} ${LDFLAGS} ${LIBS} \
-		-o ircd
+		-o ircd -lcrypto -lm
 	${CHMOD} ${IRCDMODE} ircd
 
 convert-conf: ${CONVERT_CONF_OBJS}
@@ -474,7 +474,8 @@ ircd_crypt.o: ircd_crypt.c ../config.h ../include/ircd_crypt.h \
   ../include/s_debug.h ../config.h ../include/ircd_defs.h \
   ../include/ircd_crypt_native.h ../include/ircd_crypt_plain.h \
   ../include/ircd_crypt_smd5.h
-ircd_crypt_b64.o: ircd_crypt_b64.c ../config.h ../include/ircd_crypt_b64.h
+ircd_crypt_b64.o: ircd_crypt_b64.c ../config.h ../include/ircd_crypt_b64.h \
+  /usr/include/openssl/bio.h /usr/include/openssl/evp.h 
 ircd_events.o: ircd_events.c ../config.h ../include/ircd_events.h \
   ../config.h ../include/ircd.h ../include/struct.h \
   ../include/ircd_defs.h ../include/ircd_alloc.h ../include/ircd_log.h \

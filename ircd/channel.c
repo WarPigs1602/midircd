@@ -1184,7 +1184,7 @@ void send_channel_modes(struct Client *cptr, struct Channel *chptr)
 {
   /* The order in which modes are generated is now mandatory */
   static unsigned int current_flags[8] =
-      { 0, CHFL_VOICE, CHFL_HALFOP, CHFL_CHANOP, CHFL_ADMIN, CHFL_CHANNEL_MANAGER, CHFL_CHANNEL_SERVICE, CHFL_CHANNEL_SERVICE | CHFL_CHANNEL_MANAGER | CHFL_ADMIN |CHFL_CHANOP | CHFL_HALFOP | CHFL_VOICE };
+      { 0, CHFL_VOICE, CHFL_HALFOP, CHFL_CHANOP, CHFL_ADMIN, CHFL_CHANNEL_MANAGER, CHFL_CHANNEL_SERVICE, CHFL_VOICED_OR_OPPED };
   int                first = 1;
   int                full  = 1;
   int                flag_cnt = 0;
@@ -4618,24 +4618,29 @@ joinbuf_join(struct JoinBuf *jbuf, struct Channel *chan, unsigned int flags)
 
       /* send an op, too, if needed */
       
-      if (flags & CHFL_CHANNEL_SERVICE)
-	sendcmdto_channel_butserv_butone(&his,
+      if (flags & CHFL_CHANNEL_SERVICE && (oplevel < MAXOPLEVEL || !MyUser(jbuf->jb_source))) 
+	sendcmdto_channel_butserv_butone((chan->mode.apass[0] ? &his : jbuf->jb_source),
                                          CMD_MODE, chan, NULL, 0, "%H +O %C",
 					 chan, jbuf->jb_source);
-	  else 
-	if (flags & CHFL_CHANNEL_MANAGER)
-	sendcmdto_channel_butserv_butone(&his,
+	  else
+      if (flags & CHFL_CHANNEL_MANAGER && (oplevel < MAXOPLEVEL || !MyUser(jbuf->jb_source))) 
+	sendcmdto_channel_butserv_butone((chan->mode.apass[0] ? &his : jbuf->jb_source),
                                          CMD_MODE, chan, NULL, 0, "%H +q %C",
 					 chan, jbuf->jb_source);
-	  else      
-	  if (flags & CHFL_ADMIN)
-	sendcmdto_channel_butserv_butone(&his,
+	  else    
+      if (flags & CHFL_ADMIN && (oplevel < MAXOPLEVEL || !MyUser(jbuf->jb_source))) 
+	sendcmdto_channel_butserv_butone((chan->mode.apass[0] ? &his : jbuf->jb_source),
                                          CMD_MODE, chan, NULL, 0, "%H +a %C",
 					 chan, jbuf->jb_source);
 	  else
-      if (flags & CHFL_CHANOP && (oplevel < MAXOPLEVEL || !MyUser(jbuf->jb_source)))
+      if (flags & CHFL_CHANOP && (oplevel < MAXOPLEVEL || !MyUser(jbuf->jb_source))) 
 	sendcmdto_channel_butserv_butone((chan->mode.apass[0] ? &his : jbuf->jb_source),
                                          CMD_MODE, chan, NULL, 0, "%H +o %C",
+					 chan, jbuf->jb_source);
+	  else
+	  if (flags & CHFL_HALFOP && (oplevel < MAXOPLEVEL || !MyUser(jbuf->jb_source))) 
+	sendcmdto_channel_butserv_butone((chan->mode.apass[0] ? &his : jbuf->jb_source),
+                                         CMD_MODE, chan, NULL, 0, "%H +h %C",
 					 chan, jbuf->jb_source);
 	  }
     } else
