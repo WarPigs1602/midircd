@@ -244,7 +244,7 @@ build: ircd convert-conf
 
 ircd: ${OBJS} ../include/patchlevel.h version.o
 	${PURIFY} ${CC} ${OBJS} version.o ${RINGLOG_O} ${LDFLAGS} ${LIBS} \
-		-o ircd -lcrypto -lm
+		-o ircd
 	${CHMOD} ${IRCDMODE} ircd
 
 convert-conf: ${CONVERT_CONF_OBJS}

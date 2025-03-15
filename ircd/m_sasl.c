@@ -127,7 +127,7 @@ int m_sasl(struct Client* cptr, struct Client* sptr, int parc, char* parv[])
 	 } else if(*parv[1] == '*') {
 		send_reply(sptr, ERR_SASLABORTED);
 	 } else if(sptr->cli_sasl == 1){
-		Base64Decode(parv[1], &buf);
+		buf = base64_decode(parv[1]);
 		if(sizeof(buf) < 1) {
 			send_reply(sptr, ERR_SASLFAIL); 				
 			return 0;			
