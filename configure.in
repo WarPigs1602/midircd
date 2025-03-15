@@ -727,7 +727,7 @@ AC_OUTPUT(Makefile ircd/Makefile ircd/test/Makefile doc/Makefile, [echo timestam
 
 dnl Report configuration
 AC_OUTPUT_COMMANDS([echo "
-ircu is now hopefully configured for your system.
+midircd is now hopefully configured for your system.
 
   Host system:         $host_os
   Prefix:              $prefix

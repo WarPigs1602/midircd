@@ -128,21 +128,20 @@ int m_sasl(struct Client* cptr, struct Client* sptr, int parc, char* parv[])
 		send_reply(sptr, ERR_SASLABORTED);
 	 } else if(sptr->cli_sasl == 1){
 		Base64Decode(parv[1], &buf);
-		int cnt = 0;
 		if(sizeof(buf) < 1) {
-			send_reply(sptr, ERR_SASLFAIL); 			
-            MyFree(buf);			
+			send_reply(sptr, ERR_SASLFAIL); 				
 			return 0;			
 		}
-		for (user = buf; *user; user += strlen(user) + 1) {
-			if(cnt == 3)
+		int cnt = 0;
+		for(int i = 0; i < 3; i++) {
+			if(strlen(buf) < 1)
 				break;
-			arr[cnt] = user;
+			arr[cnt] = buf;
+			buf += strlen(buf) + 1;
 			cnt++;
 		}
 		if(!arr || cnt < 3) {
-			send_reply(sptr, ERR_SASLFAIL); 
-            MyFree(buf);			
+			send_reply(sptr, ERR_SASLFAIL); 	
 			return 0;
 		}
 		ircd_strncpy(nick, arr[0], NICKLEN);
@@ -155,7 +154,7 @@ int m_sasl(struct Client* cptr, struct Client* sptr, int parc, char* parv[])
             ircd_strncpy(sptr->cli_saslacc, auth, NICKLEN);
 		} else
 			send_reply(sptr, ERR_SASLFAIL);
-        MyFree(buf);			
+		
 	 } else {
 	    send_reply(sptr, RPL_SASLMECHS, "PLAIN");	 
 	 }
