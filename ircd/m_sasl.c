@@ -109,7 +109,7 @@
  */
 int m_sasl(struct Client* cptr, struct Client* sptr, int parc, char* parv[])
 {		
-  char *buf, *arr[3], text[256], *user, nick[NICKLEN], auth[NICKLEN], pass[BUFSIZE];
+  char *buf, *arr[3], text[256], *user, nick[NICKLEN + 1], auth[ACCOUNTLEN + 1], pass[PASSWDLEN + 1];
   struct Client *target; 
   if (parc < 2 || *parv[1] == '\0')
     return need_more_params(sptr, "AUTHENTICATE");	
@@ -126,14 +126,20 @@ int m_sasl(struct Client* cptr, struct Client* sptr, int parc, char* parv[])
 		}
 	 } else if(*parv[1] == '*') {
 		send_reply(sptr, ERR_SASLABORTED);
-	 } else if(sptr->cli_sasl == 1){
+	 } else if(sptr->cli_sasl == 1 && strlen(parv[1]) > 1){
 		buf = base64_decode(parv[1]);
+		if(!buf) {
+			send_reply(sptr, ERR_SASLFAIL); 				
+			return 0;			
+		}
 		if(sizeof(buf) < 1) {
 			send_reply(sptr, ERR_SASLFAIL); 				
 			return 0;			
 		}
 		int cnt = 0;
-		for(int i = 0; i < 3; i++) {
+		while(cnt < 3) {
+			if(!buf)
+				break;
 			if(strlen(buf) < 1)
 				break;
 			arr[cnt] = buf;
@@ -145,13 +151,13 @@ int m_sasl(struct Client* cptr, struct Client* sptr, int parc, char* parv[])
 			return 0;
 		}
 		ircd_strncpy(nick, arr[0], NICKLEN);
-        ircd_strncpy(auth, arr[1], NICKLEN);
-        ircd_strncpy(pass, arr[2], BUFSIZE);
+        ircd_strncpy(auth, arr[1], ACCOUNTLEN);
+        ircd_strncpy(pass, arr[2], PASSWDLEN);
 		ircd_snprintf(0, text, BUFSIZE, "SASL %s %s %s", nick, auth, pass);
 		if ((target = FindServer(feature_str(FEAT_SASL_SERVER)))) {
 			sendrawto_one(target, "%s %s %s %s", cli_yxx(&me), text, cli_yxx(&me), cli_name(sptr));
             ircd_strncpy(sptr->cli_saslnick, nick, NICKLEN);
-            ircd_strncpy(sptr->cli_saslacc, auth, NICKLEN);
+            ircd_strncpy(sptr->cli_saslacc, auth, ACCOUNTLEN);
 		} else
 			send_reply(sptr, ERR_SASLFAIL);
 		
@@ -181,6 +187,7 @@ int ms_sasl(struct Client* cptr, struct Client* sptr, int parc, char* parv[])
 		send_reply(usr, RPL_SASLSUCCESS);
 	} else if(usr && !ircd_strcmp(cmd, "NOTYOU")) {
 		send_reply(usr, ERR_NICKLOCKED); 
+		send_reply(usr, ERR_SASLFAIL); 
 	} else if(usr && !ircd_strcmp(cmd, "ALREADY")) {
 		send_reply(usr, ERR_SASLALREADY); 
 	} else if(usr && !ircd_strcmp(cmd, "FAIL")) {
