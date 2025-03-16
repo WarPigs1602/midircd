@@ -100,7 +100,7 @@ int m_rename(struct Client *cptr, struct Client *sptr, int parc, char *parv[])
 		send_reply(sptr, ERR_LINKSET, name, target, "You cannot change a channel prefix type");
   } else {
 	if (!(member = find_member_link(chptr2, sptr)) || IsZombie(member)
-          || !IsChanOp(member))
+          || (!IsChannelManager(member) && !IsChanService(member)))
       return send_reply(sptr, ERR_CHANOPRIVSNEEDED, name);
 	if(!(ren = get_renamed(sptr, name, CGT_CREATE))) {
       return 0;		
