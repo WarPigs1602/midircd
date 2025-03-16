@@ -26,6 +26,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "config.h"
+#include "fileio.h"
 #include "ircd.h"
 #include "ircd_alloc.h"
 #include "ircd_string.h"
@@ -99,6 +100,11 @@ static struct lexer_token {
   TOKEN(FEATURES),
   TOKEN(CHANNEL),
   TOKEN(WEBIRC),
+  TOKEN(TLS),
+  TOKEN(CERTFILE),
+  TOKEN(CIPHERS),
+  TOKEN(FINGERPRINT),
+  TOKEN(KEYFILE),
   TOKEN(PSEUDO),
   TOKEN(PREPEND),
   TOKEN(USERMODE),
@@ -216,6 +222,11 @@ init_lexer(void)
   lineno = 1;
 }
 
+int
+yywrap(void)
+{
+  return 1;
+}
 %}
 
 WHITE [ \t\r]+

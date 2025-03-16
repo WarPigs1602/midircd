@@ -391,7 +391,7 @@ extern const struct Numeric* get_error_numeric(int err);
 #define ERR_KEYSET           467        /* Undernet extension */
 #define ERR_INVALIDUSERNAME  468        /* Undernet extension */
 /* 	ERR_ONLYSERVERSCANCHANGE 468	   Dalnet,unreal */
-#define ERR_LINKSET	         469	/* unreal */
+#define ERR_TLSONLYCHAN      469        /* Nefarious, Undernet */
 #define ERR_LINKCHANNEL	     470	/* unreal */
 /*      ERR_KICKEDFROMCHAN   470         aircd */
 #define ERR_CHANNELISFULL    471
@@ -424,6 +424,8 @@ extern const struct Numeric* get_error_numeric(int err);
 #define ERR_UNIQOPRIVSNEEDED    487 /*          IRCnet extension (?) */
 #define ERR_NOANON           488           /* midirc extension  */
 #define ERR_VOICENEEDED      489        /* Undernet extension */
+
+#define ERR_LINKSET       490
 
 #define ERR_NOOPERHOST       491
 /*      ERR_NOSERVICEHOST    492 	   IRCnet extension */
@@ -474,6 +476,11 @@ extern const struct Numeric* get_error_numeric(int err);
 #define ERR_UPASSNOTSET      564	/* Undernet extension */
 #define ERR_NOMANAGER        566	/* Undernet extension */
 #define ERR_UPASS_SAME_APASS 567        /* Undernet extension */
+#define ERR_TLSCLIFINGERPRINT 632   /* Nefarious & Undernet extension */
+
+#define RPL_STARTTLS         670    /* Nefarious, Undernet */
+
+#define ERR_STARTTLS         691    /* Nefarious, Undernet */
 #define RPL_LOGGEDIN         900    /* IRCv3 */
 #define RPL_LOGGEDOUT        901    /* IRCv3 */
 #define ERR_NICKLOCKED       902    /* IRCv3 */

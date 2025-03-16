@@ -281,6 +281,8 @@ int m_join(struct Client *cptr, struct Client *sptr, int parc, char *parv[])
         err = ERR_BANNEDFROMCHAN;
       else if (*chptr->mode.key && (!key || strcmp(key, chptr->mode.key)))
         err = ERR_BADCHANNELKEY;
+      else if ((chptr->mode.mode & MODE_TLSONLY) && !IsTLS(sptr))
+        err = ERR_TLSONLYCHAN;
       /*
        * ASUKA_X:
        * Allow XtraOpers to join all channels.
@@ -313,6 +315,7 @@ int m_join(struct Client *cptr, struct Client *sptr, int parc, char *parv[])
         case ERR_BANNEDFROMCHAN: err = 'b'; break;
         case ERR_BADCHANNELKEY:  err = 'k'; break;
         case ERR_NEEDREGGEDNICK: err = 'r'; break;
+        case ERR_TLSONLYCHAN:    err = 'Z'; break;
         default: err = '?'; break;
         }
         /* send accountability notice */

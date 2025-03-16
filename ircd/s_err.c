@@ -970,7 +970,7 @@ static Numeric replyTable[] = {
 /* 468 */
   { ERR_INVALIDUSERNAME, 0, "468" },
 /* 469 */
-  { ERR_LINKSET, "%s %s :Cannot add channel (%s)", "469" },
+  { ERR_TLSONLYCHAN, "%s :Cannot join channel (+Z)", "469" },
 /* 470 */
   { ERR_LINKCHANNEL, ":[Link] Cannot join channel %s (%s) -- transferring you to %s", "470" },
 /* 471 */
@@ -1012,7 +1012,7 @@ static Numeric replyTable[] = {
 /* 489 */
   { ERR_VOICENEEDED, "%s :You're neither voiced nor channel operator", "489" },
 /* 490 */
-  { 0 },
+  { ERR_LINKSET, "%s %s :Cannot add channel (%s)", "490" },
 /* 491 */
   { ERR_NOOPERHOST, ":No Operator block for your host", "491" },
 /* 492 */
@@ -1096,7 +1096,7 @@ static Numeric replyTable[] = {
 /* 531 */
   { ERR_HOSTUNAVAIL, "%s :sethost not found", "531" },
 /* 532 */
-  { 0 },
+  { ERR_TLSCLIFINGERPRINT, ":TLS certificate fingerprint did not match", "532" },
 /* 533 */
   { 0 },
 /* 534 */
@@ -1372,7 +1372,7 @@ static Numeric replyTable[] = {
 /* 669 */
   { 0 },
 /* 670 */
-  { 0 },
+  { RPL_STARTTLS, ":STARTTLS successful, proceed with TLS handshake", "670" },
 /* 671 */
   { 0 },
 /* 672 */
@@ -1414,7 +1414,7 @@ static Numeric replyTable[] = {
 /* 690 */
   { 0 },
 /* 691 */
-  { 0 },
+  { ERR_STARTTLS, ":STARTTLS failed (%s)", "691" },
 /* 692 */
   { 0 },
 /* 693 */

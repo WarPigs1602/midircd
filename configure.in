@@ -19,7 +19,7 @@ dnl You should have received a copy of the GNU General Public License
 dnl along with this program; if not, write to the Free Software
 dnl Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
 dnl
-dnl $Id: configure.in,v 1.34.2.1 2005/12/14 03:01:38 entrope Exp $
+dnl $Id$
 
 dnl Make sure we are in the correct directory (someone could have run
 dnl 'configure' with a wrong '--srcdir').
@@ -51,7 +51,10 @@ dnl This should be done early.
 AC_PROG_CC
 
 dnl ANSIfy the C compiler whenever possible.
-AM_PROG_CC_STDC
+AC_PROG_CC
+
+dnl Check for pkg-config.
+PKG_PROG_PKG_CONFIG
 
 dnl Checks for libraries.
 
@@ -106,9 +109,6 @@ int getpeername (int $arg2 *, $t *);],[$t len;
 dnl Checks for library functions.
 AC_CHECK_FUNCS([kqueue setrlimit getrusage times])
 
-dnl Do we have restarting syscalls ?
-AC_SYS_RESTARTABLE_SYSCALLS
-
 dnl Check for required features for admins?
 AC_MSG_CHECKING([for donuts])
 AC_MSG_RESULT([yes])
@@ -131,14 +131,6 @@ elif echo "" | $LEX -V -v --version > /dev/null 2>&1 ; then
 else
   AC_MSG_ERROR([Cannot use $LEX as flex.])
 fi
-
-if test -z "$LEXLIB" ; then
-  AC_MSG_FAILURE([Cannot find a library with yywrap() in, but flex was found.
-  It's possible the compiler you're using ($CC) is incompatible with the
-  installed library.])
-fi
-
-LIBS="$LEXLIB $LIBS"
 
 dnl YACC - ditto
 AC_PROG_YACC
@@ -171,7 +163,7 @@ case "$host" in
 	else
 	    unet_poll_syscall=no
 	fi
-        AC_DEFINE([IRCU_SOLARIS], 1, [Define if building on Solaris])
+        AC_DEFINE([midircd_SOLARIS], 1, [Define if building on Solaris])
 	;;
 
     *-sunos*)
@@ -702,10 +694,6 @@ if test x"$unet_maxcon" = xunlimited; then
     unet_maxcon=`ulimit -Sn`
 fi
 unet_maxcon=`expr $unet_maxcon - 4`
-NN_MAX_CLIENT_P=1024
-if test "$unet_maxcon" -gt $NN_MAX_CLIENT_P ; then
-    unet_maxcon=$NN_MAX_CLIENT_P
-fi
 AC_MSG_CHECKING([max connections])
 AC_ARG_WITH([maxcon],
 [  --with-maxcon=maxcon    Maximum number of connections server will accept],
@@ -714,7 +702,12 @@ AC_ARG_WITH([maxcon],
 [unet_cv_with_maxcon=$unet_maxcon])])
 
 if test x"$unet_cv_with_maxcon" = xyes -o x"$unet_cv_with_maxcon" = xno; then
+    if test "$unet_maxcon" -lt 32; then
+      AC_MSG_ERROR([Maximum connections (number of open files minus 4) must be at least 32.])
+    fi
     unet_cv_with_maxcon=$unet_maxcon
+elif test "$unet_cv_with_maxcon" -lt 32; then
+    AC_MSG_ERROR([Maximum connections (--with-maxcon) must be at least 32.])
 fi
 
 AC_MSG_RESULT([$unet_cv_with_maxcon])
@@ -722,11 +715,15 @@ AC_MSG_RESULT([$unet_cv_with_maxcon])
 AC_DEFINE_UNQUOTED(MAXCONNECTIONS, $unet_cv_with_maxcon,
 [Maximum number of network connections])
 
+unet_TLS
+
 dnl Finally really generate all output files:
-AC_OUTPUT(Makefile ircd/Makefile ircd/test/Makefile doc/Makefile, [echo timestamp > stamp-h])
+AC_CONFIG_FILES([Makefile ircd/Makefile ircd/test/Makefile],
+    [echo timestamp > stamp-h])
+AC_OUTPUT()
 
 dnl Report configuration
-AC_OUTPUT_COMMANDS([echo "
+echo "
 midircd is now hopefully configured for your system.
 
   Host system:         $host_os
@@ -743,9 +740,10 @@ midircd is now hopefully configured for your system.
   CPath:               $unet_cv_with_cpath
   LPath:               $unet_cv_with_lpath
   Maximum connections: $unet_cv_with_maxcon
+  TLS implementation:  $unet_cv_with_tls
 
   poll() engine:       $unet_cv_enable_poll
   kqueue() engine:     $unet_cv_enable_kqueue
   /dev/poll engine:    $unet_cv_enable_devpoll
   epoll() engine:      $unet_cv_enable_epoll
-"])
+"

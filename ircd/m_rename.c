@@ -102,7 +102,7 @@ int m_rename(struct Client *cptr, struct Client *sptr, int parc, char *parv[])
 	 if(CapHas(cli_active(sptr), CAP_STANDARDREPLYS))
 		sendfailto_one(sptr, &me, "RENAME", "CANNOT_RENAME", ":You cannot chptrge a Channel prefix type"); 
 	 else
-		send_reply(sptr, ERR_LINKSET, name, target, "You cannot chptrge a Channel prefix type");
+		send_reply(sptr, ERR_LINKSET, name, target, "You cannot change a Channel prefix type");
   } else {
 	if (!(member = find_member_link(chptr2, sptr)) || IsZombie(member)
           || (!IsChannelManager(member) && !IsChanService(member)))

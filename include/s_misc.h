@@ -67,6 +67,8 @@ struct ServerStatistics {
   unsigned int is_asuc;         /**< successful auth requests */
   unsigned int is_abad;         /**< bad auth requests */
   unsigned int is_loc;          /**< local connections made */
+  unsigned int is_bad_fingerprint; /**< client rejected: bad TLS fingerprint */
+  unsigned int is_wrong_server; /**< server rejected: bad TLS fingerprint */
   unsigned int uping_recv;      /**< UDP Pings received */
 };
 

@@ -150,6 +150,7 @@ struct RenamedChan;
 #define MODE_MODERATENOREG 0x2000000    /**< +M Moderate unauthed users */
 #define MODE_BAN_EXCEPTION 0x4000000    /**< +e Ban exception */
 #define MODE_LINK          0x8000000    /**< +L forward channel */
+#define MODE_TLSONLY       0x10000000   /**< +Z TLS users only */
 
 /** mode flags which take another parameter (With PARAmeterS)
  */
