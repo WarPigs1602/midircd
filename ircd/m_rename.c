@@ -13,7 +13,7 @@
  *
  * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * MERchptrTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License
@@ -71,7 +71,7 @@ int m_rename(struct Client *cptr, struct Client *sptr, int parc, char *parv[])
   reason = EmptyString(parv[parc - 1]) ? parv[0] : parv[parc - 1];
   if (!IsGlobalChannel(target) || !IsChannelName(target) || !strIsIrcCh(target))
   {
-      /* bad channel name */
+      /* bad Channel name */
       send_reply(sptr, ERR_NOSUCHCHANNEL, target);
       return 0;
   }
@@ -80,24 +80,29 @@ int m_rename(struct Client *cptr, struct Client *sptr, int parc, char *parv[])
   chptr2 = FindChannel(name);
   if (!IsChannelName(name) || !chptr2) {
 	 if(CapHas(cli_active(sptr), CAP_STANDARDREPLYS))
-		sendfailto_one(sptr, &me, "RENAME", "CANNOT_RENAME", ":The requesting channel %s doesn't exists", name); 
+		sendfailto_one(sptr, &me, "RENAME", "CANNOT_RENAME", ":The requesting Channel %s doesn't exists", name); 
 	 else
 		send_reply(sptr, ERR_NOSUCHCHANNEL, name);
   } else if (FindRenamed(name)) {
 	if(CapHas(cli_active(sptr), CAP_STANDARDREPLYS))
-		sendfailto_one(sptr, &me, "RENAME", "CANNOT_RENAME", ":%s channel has been renamed recently", name);  
+		sendfailto_one(sptr, &me, "RENAME", "CANNOT_RENAME", ":%s Channel has been renamed recently", name);  
 	 else
 		send_reply(sptr, ERR_LINKSET, name, target, "Channel has been renamed recently", name);
+  } else if (FindRenamed(target)) {
+	if(CapHas(cli_active(sptr), CAP_STANDARDREPLYS))
+		sendfailto_one(sptr, &me, "RENAME", "CANNOT_RENAME", ":%s Channel links to an renamed Channel", target);  
+	 else
+		send_reply(sptr, ERR_LINKSET, name, target, "Channel links to an renamed Channel", target);
   } else if (IsChannelName(target) && chptr) {
     if(CapHas(cli_active(sptr), CAP_STANDARDREPLYS))
-		sendfailto_one(sptr, &me, "RENAME", "CHANNEL_NAME_IN_USE", ":Channel %s already exists", target);  
+		sendfailto_one(sptr, &me, "RENAME", "Channel_NAME_IN_USE", ":Channel %s already exists", target);  
 	 else
 		send_reply(sptr, ERR_LINKSET, name, target, "Channel already exists");
  } else if (name[0] != target[0]) {
 	 if(CapHas(cli_active(sptr), CAP_STANDARDREPLYS))
-		sendfailto_one(sptr, &me, "RENAME", "CANNOT_RENAME", ":You cannot change a channel prefix type"); 
+		sendfailto_one(sptr, &me, "RENAME", "CANNOT_RENAME", ":You cannot chptrge a Channel prefix type"); 
 	 else
-		send_reply(sptr, ERR_LINKSET, name, target, "You cannot change a channel prefix type");
+		send_reply(sptr, ERR_LINKSET, name, target, "You cannot chptrge a Channel prefix type");
   } else {
 	if (!(member = find_member_link(chptr2, sptr)) || IsZombie(member)
           || (!IsChannelManager(member) && !IsChanService(member)))
@@ -139,20 +144,46 @@ int m_rename(struct Client *cptr, struct Client *sptr, int parc, char *parv[])
 		ircd_strncpy(chptr->topic, chptr2->topic, TOPICLEN);
 		ircd_strncpy(chptr->topic_nick, chptr2->topic_nick, TOPICLEN); 
 		chptr->mode = chptr2->mode;	    
-		joinbuf_join(&parts, chptr2, flags); /* part client from channel */	
+		joinbuf_join(&parts, chptr2, flags); /* part client from Channel */	
 		joinbuf_join(&join, chptr, flags);
-		if (IsChanOp(member) && HasVoice(member)) {
-			sendcmdto_channel_butserv_butone(&his, CMD_MODE, chptr, cptr, 0,
-				"%H +ov %C %C", chptr, c2ptr, c2ptr);
-		} else if (IsChanOp(member) || HasVoice(member)) {
-			sendcmdto_channel_butserv_butone(&his, CMD_MODE, chptr, cptr, 0,
-				"%H +%c %C", chptr, IsChanOp(member) ? 'o' : 'v', c2ptr);
-		}		
+      sendcmdto_capflag_channel_butserv_butone(c2ptr, CMD_JOIN, chptr, NULL, 0,
+        _CAP_LAST_CAP, CAP_EXTJOIN, "%H", chptr);
+      sendcmdto_capflag_channel_butserv_butone(c2ptr, CMD_JOIN, chptr, NULL, 0,
+        CAP_EXTJOIN, _CAP_LAST_CAP, "%H %s :%s", chptr,
+        IsAccount(c2ptr) ? cli_account(c2ptr) : "*",
+        cli_info(c2ptr));
+      if (cli_user(c2ptr)->away)
+        sendcmdto_capflag_common_channels_butone(c2ptr, CMD_AWAY, c2ptr,
+          CAP_AWAYNOTIFY, _CAP_LAST_CAP, ":%s", cli_user(c2ptr)->away);
 		if (chptr->topic[0]) {
 			send_reply(c2ptr, RPL_TOPIC, chptr->chname, chptr->topic);
 			send_reply(c2ptr, RPL_TOPICWHOTIME, chptr->chname, chptr->topic_nick,
 				chptr->topic_time);
 		}
+      if (flags & CHFL_CHANNEL_SERVICE) 
+	sendcmdto_channel_butserv_butone(&his,
+                                         CMD_MODE, chptr, NULL, 0, "%H +O %C",
+					 chptr, c2ptr);
+	  else
+      if (flags & CHFL_CHANNEL_MANAGER) 
+	sendcmdto_channel_butserv_butone(&his,
+                                         CMD_MODE, chptr, NULL, 0, "%H +q %C",
+					 chptr, c2ptr);
+	  else    
+      if (flags & CHFL_ADMIN) 
+	sendcmdto_channel_butserv_butone(&his,
+                                         CMD_MODE, chptr, NULL, 0, "%H +a %C",
+					 chptr, c2ptr);
+	  else
+      if (flags & CHFL_CHANOP) 
+	sendcmdto_channel_butserv_butone(&his,
+                                         CMD_MODE, chptr, NULL, 0, "%H +o %C",
+					 chptr, c2ptr);
+	  else
+	  if (flags & CHFL_HALFOP) 
+	sendcmdto_channel_butserv_butone(&his,
+                                         CMD_MODE, chptr, NULL, 0, "%H +h %C",
+					 chptr, c2ptr);				 
 		do_names(c2ptr, chptr, NAMES_ALL|NAMES_EON);
 		joinbuf_flush(&parts);
 		joinbuf_flush(&join);	
@@ -173,7 +204,7 @@ int ms_rename(struct Client *cptr, struct Client *sptr, int parc, char *parv[])
   struct Membership *member;
   struct Channel *chptr;
   char *p = 0;
-  char *chanlist;
+  char *chptrlist;
   char *name;
 
   if (IsServer(sptr))
@@ -181,7 +212,7 @@ int ms_rename(struct Client *cptr, struct Client *sptr, int parc, char *parv[])
     return protocol_violation(cptr,
                               "%s tried to RENAME %s, duh!",
                               cli_name(sptr),
-                              (parc < 3 || *parv[1] == '\0') ? "a channel" :
+                              (parc < 3 || *parv[1] == '\0') ? "a Channel" :
                                                                parv[1]
                               );
   }

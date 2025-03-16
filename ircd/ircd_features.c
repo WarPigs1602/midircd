@@ -373,7 +373,7 @@ static struct FeatureDesc {
   F_B(CAP_INVITENOTIFY, 0, 1, 0),
   F_B(CAP_RENAME, 0, 1, 0),
   F_B(CAP_SASL, 0, 1, 0),
-  F_B(CAP_STANDARDREPLYS, 0, 0, 0),
+  F_B(CAP_STANDARDREPLYS, 0, 1, 0),
 
   /* Anonymous mode for safe channels */
   F_B(ANONYMOUS, 0, 0, 0),
