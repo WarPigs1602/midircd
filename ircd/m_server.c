@@ -1,3 +1,4 @@
+
 /*
  * IRC - Internet Relay Chat, ircd/m_server.c
  * Copyright (C) 1990 Jarkko Oikarinen and
@@ -608,7 +609,7 @@ int mr_server(struct Client* cptr, struct Client* sptr, int parc, char* parv[])
   }
 
   if (!ircd_tls_fingerprint_matches(cptr, aconf->tls_fingerprint)) {
-    ++ServerStats->is_wrong_server;
+    ++ServerStats->is_ref;
     sendto_opmask_butone(0, SNO_OLDSNO, "Access denied (fingerprint mismatch) %s",
                          cli_name(cptr));
     return exit_client_msg(cptr, cptr, &me,

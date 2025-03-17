@@ -32,6 +32,7 @@ struct Message;
 #define CONF_OPERATOR           0x0020     /**< ConfItem describes an Operator block */
 #define CONF_UWORLD             0x8000     /**< ConfItem describes a Uworld server */
 
+/* These flags apply to Connect blocks: */
 #define CONF_AUTOCONNECT        0x0001     /**< Autoconnect to a server */
 #define CONF_CONNECT_TLS        0x0002     /**< Server connection uses TLS */
 

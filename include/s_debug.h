@@ -38,6 +38,7 @@ struct StatDesc;
 #define DEBUG_NOTICE  3  /**< somewhat useful, but non-critical, messages */
 #define DEBUG_DNS     4  /**< used by all DNS related routines - a *lot* */
 #define DEBUG_INFO    5  /**< general useful info */
+#define DEBUG_TLS     6
 #define DEBUG_SEND    7  /**< everything that is sent out */
 #define DEBUG_DEBUG   8  /**< everything that is received */ 
 #define DEBUG_MALLOC  9  /**< malloc/free calls */

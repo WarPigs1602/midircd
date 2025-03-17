@@ -548,7 +548,7 @@ static int check_auth_finished(struct AuthRequest *auth, int bitclr)
       if ((res == 0) && aconf && !EmptyString(aconf->tls_fingerprint)
         && !ircd_tls_fingerprint_matches(cptr, aconf->tls_fingerprint))
       {
-        ++ServerStats->is_bad_fingerprint;
+        ++ServerStats->is_ref;
         send_reply(cptr, ERR_TLSCLIFINGERPRINT);
         res = exit_client(cptr, cptr, &me, "Bad TLS fingerprint");
       }	  

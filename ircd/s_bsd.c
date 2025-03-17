@@ -291,7 +291,6 @@ unsigned int deliver_it(struct Client *cptr, struct MsgQ *buf)
   switch (io_result) {
   case IO_SUCCESS:
     ClrFlag(cptr, FLAG_BLOCKED);
-
     cli_sendB(cptr) += bytes_written;
     cli_sendB(&me)  += bytes_written;
     /* A partial write implies that future writes will block. */

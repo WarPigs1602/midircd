@@ -229,7 +229,7 @@ void ircd_tls_close(void *ctx, const char *message)
 
 void ircd_tls_fingerprint(void *ctx, char *fingerprint)
 {
-  memset(fingerprint, 0, 32);
+  memset(fingerprint, 0, 65);
 }
 
 static void handle_blocked(struct Client *cptr, gnutls_session_t tls)

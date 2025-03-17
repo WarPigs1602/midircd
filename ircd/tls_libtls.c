@@ -218,7 +218,7 @@ void ircd_tls_fingerprint(void *ctx, char *fingerprint)
     /* TODO: convert from ASCII hex to binary */
     return;
   }
-  memset(fingerprint, 0, 32);
+  memset(fingerprint, 0, 65);
 }
 
 static int tls_handle_error(struct Client *cptr, struct tls *tls, int err)

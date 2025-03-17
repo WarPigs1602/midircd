@@ -291,14 +291,22 @@ client_report_privs(struct Client *to, struct Client *client)
   return 0;
 }
 
+/* WIP! */
 int
 ircd_tls_fingerprint_matches(struct Client *cptr,
                              const char *fingerprint)
 {
-  static const char hexdigits[] = "0123456789abcdef";
+  if (!IsTLS(cptr))
+    return 1;
+
+  if (EmptyString(fingerprint))
+    return 1;
+
+  /*static const char hexdigits[] = "0123456789abcdef";
   void *ctx;
   int i;
-  char tls_fp[32];
+  char tls_fp[65];
+  memset(tls_fp, 0, sizeof(tls_fp));
 
   if (EmptyString(fingerprint))
     return 1;
@@ -308,6 +316,7 @@ ircd_tls_fingerprint_matches(struct Client *cptr,
     return 0;
 
   ircd_tls_fingerprint(ctx, tls_fp);
+  Debug((DEBUG_DEBUG, "Checking fingerpint: %s - %s", fingerprint, tls_fp));
   for (i = 0; i < sizeof(tls_fp); i++)
   {
     unsigned char ch = tls_fp[i];
@@ -318,5 +327,6 @@ ircd_tls_fingerprint_matches(struct Client *cptr,
     }
   }
 
-  return 1;
+  return 1;*/
+  return strcmp(cli_tls_fingerprint(cptr), fingerprint) == 0;
 }
