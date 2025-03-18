@@ -19,7 +19,7 @@
  */
 /** @file
  * @brief Functions that now (or in the past) relied on BSD APIs.
- * @version $Id: s_bsd.c,v 1.80.2.4 2007/05/29 03:08:33 entrope Exp $
+ * @version $Id$
  */
 #include "config.h"
 
@@ -342,7 +342,7 @@ static int completed_connection(struct Client* cptr)
   }
   if (s_state(&(cli_socket(cptr))) == SS_CONNECTING)
     socket_state(&(cli_socket(cptr)), SS_CONNECTED);
-  
+
   if (aconf->flags & CONF_CONNECT_TLS) {
     /* Should we start the TLS handshake? */
     if (!IsTLS(cptr)) {
@@ -365,7 +365,7 @@ static int completed_connection(struct Client* cptr)
         return 1;
     }
   }
-  
+
   if (!EmptyString(aconf->passwd))
     sendrawto_one(cptr, MSG_PASS " :%s", aconf->passwd);
 
@@ -531,7 +531,7 @@ void add_connection(struct Listener* listener, int fd) {
   os_disable_options(fd);
 
   tls = listener_tls(listener) ? ircd_tls_accept(listener, fd) : NULL;
-  
+
   if (listener_server(listener))
   {
     new_client = make_client(0, STAT_UNKNOWN_SERVER);
@@ -587,15 +587,15 @@ void add_connection(struct Listener* listener, int fd) {
   cli_freeflag(new_client) |= FREEFLAG_SOCKET;
   cli_listener(new_client) = listener;
   ++listener->ref_count;
+
   s_tls(&cli_socket(new_client)) = tls;
-  
   if (tls)
   {
     SetTLS(new_client);
     SetNegotiatingTLS(new_client);
     ircd_tls_negotiate(new_client);
   }
-  
+
   Count_newunknown(UserStats);
   /* if we've made it this far we can put the client on the auth query pile */
   start_auth(new_client);
@@ -949,13 +949,13 @@ static void client_sock_callback(struct Event* ev)
     break;
 
   case ET_WRITE: /* socket is writable */
-        if (IsNegotiatingTLS(cptr)) {
+    if (IsNegotiatingTLS(cptr)) {
       if (ircd_tls_negotiate(cptr) <= 0)
         break;
       if (IsConnecting(cptr))
         completed_connection(cptr);
     }
-	ClrFlag(cptr, FLAG_BLOCKED);
+    ClrFlag(cptr, FLAG_BLOCKED);
     if (cli_listing(cptr) && MsgQLength(&(cli_sendQ(cptr))) < 2048)
       list_next_channels(cptr);
     Debug((DEBUG_SEND, "Sending queued data to %C", cptr));
@@ -970,7 +970,7 @@ static void client_sock_callback(struct Event* ev)
           break;
         if (IsConnecting(cptr))
           completed_connection(cptr);
-      }	  
+      }
       if (read_packet(cptr, 1) == 0) /* error while reading packet */
 	fallback = "EOF from client";
     }
@@ -987,12 +987,12 @@ static void client_sock_callback(struct Event* ev)
     const char* msg = (cli_error(cptr)) ? strerror(cli_error(cptr)) : fallback;
     if (!msg)
       msg = "Unknown error";
-  
+
     if (s_tls(&con_socket(con))) {
       ircd_tls_close(s_tls(&con_socket(con)), NULL);
       s_tls(&con_socket(con)) = NULL;
     }
-	
+
     exit_client_msg(cptr, cptr, &me, fmt, msg);
   }
 }
