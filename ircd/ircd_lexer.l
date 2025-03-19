@@ -170,6 +170,11 @@ static struct lexer_token {
   { "freeform", TPRIV_FREEFORM },
   { "paranoid", TPRIV_PARANOID },
   { "check", TPRIV_CHECK },
+  { "tls", TLS },
+  { "fingerprint", FINGERPRINT },
+  { "ciphers", CIPHERS },
+  { "keyfile", KEYFILE },
+  { "certfile", CERTFILE },
   { NULL, 0 }
 };
 static int ntokens;
