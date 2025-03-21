@@ -494,7 +494,8 @@ extern int client_can_send_to_channel(struct Client *cptr, struct Channel *chptr
 extern void remove_user_from_channel(struct Client *sptr, struct Channel *chptr);
 extern void remove_user_from_all_channels(struct Client* cptr);
 
-extern int is_manager_op(struct Client *cptr, struct Channel *chptr);
+extern int is_admin(struct Client *cptr, struct Channel *chptr);
+extern int is_manager(struct Client *cptr, struct Channel *chptr);
 extern int is_half_op(struct Client *cptr, struct Channel *chptr);
 extern int is_chan_op(struct Client *cptr, struct Channel *chptr);
 extern int is_zombie(struct Client *cptr, struct Channel *chptr);

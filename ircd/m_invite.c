@@ -159,7 +159,7 @@ int m_invite(struct Client* cptr, struct Client* sptr, int parc, char* parv[])
     return 0;
   }
 
-  if (!is_chan_op(sptr, chptr)) {
+  if (!is_chan_op(sptr, chptr) && !is_admin(sptr, chptr) && !is_manager(sptr, chptr) && !IsServer(sptr) && !IsOper(sptr)) {
     send_reply(sptr, ERR_CHANOPRIVSNEEDED, chptr->chname);
     return 0;
   }
