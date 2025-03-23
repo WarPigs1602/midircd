@@ -360,6 +360,16 @@ int register_user(struct Client *cptr, struct Client *sptr)
 
     Count_unknownbecomesclient(sptr, UserStats);
 
+    /*
+     * Set user's initial modes
+     */
+    tmpstr = (char*)client_get_default_umode(sptr);
+    if (tmpstr) {
+      char *umodev[] = { NULL, NULL, NULL, NULL };
+      umodev[2] = tmpstr;
+      set_user_mode(cptr, sptr, 3, umodev, ALLOWMODES_ANY);
+    }
+
     if (MyConnect(sptr) && feature_bool(FEAT_AUTOINVISIBLE))
       SetInvisible(sptr);
     
@@ -1378,26 +1388,6 @@ int set_user_mode(struct Client *cptr, struct Client *sptr, int parc,
       case 'o':
         if (what == MODE_ADD) {
           SetOper(sptr);
-          if (IsServer(cptr) && IsSendOperName(cptr)) {
-            if (*(p + 1)) {
-              opername = *++p;
-              if (cli_user(sptr)->opername)
-                MyFree(cli_user(sptr)->opername);
-              if ((opername[0] == NOOPERNAMECHARACTER) && (opername[1] == '\0')) {
-                cli_user(sptr)->opername = NULL;
-              } else {
-                opernamelen = strlen(opername);
-                if (opernamelen > ACCOUNTLEN) {
-                  protocol_violation(cptr, "Received opername (%s) longer than %d for %s; ignoring.", opername, ACCOUNTLEN, cli_name(sptr));
-                  cli_user(sptr)->opername = NULL;
-                } else {
-                  cli_user(sptr)->opername = (char*) MyMalloc(opernamelen + 1);
-                  assert(0 != cli_user(sptr)->opername);
-                  ircd_strncpy(cli_user(sptr)->opername,opername,ACCOUNTLEN);
-                }
-              }
-            }
-          }
         } else {
           ClrFlag(sptr, FLAG_OPER);
           ClrFlag(sptr, FLAG_LOCOP);
@@ -1722,7 +1712,22 @@ char *umode_str(struct Client *cptr, int opernames)
     ircd_snprintf(0, m, USERLEN + HOSTLEN + 2, "%s@%s", cli_user(cptr)->username,
          cli_user(cptr)->host);
   } else
-    *m = '\0';
+  /** If the client is using TLS (umode +z) we return the fingerprint.
+   * If the fingerprint is empty (client has not provided a certificate),
+   * we return _ in the place of the fingerprint.
+   */
+  if (IsTLS(cptr))
+  {
+    char* t = cli_tls_fingerprint(cptr);
+
+    *m++ = ' ';
+    if (t && *t) {
+        while ((*m++ = *t++));
+    } else {
+        *m++ = '_';
+    }
+  }
+  *m = '\0';
   return umodeBuf;                /* Note: static buffer, gets
                                    overwritten by send_umode() */
 }

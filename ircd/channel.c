@@ -1191,7 +1191,7 @@ void send_channel_modes(struct Client *cptr, struct Channel *chptr)
 {
   /* The order in which modes are generated is now mandatory */
   static unsigned int current_flags[8] =
-      { 0, CHFL_VOICE, CHFL_HALFOP, CHFL_CHANOP, CHFL_ADMIN, CHFL_CHANNEL_MANAGER, CHFL_CHANNEL_SERVICE, CHFL_VOICED_OR_OPPED };
+      { 0, CHFL_VOICE, CHFL_HALFOP, CHFL_CHANOP, CHFL_ADMIN, CHFL_CHANNEL_MANAGER, CHFL_CHANNEL_SERVICE, CHFL_VOICE | CHFL_HALFOP | CHFL_CHANOP | CHFL_ADMIN | CHFL_CHANNEL_MANAGER | CHFL_CHANNEL_SERVICE };
   int                first = 1;
   int                full  = 1;
   int                flag_cnt = 0;

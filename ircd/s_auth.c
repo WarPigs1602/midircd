@@ -421,8 +421,6 @@ static int check_auth_finished(struct AuthRequest *auth, int bitclr)
     struct User   *user;
     struct Client *sptr;
     int killreason;
-    int knockeruser;
-    int knockerident;
 	char *pattern;
     /* Bail out until we have DNS and ident. */
     if (FlagHas(&auth->flags, AR_AUTH_PENDING)

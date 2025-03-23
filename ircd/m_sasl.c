@@ -155,6 +155,7 @@ int m_sasl(struct Client* cptr, struct Client* sptr, int parc, char* parv[])
         ircd_strncpy(pass, arr[2], PASSWDLEN);
 		ircd_snprintf(0, text, BUFSIZE, "SASL %s %s %s", nick, auth, pass);
 		if ((target = FindServer(feature_str(FEAT_SASL_SERVER)))) {
+			printf("%s %s\n", cli_name(&me), cli_yxx(&me));
 			sendrawto_one(target, "%s %s %s %s", cli_yxx(&me), text, cli_yxx(&me), cli_name(sptr));
             ircd_strncpy(sptr->cli_saslnick, nick, NICKLEN);
             ircd_strncpy(sptr->cli_saslacc, auth, ACCOUNTLEN);

@@ -20,7 +20,7 @@
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
  *
- * $Id: m_nick.c,v 1.25.2.2 2006/11/04 21:42:00 entrope Exp $
+ * $Id$
  */
 
 /*
@@ -98,7 +98,6 @@
 #include "s_user.h"
 #include "send.h"
 #include "sys.h"
-#include "gline.h"
 
 /* #include <assert.h> -- Now using assert in ircd_log.h */
 #include <stdlib.h>
@@ -147,7 +146,6 @@ int m_nick(struct Client* cptr, struct Client* sptr, int parc, char* parv[])
   char           nick[NICKLEN + 2];
   char*          arg;
   char*          s;
-  const char*    client_name;
 
   assert(0 != cptr);
   assert(cptr == sptr);
@@ -156,11 +154,6 @@ int m_nick(struct Client* cptr, struct Client* sptr, int parc, char* parv[])
     return exit_client(cptr, cptr, &me, "Use a different port");
   if (IsWebircPort(cptr) && !cli_wline(cptr))
     return exit_client(cptr, cptr, &me, "WebIRC authorization required");
-
-  /*
-   * parv[0] will be empty for clients connecting for the first time
-   */
-  client_name = (*(cli_name(sptr))) ? cli_name(sptr) : "*";
 
   if (parc < 2) {
     send_reply(sptr, ERR_NONICKNAMEGIVEN);
@@ -187,12 +180,7 @@ int m_nick(struct Client* cptr, struct Client* sptr, int parc, char* parv[])
     send_reply(sptr, ERR_ERRONEUSNICKNAME, arg);
     return 0;
   }
- 
-  if (IsRegistered(sptr) && !IsAnOper(sptr) && IsNickGlined(sptr, nick)) {
-    send_reply(sptr, ERR_ERRONEUSNICKNAME, nick);
-    return 0;
-  }
-  
+
   /* 
    * Check if this is a LOCAL user trying to use a reserved (Juped)
    * nick, if so tell him that it's a nick in use...
@@ -259,7 +247,7 @@ int m_nick(struct Client* cptr, struct Client* sptr, int parc, char* parv[])
    * the message below.
    */
   if (IsUnknown(acptr) && MyConnect(acptr)) {
-    ServerStats->is_ref++;
+    ++ServerStats->is_ref;
     IPcheck_connect_fail(acptr);
     exit_client(cptr, acptr, &me, "Overridden by other sign on");
     return set_nick_name(cptr, sptr, nick, parc, parv);
@@ -303,6 +291,9 @@ int ms_nick(struct Client* cptr, struct Client* sptr, int parc, char* parv[])
   assert(0 != cptr);
   assert(0 != sptr);
   assert(IsServer(cptr));
+
+  if (sptr == NULL)
+    return 0;
 
   if ((IsServer(sptr) && parc < 8) || parc < 3)
   {
@@ -389,7 +380,7 @@ int ms_nick(struct Client* cptr, struct Client* sptr, int parc, char* parv[])
    */
   if (IsUnknown(acptr) && MyConnect(acptr))
   {
-    ServerStats->is_ref++;
+    ++ServerStats->is_ref;
     IPcheck_connect_fail(acptr);
     exit_client(cptr, acptr, &me, "Overridden by other sign on");
     return set_nick_name(cptr, sptr, nick, parc, parv);
@@ -502,8 +493,6 @@ int ms_nick(struct Client* cptr, struct Client* sptr, int parc, char* parv[])
   exit_client_msg(cptr, acptr, &me, "Killed (%s (%s))",
                   feature_str(FEAT_HIS_SERVERNAME), type);
   if (lastnick == cli_lastnick(acptr))
-    return 0;
-  if (sptr == NULL)
     return 0;
   return set_nick_name(cptr, sptr, nick, parc, parv);
 }

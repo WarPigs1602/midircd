@@ -306,6 +306,7 @@ int m_names(struct Client* cptr, struct Client* sptr, int parc, char* parv[])
 
         if (mlen + idx + NICKLEN + 3 > BUFSIZE)     /* space, \r\n\0 */
         {
+          buf[idx-1] = '\0';
           send_reply(sptr, RPL_NAMREPLY, buf);
           strcpy(buf, "* * :");
           idx = 5;
@@ -313,7 +314,10 @@ int m_names(struct Client* cptr, struct Client* sptr, int parc, char* parv[])
         }
       }
       if (flag)
+      {
+        buf[idx-1] = '\0';
         send_reply(sptr, RPL_NAMREPLY, buf);
+      }
       send_reply(sptr, RPL_ENDOFNAMES, "*");
     }
     else if ((chptr = FindChannel(para)) != NULL)
