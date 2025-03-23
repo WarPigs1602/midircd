@@ -35,6 +35,7 @@
 #include "ircd.h"
 #include "ircd_alloc.h"
 #include "ircd_chattr.h"
+#include "ircd_lexer.h"
 #include "ircd_log.h"
 #include "ircd_reply.h"
 #include "ircd_snprintf.h"
@@ -867,9 +868,6 @@ static void webirc_remove_stale(void)
 static int conf_error;
 /** When non-zero, indicates that the configuration file was loaded at least once. */
 static int conf_already_read;
-extern FILE *yyin;
-extern void yyparse(void);
-extern void init_lexer(void);
 
 /** Read configuration file.
  * @return Zero on failure, non-zero on success. */
@@ -878,11 +876,10 @@ int read_configuration_file(void)
   conf_error = 0;
   feature_unmark(); /* unmark all features for resetting later */
   clear_nameservers(); /* clear previous list of DNS servers */
-  /* Now just open an fd. The buffering isn't really needed... */
-  init_lexer();
+  if (!init_lexer())
+    return 0;
   yyparse();
-  fclose(yyin);
-  yyin = NULL;
+  deinit_lexer();
   feature_mark(); /* reset unmarked features */
   conf_already_read = 1;
   return 1;

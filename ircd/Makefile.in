@@ -39,7 +39,6 @@ CHGRP = chgrp
 MKDIR = mkdir
 TOUCH = touch
 GREP = grep
-LEX = @LEX@
 YACC = @YACC@
 ENGINE_C = @ENGINE_C@
 TLS_C = @TLS_C@
@@ -118,7 +117,7 @@ IRCD_SRC = \
 	ircd_snprintf.c \
 	ircd_string.c \
 	jupe.c \
-	lex.yy.c \
+	ircd_lexer.c \
 	list.c \
 	listener.c \
 	m_account.c \
@@ -283,9 +282,6 @@ table_gen: table_gen.o
 chattr.tab.c: table_gen
 	./table_gen > chattr.tab.c
 
-lex.yy.c: ircd_lexer.l y.tab.h
-	${LEX} ${srcdir}/ircd_lexer.l
-
 y.tab.c y.tab.h: ircd_parser.y
 	${YACC} -d ${srcdir}/ircd_parser.y
 
@@ -338,7 +334,7 @@ uninstall:
 	@echo "Please remove the contents of ${DPATH} manually"
 
 clean:
-	${RM} -f *.o *.bak ircd version.c umkpasswd convert-conf chattr.tab.c table_gen y.tab.* lex.yy.*
+	${RM} -f *.o *.bak ircd version.c umkpasswd convert-conf chattr.tab.c table_gen y.tab.*
 
 distclean: clean
 	${RM} -f Makefile stamp-m
@@ -567,9 +563,12 @@ jupe.o: jupe.c ../config.h ../include/jupe.h ../include/client.h \
   ../include/numeric.h ../include/numnicks.h ../include/s_bsd.h \
   ../include/s_misc.h ../include/send.h ../include/struct.h \
   ../include/sys.h
-lex.yy.o: lex.yy.c ../config.h ../include/ircd.h ../include/struct.h \
-  ../include/ircd_defs.h ../include/ircd_alloc.h ../include/ircd_string.h \
-  ../include/ircd_chattr.h ../include/s_debug.h ../config.h y.tab.h
+ircd_lexer.o: ircd_lexer.c ../config.h ../include/ircd.h \
+ ../include/struct.h ../include/ircd_defs.h ../include/ircd_alloc.h \
+ ../include/ircd_log.h ../include/ircd_string.h ../include/ircd_chattr.h \
+ ../include/s_conf.h ../include/client.h ../include/dbuf.h \
+ ../include/msgq.h ../include/ircd_events.h ../include/ircd_handler.h \
+ ../include/res.h ../include/capab.h y.tab.h
 list.o: list.c ../config.h ../include/list.h ../include/client.h \
   ../include/ircd_defs.h ../include/dbuf.h ../include/msgq.h \
   ../include/ircd_events.h ../config.h ../include/ircd_handler.h \
