@@ -195,6 +195,7 @@ enum Feature {
   FEAT_HIS_LUSERS_ME,
   FEAT_HIS_USERIP,
   FEAT_SASL_SERVER,
+  FEAT_SASL_NICK,
 
   /* Misc. random stuff */
   FEAT_NETWORK,

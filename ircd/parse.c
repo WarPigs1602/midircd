@@ -637,20 +637,13 @@ struct Message msgtab[] = {
     0, MAXPARA, MFLG_SLOW, 0, NULL,
     /* UNREG, CLIENT, SERVER, OPER, SERVICE */
     { m_unregistered, m_rename, ms_rename, m_rename, m_ignore }
-  },
-  {
-    MSG_SASL,
-    TOK_SASL,
-    0, MAXPARA, MFLG_SLOW, 0, NULL,
-    /* UNREG, CLIENT, SERVER, OPER, SERVICE */
-    { m_ignore, m_ignore, ms_sasl, m_ignore, ms_sasl }
   },  
   {
     MSG_AUTHENTICATE,
     TOK_AUTHENTICATE,
     0, MAXPARA, MFLG_SLOW, 0, NULL,
     /* UNREG, CLIENT, SERVER, OPER, SERVICE */
-    { m_sasl, m_sasl, ms_sasl, m_sasl, ms_sasl }
+    { m_sasl, m_ignore, ms_sasl, m_ignore, ms_sasl }
   },  
   {
     MSG_XQUERY,

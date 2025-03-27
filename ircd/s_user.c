@@ -618,7 +618,7 @@ int set_nick_name(struct Client* cptr, struct Client* sptr,
     if (parc > 7 && *parv[6] == '+') {
       /* (parc-4) -3 for the ip, numeric nick, realname */
       set_user_mode(cptr, new_client, parc-7, parv+4, ALLOWMODES_ANY);
-    }
+    }	
 
     return register_user(cptr, new_client);
   }

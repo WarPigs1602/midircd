@@ -18,7 +18,7 @@
  */
 /** @file
  * @brief Outbound message queue implementation.
- * @version $Id: msgq.c,v 1.12.2.1 2006/03/14 03:56:58 entrope Exp $
+ * @version $Id$
  */
 #include "config.h"
 
@@ -194,7 +194,7 @@ msgq_mapiov(const struct MsgQ *mq, struct iovec *iov, int count,
   assert(0 != count);
   assert(0 != len);
 
-  if (mq->length <= 0) /* no data to map */
+  if (mq->length < 1) /* no data to map */
     return 0;
 
   if (mq->queue.head && mq->queue.head->sent > 0) { /* partial msg on norm q */
@@ -247,8 +247,8 @@ msgq_mapiov(const struct MsgQ *mq, struct iovec *iov, int count,
 }
 
 /** Allocate a message buffer large enough to hold \a length bytes.
- * TODO: \a in_mb needs better documentation.
- * @param[in] in_mb Some other message buffer(?).
+ *
+ * @param[in] in_mb Buffer containing the desired message.
  * @param[in] length Number of bytes of space to reserve in output.
  * @return Pointer to some usable message buffer.
  */
