@@ -146,7 +146,7 @@ m_mode(struct Client *cptr, struct Client *sptr, int parc, char *parv[])
     return 0;
   }
 
-  if (!member || (!IsChannelManager(member) && !IsAdmin(member) && !IsHalfOp(member) && !IsChanOp(member) && !IsChanService(member))) {
+  if (!member || !IsOpped(member)) {
     if (IsLocalChannel(chptr->chname) && HasPriv(sptr, PRIV_MODE_LCHAN)) {
       modebuf_init(&mbuf, sptr, cptr, chptr,
 		   (MODEBUF_DEST_CHANNEL | /* Send mode to channel */
@@ -228,7 +228,7 @@ ms_mode(struct Client *cptr, struct Client *sptr, int parc, char *parv[])
 		MODE_PARSE_FORCE),  /* And force it to be accepted */
 	        NULL);
   } else {
-    if (!(member = find_member_link(chptr, sptr)) || (!IsChannelManager(member) && !IsAdmin(member) && !IsHalfOp(member) && !IsChanOp(member) && !IsChanService(member))) {
+    if (!(member = find_member_link(chptr, sptr)) || !IsOpped(member)){
       modebuf_init(&mbuf, sptr, cptr, chptr,
 		   (MODEBUF_DEST_SERVER |  /* Send mode to server */
 		    MODEBUF_DEST_HACK2  |  /* Send a HACK(2) message */
