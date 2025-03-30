@@ -2112,11 +2112,13 @@ static int iauth_cmd_sasl(struct IAuth *iauth, struct Client *cli,
 		send_reply(usr, RPL_SASLSUCCESS);
 	} else if(!ircd_strcmp(cmd, "N")) {
 		send_reply(usr, ERR_NICKLOCKED); 
-		send_reply(usr, ERR_SASLFAIL); 
+		exit_client(usr, usr, &me, "You must use a nick assigned to you!");
 	} else if(!ircd_strcmp(cmd, "A")) {
 		send_reply(usr, ERR_SASLALREADY); 
+		exit_client(usr, usr, &me, "You are already authed!");
 	} else if(!ircd_strcmp(cmd, "F")) {
 		send_reply(usr, ERR_SASLFAIL);	
+		exit_client(usr, usr, &me, "SASL failed!");
 	}
   }
   return 1;
