@@ -4364,7 +4364,7 @@ mode_parse(struct ModeBuf *mbuf, struct Client *cptr, struct Client *sptr,
 	break;
 
       case 'L': /* deal with linked channels */
-	if (state.member && (IsMe(state.cptr) || IsServer(state.cptr) || IsChannelService(state.cptr)  || IsChanOp(state.member) || IsChannelManager(state.member) || IsAdmin(state.member) || IsChanService(state.member))) {
+	if (state.member && (IsMe(state.cptr) || IsServer(state.cptr) || IsChannelService(state.cptr) || IsOpped(state.member))) {
 	  state.link = state.chptr->chname;
 	mode_parse_links(&state, flag_p);
 	}
@@ -4374,7 +4374,11 @@ mode_parse(struct ModeBuf *mbuf, struct Client *cptr, struct Client *sptr,
 	if (state.member && IsChannelManager(state.member))	  
 	mode_parse_anonymous(&state, flag_p);
 	break;
-	  case 'O':
+      case 'Z':
+	if (state.member && (IsMe(state.cptr) || IsServer(state.cptr) || IsChannelService(state.cptr) || IsChanService(state.member) || IsChannelManager(state.member)) && IsTLS(state.cptr))	
+	mode_parse_mode(&state, flag_p);
+	break;
+      case 'O':
 	  case 'q':
 	  case 'a': 
       case 'o':
