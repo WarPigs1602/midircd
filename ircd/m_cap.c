@@ -21,7 +21,7 @@
  */
 /** @file
  * @brief Capability negotiation commands
- * @version $Id: m_cap.c,v 1.2.2.1 2006/02/16 03:49:54 entrope Exp $
+ * @version $Id$
  */
 
 #include "config.h"
@@ -53,7 +53,7 @@ static struct capabilities {
   int namelen;
 } capab_list[] = {
 #define _CAP(cap, config, flags, name)      \
-	{ CAP_ ## cap, #cap, (config), (flags), (name), sizeof(name) - 1 }
+	{ E_CAP_ ## cap, #cap, (config), (flags), (name), sizeof(name) - 1 }
   CAPLIST
 #undef _CAP
 };
@@ -138,8 +138,8 @@ find_cap(const char **caplist_p, int *neg_p)
  * @param[in] subcmd Name of capability subcommand.
  */
 static int
-send_caplist(struct Client *sptr, const struct CapSet *set,
-             const struct CapSet *rem, const char *subcmd)
+send_caplist(struct Client *sptr, capset_t set,
+             capset_t rem, const char *subcmd)
 {
   char capbuf[BUFSIZE] = "", pfx[16];
   struct MsgBuf *mb;
@@ -199,7 +199,7 @@ send_caplist(struct Client *sptr, const struct CapSet *set,
 static int
 cap_ls(struct Client *sptr, const char *caplist)
 {
-  if (IsUnknown(sptr)) /* registration hasn't completed; suspend it... */
+  if (IsUserPort(sptr)) /* registration hasn't completed; suspend it... */
     auth_cap_start(cli_auth(sptr));
   return send_caplist(sptr, 0, 0, "LS"); /* send list of capabilities */
 }
@@ -209,12 +209,12 @@ cap_req(struct Client *sptr, const char *caplist)
 {
   const char *cl = caplist;
   struct capabilities *cap;
-  struct CapSet set, rem;
-  struct CapSet cs = *cli_capab(sptr); /* capability set */
-  struct CapSet as = *cli_active(sptr); /* active set */
+  capset_t set = 0, rem = 0;
+  capset_t cs = cli_capab(sptr); /* capability set */
+  capset_t as = cli_active(sptr); /* active set */
   int neg;
 
-  if (IsUnknown(sptr)) /* registration hasn't completed; suspend it... */
+  if (IsUserPort(sptr)) /* registration hasn't completed; suspend it... */
     auth_cap_start(cli_auth(sptr));
 
   memset(&set, 0, sizeof(set));
@@ -229,24 +229,24 @@ cap_req(struct Client *sptr, const char *caplist)
     }
 
     if (neg) { /* set or clear the capability... */
-      CapSet(&rem, cap->cap);
-      CapClr(&set, cap->cap);
-      CapClr(&cs, cap->cap);
+      CapSet(rem, cap->cap);
+      CapClr(set, cap->cap);
+      CapClr(cs, cap->cap);
       if (!(cap->flags & CAPFL_PROTO))
-	CapClr(&as, cap->cap);
+	CapClr(as, cap->cap);
     } else {
-      CapClr(&rem, cap->cap);
-      CapSet(&set, cap->cap);
-      CapSet(&cs, cap->cap);
+      CapClr(rem, cap->cap);
+      CapSet(set, cap->cap);
+      CapSet(cs, cap->cap);
       if (!(cap->flags & CAPFL_PROTO))
-	CapSet(&as, cap->cap);
+	CapSet(as, cap->cap);
     }
   }
 
   /* Notify client of accepted changes and copy over results. */
-  send_caplist(sptr, &set, &rem, "ACK");
-  *cli_capab(sptr) = cs;
-  *cli_active(sptr) = as;
+  send_caplist(sptr, set, rem, "ACK");
+  cli_capab(sptr) = cs;
+  cli_active(sptr) = as;
 
   return 0;
 }
@@ -284,24 +284,23 @@ cap_ack(struct Client *sptr, const char *caplist)
 static int
 cap_clear(struct Client *sptr, const char *caplist)
 {
-  struct CapSet cleared;
+  capset_t cleared = 0;
   struct capabilities *cap;
   unsigned int ii;
 
   /* XXX: If we ever add a capab list sorted by capab value, it would
    * be good cache-wise to use it here. */
-  memset(&cleared, 0, sizeof(cleared));
   for (ii = 0; ii < CAPAB_LIST_LEN; ++ii) {
     cap = &capab_list[ii];
     /* Only clear active non-sticky capabilities. */
     if (!HasCap(sptr, cap->cap) || (cap->flags & CAPFL_STICKY))
       continue;
-    CapSet(&cleared, cap->cap);
+    CapSet(cleared, cap->cap);
     CapClr(cli_capab(sptr), cap->cap);
     if (!(cap->flags & CAPFL_PROTO))
       CapClr(cli_active(sptr), cap->cap);
   }
-  send_caplist(sptr, 0, &cleared, "ACK");
+  send_caplist(sptr, 0, cleared, "ACK");
 
   return 0;
 }
@@ -309,7 +308,7 @@ cap_clear(struct Client *sptr, const char *caplist)
 static int
 cap_end(struct Client *sptr, const char *caplist)
 {
-  if (!IsUnknown(sptr)) /* registration has completed... */
+  if (!IsUserPort(sptr)) /* registration has completed... */
     return 0; /* so just ignore the message... */
 
   return auth_cap_done(cli_auth(sptr));

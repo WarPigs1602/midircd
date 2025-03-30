@@ -184,8 +184,8 @@ int ms_account(struct Client* cptr, struct Client* sptr, int parc,
                            acptr, cli_user(acptr)->account);
    }
    
-  sendcmdto_capflag_common_channels_butone(acptr, CMD_ACCOUNT, acptr, CAP_ACCOUNTNOTIFY,
-                        _CAP_LAST_CAP, "%s", cli_user(acptr)->account);
+    sendcmdto_capflag_common_channels_butone(acptr, CMD_ACCOUNT, NULL, CAP_ACCOUNTNOTIFY,
+                          0, "%s", cli_user(acptr)->account);
 
   if (CapHas(cli_active(acptr), CAP_ACCOUNTNOTIFY))
     sendcmdto_one(acptr, CMD_ACCOUNT, cli_from(acptr), "%s", cli_user(acptr)->account);

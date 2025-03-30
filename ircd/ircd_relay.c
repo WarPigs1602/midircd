@@ -127,6 +127,7 @@ void relay_channel_message(struct Client* sptr, const char* name, const char* te
         send_reply(sptr, ERR_CANNOTSENDTOCHAN, chptr->chname);
         return;
       }
+
   
   char *anon = "anonymous!anoymous@anonymous.";
   if ((chptr->mode.mode & MODE_ANONYMOUS)) {
@@ -134,6 +135,7 @@ void relay_channel_message(struct Client* sptr, const char* name, const char* te
 	return;
   }
   
+  RevealDelayedJoinIfNeeded(sptr, chptr);
   sendcmdto_channel_butone(sptr, CMD_PRIVATE, chptr, cli_from(sptr),
 			   SKIP_DEAF | SKIP_BURST, "%H :%s", chptr, text);
 
@@ -192,6 +194,7 @@ void relay_channel_notice(struct Client* sptr, const char* name, const char* tex
 	return;
   }
   
+  RevealDelayedJoinIfNeeded(sptr, chptr);
   sendcmdto_channel_butone(sptr, CMD_NOTICE, chptr, cli_from(sptr),
 			   SKIP_DEAF | SKIP_BURST, "%H :%s", chptr, text);
 			   

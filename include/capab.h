@@ -47,18 +47,24 @@
 	_CAP(SASL, FEAT_CAP_SASL, 0, "sasl"), \
 	_CAP(STANDARDREPLYS, FEAT_CAP_STANDARDREPLYS, 0, "standard-replys")
 
-/** Client capabilities */
+/** Client capabilities, counting by index. */
 enum Capab {
-#define _CAP(cap, config, flags, name)	CAP_ ## cap
+#define _CAP(cap, config, flags, name)	E_CAP_ ## cap
   CAPLIST,
 #undef _CAP
-  _CAP_LAST_CAP
+  _E_CAP_LAST_CAP
 };
 
-DECLARE_FLAGSET(CapSet, _CAP_LAST_CAP);
+/** Client capabilities, bit mask version. */
+enum CapabBits {
+#define _CAP(cap, config, flags, name) CAP_ ## cap = 1u << E_CAP_ ## cap
+  CAPLIST,
+#undef _CAP
+  _CAP_LAST_CAP = 1u << _E_CAP_LAST_CAP
+};
 
-#define CapHas(cs, cap)	FlagHas(cs, cap)
-#define CapSet(cs, cap)	FlagSet(cs, cap)
-#define CapClr(cs, cap)	FlagClr(cs, cap)
+#define CapHas(cs, cap)	(cs & cap)
+#define CapSet(cs, cap)	(cs |= cap)
+#define CapClr(cs, cap)	(cs &= ~cap)
 
 #endif /* INCLUDED_capab_h */

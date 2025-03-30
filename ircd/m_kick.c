@@ -124,7 +124,7 @@ int m_kick(struct Client *cptr, struct Client *sptr, int parc, char *parv[])
     return send_reply(sptr, ERR_NOSUCHCHANNEL, name);
 
   if (!(member2 = find_member_link(chptr, sptr)) || IsZombie(member2)
-      || !IsChanOp(member2) && !IsHalfOp(member2) && !IsChannelManager(member2))
+      || !IsOpped(member2) && !IsHalfOp(member2) && !IsChannelManager(member2))
     return send_reply(sptr, ERR_CHANOPRIVSNEEDED, name);
 
   if (!(who = find_chasing(sptr, parv[2], 0)))
@@ -172,7 +172,7 @@ int m_kick(struct Client *cptr, struct Client *sptr, int parc, char *parv[])
      * the kicking and the victim */
     if (MyUser(who))
       sendcmdto_one(sptr, CMD_KICK, who, "%H %C :%s", chptr, who, comment);
-    sendcmdto_one(who, CMD_JOIN, sptr, "%H", chptr);
+    sendjointo_one(who, chptr, sptr);
     sendcmdto_one(sptr, CMD_KICK, sptr, "%H %C :%s", chptr, who, comment);
     CheckDelayedJoins(chptr);
   } else
@@ -230,14 +230,14 @@ int ms_kick(struct Client *cptr, struct Client *sptr, int parc, char *parv[])
    * operator, bounce the kick
    */
   if (!IsServer(sptr) && member && cli_from(who) != cptr &&
-      (!(sptr_link = find_member_link(chptr, sptr)) || !IsChanOp(sptr_link))) {
+      (!(sptr_link = find_member_link(chptr, sptr)) || !IsOpped(sptr_link))) {
     sendto_opmask_butone(0, SNO_HACK2, "HACK: %C KICK %H %C %s", sptr, chptr,
 			 who, comment);
 
-    sendcmdto_one(who, CMD_JOIN, cptr, "%H", chptr);
+	sendjointo_one(who, chptr, cptr);
 
     /* Reop/revoice member */
-    if (IsChanOp(member) || HasVoice(member)) {
+    if (IsOpped(member) || HasVoice(member)) {
       struct ModeBuf mbuf;
 
       modebuf_init(&mbuf, sptr, cptr, chptr,
@@ -245,7 +245,7 @@ int ms_kick(struct Client *cptr, struct Client *sptr, int parc, char *parv[])
 		    MODEBUF_DEST_DEOP   |  /* Deop the source */
 		    MODEBUF_DEST_BOUNCE)); /* And bounce the MODE */
 
-      if (IsChanOp(member))
+      if (IsOpped(member))
 	modebuf_mode_client(&mbuf, MODE_DEL | MODE_CHANOP, who, OpLevel(member));
       if (HasVoice(member))
 	modebuf_mode_client(&mbuf, MODE_DEL | MODE_VOICE, who, MAXOPLEVEL + 1);

@@ -111,107 +111,12 @@
  */
 int m_sasl(struct Client* cptr, struct Client* sptr, int parc, char* parv[])
 {		
-  char *buf, *arr[3], text[256], nick[NICKLEN + 1], auth[ACCOUNTLEN + 1], pass[PASSWDLEN + 1];
-  struct Client *user; 
   if (parc < 2 || *parv[1] == '\0')
     return need_more_params(sptr, "AUTHENTICATE");	
-  if(!CapHas(cli_active(sptr), CAP_SASL)) {
+  if(CapHas(cli_active(sptr), CAP_SASL)) {
 	 send_reply(sptr, ERR_SASLFAIL); 
   } else {
-	 sptr->cli_sasla = 0;
-	 if(!ircd_strcmp(parv[1], "PLAIN")) {
-		if(sptr->cli_sasl != 1) {
-			sendcmdto_one(&me, CMD_AUTHENTICATE, sptr, "+"); 
-			sptr->cli_sasl = 1;
-		} else {
-			send_reply(sptr, ERR_SASLALREADY);
-		}
-	 } else if(*parv[1] == '*') {
-		send_reply(sptr, ERR_SASLABORTED);
-	 } else if(sptr->cli_sasl == 1 && strlen(parv[1]) > 1){
-		buf = base64_decode(parv[1]);
-		if(!buf) {
-			send_reply(sptr, ERR_SASLFAIL); 				
-			return 0;			
-		}
-		if(sizeof(buf) < 1) {
-			send_reply(sptr, ERR_SASLFAIL); 				
-			return 0;			
-		}
-		int cnt = 0;
-		while(cnt < 3) {
-			if(!buf)
-				break;
-			if(strlen(buf) < 1)
-				break;
-			arr[cnt] = buf;
-			buf += strlen(buf) + 1;
-			cnt++;
-		}
-		if(!arr || cnt < 3) {
-			send_reply(sptr, ERR_SASLFAIL); 	
-			return 0;
-		}
-		ircd_strncpy(nick, arr[0], NICKLEN);
-        ircd_strncpy(auth, arr[1], ACCOUNTLEN);
-        ircd_strncpy(pass, arr[2], PASSWDLEN);
-		ircd_strncpy(sptr->cli_saslnick, nick, NICKLEN);
-        ircd_strncpy(sptr->cli_saslacc, auth, ACCOUNTLEN);
-		char *server;
-		char snick[HOSTLEN + 1];
-		ircd_strncpy(snick, feature_str(FEAT_SASL_SERVER), HOSTLEN);
-		SetLocalNumNick(sptr);
-		if(IsTLS(sptr)) {
-			SetUser(sptr);
-			cli_handler(sptr) = CLIENT_HANDLER;
-			ircd_strncpy(cli_user(sptr)->username, nick, USERLEN);
-			ircd_strncpy(cli_name(sptr), nick, NICKLEN);
-			ircd_strncpy(cli_user(sptr)->realusername, nick, USERLEN);
-			ircd_strncpy(cli_user(sptr)->host, cli_sockhost(sptr), HOSTLEN);
-			ircd_strncpy(cli_user(sptr)->realhost, cli_sockhost(sptr), HOSTLEN);
-			register_user(cptr, sptr);
-		}
-		ircd_snprintf(0, text, BUFSIZE, "SASL %s %s%s %s %s %s", cli_yxx(cli_user(sptr)->server), cli_yxx(cli_user(sptr)->server), cli_yxx(sptr), auth, pass, cli_username(sptr));
-		if ((server = strchr(snick, '@')))
-		  relay_directed_message(sptr, snick, server, text);
-		else 
-		  relay_private_message(sptr, snick, text);				
-	 } else {
-	    send_reply(sptr, RPL_SASLMECHS, "PLAIN");	 
-	 }
+     register_sasl(cptr, sptr, parc, parv);
   }
-  return 0;
-}
-
-/*
- * ms_sasl - server message handler
- */
-int ms_sasl(struct Client* cptr, struct Client* sptr, int parc, char* parv[])
-{
-  if (parc < 5)
-    return need_more_params(sptr, "AUTHENTICATE");
-  char *server = parv[1];
-  char *cmd = parv[2];
-  char *nick = parv[3];
-  char *account = parv[4];
-  struct Client *usr = findNUser(nick);
-  if(usr) {
-	if(!ircd_strcmp(cmd, "SUCCESS")) {
-		ircd_strncpy(cli_user(usr)->account, account, ACCOUNTLEN);
-		SetAccount(usr);
-		send_reply(usr, RPL_LOGGEDIN, usr, cli_name(usr), account);
-		send_reply(usr, RPL_SASLSUCCESS);
-	} else if(usr && !ircd_strcmp(cmd, "NOTYOU")) {
-		send_reply(usr, ERR_NICKLOCKED); 
-		send_reply(usr, ERR_SASLFAIL); 
-        exit_client(cptr, usr, &me, "You are not the user!");	
-	} else if(usr && !ircd_strcmp(cmd, "ALREADY")) {
-		send_reply(usr, ERR_SASLALREADY); 
-        exit_client(cptr, usr, &me, "You are already authed!");	
-	} else if(usr && !ircd_strcmp(cmd, "FAIL")) {
-		send_reply(usr, ERR_SASLFAIL);
-        exit_client(cptr, usr, &me, "SASL auth failed!");		
-	}
-  } 
   return 0;
 }

@@ -35,8 +35,10 @@
 #include "ircd.h"
 #include "ircd_alloc.h"
 #include "ircd_chattr.h"
+#include "ircd_crypt_b64.h"
 #include "ircd_features.h"
 #include "ircd_log.h"
+#include "ircd_relay.h"
 #include "ircd_reply.h"
 #include "ircd_snprintf.h"
 #include "ircd_string.h"
@@ -978,10 +980,59 @@ hide_hostmask_to_anonymous(struct Channel *chptr, struct Client *sptr)
 	sendnoteto_one(cptr, &me, "MODE", "NOW_ANONYMOUS", "%H :The channel is now anonymous", chptr);  
 
     /* Send a JOIN unless the user's join has been delayed. */
-	sendhostto_channel_butone(chptr, cptr, anon, "JOIN", "%H", chptr);
+	sendjointo_channel_butserv(cptr, member->channel, 0, CAP_CHGHOST);
 	do_names(cptr, chptr, NAMES_ALL|NAMES_EON);
   }
   return 0;
+}
+
+/**
+ * Registers SASL
+ */
+int
+register_sasl(struct Client* cptr, struct Client* sptr, int parc, char* parv[])
+{
+	char *buf, *arr[3], text[256], nick[NICKLEN + 1], auth[ACCOUNTLEN + 1], pass[PASSWDLEN + 1];
+	if(!ircd_strcmp(parv[1], "PLAIN")) {
+		if(sptr->cli_sasl != 1) {
+			sendcmdto_one(&me, CMD_AUTHENTICATE, sptr, "+"); 
+			sptr->cli_sasl = 1;
+		} else {
+			send_reply(sptr, ERR_SASLALREADY);
+		}
+	 } else if(*parv[1] == '*') {
+		send_reply(sptr, ERR_SASLABORTED);
+	 } else if(sptr->cli_sasl == 1 && strlen(parv[1]) > 1){
+		buf = base64_decode(parv[1]);
+		if(!buf) {
+			send_reply(sptr, ERR_SASLFAIL); 				
+			return 0;			
+		}
+		if(sizeof(buf) < 1) {
+			send_reply(sptr, ERR_SASLFAIL); 				
+			return 0;			
+		}
+		int cnt = 0;
+		while(cnt < 3) {
+			if(!buf)
+				break;
+			if(strlen(buf) < 1)
+				break;
+			arr[cnt] = buf;
+			buf += strlen(buf) + 1;
+			cnt++;
+		}
+		if(!arr || cnt < 3) {
+			send_reply(sptr, ERR_SASLFAIL); 	
+			return 0;
+		}
+		ircd_strncpy(nick, arr[0], NICKLEN);
+		ircd_strncpy(auth, arr[1], ACCOUNTLEN);
+		ircd_strncpy(pass, arr[2], PASSWDLEN);
+        auth_set_sasl(cli_auth(sptr), nick, auth, pass);
+	 } else {
+		send_reply(sptr, RPL_SASLMECHS, "PLAIN");	 
+	 }	
 }
 
 /** Set \a flag on \a cptr and possibly hide the client's hostmask.
@@ -1016,14 +1067,14 @@ hide_hostmask(struct Client *cptr, unsigned int flag)
     return 0;
 
 
-  sendcmdto_capflag_common_channels_butone(cptr, CMD_QUIT, cptr, _CAP_LAST_CAP, CAP_CHGHOST, ":Registered");
-  sendcmdto_capflag_common_channels_butone(cptr, CMD_CHGHOST, cptr, CAP_CHGHOST, _CAP_LAST_CAP, "%s %s.%s",
+  sendcmdto_capflag_common_channels_butone(cptr, CMD_QUIT, cptr, 0, CAP_CHGHOST, ":Registered");
+  sendcmdto_capflag_common_channels_butone(cptr, CMD_CHGHOST, NULL, CAP_CHGHOST, 0, "%s %s.%s",
     cli_user(cptr)->username, cli_user(cptr)->account, feature_str(FEAT_HIDDEN_HOST));
   ircd_snprintf(0, cli_user(cptr)->host, HOSTLEN, "%s.%s",
                 cli_user(cptr)->account, feature_str(FEAT_HIDDEN_HOST));
 
   /* ok, the client is now fully hidden, so let them know -- hikari */
-  if (MyConnect(cptr))
+  if (MyConnect(cptr) && !CapHas(cli_active(cptr), CAP_CHGHOST))
    send_reply(cptr, RPL_HOSTHIDDEN, cli_user(cptr)->host);
 
   /*
@@ -1036,24 +1087,32 @@ hide_hostmask(struct Client *cptr, unsigned int flag)
       continue;
     /* Send a JOIN unless the user's join has been delayed. */
     if (!IsDelayedJoin(chan))
-      sendcmdto_capflag_channel_butserv_butone(cptr, CMD_JOIN, chan->channel, cptr, 0,
-                                         _CAP_LAST_CAP, CAP_CHGHOST, "%H", chan->channel);
+    {
+      sendjointo_channel_butserv(cptr, chan->channel, 0, CAP_CHGHOST);
+      if (cli_user(cptr)->away)
+        sendcmdto_capflag_channel_butserv_butone(cptr, CMD_AWAY, chan->channel,
+          NULL, 0, CAP_AWAYNOTIFY, CAP_CHGHOST, ":%s", cli_user(cptr)->away);
+    }
     if (IsChannelManager(chan))
       sendcmdto_capflag_channel_butserv_butone(&his, CMD_MODE, chan->channel, cptr, 0,
-                                       _CAP_LAST_CAP, CAP_CHGHOST, "%H +q %C", chan->channel, cptr);
+                                       0, CAP_CHGHOST, "%H +q %C %C", chan->channel, cptr,
+                                       cptr);
     if (IsAdmin(chan))
       sendcmdto_capflag_channel_butserv_butone(&his, CMD_MODE, chan->channel, cptr, 0,
-                                       _CAP_LAST_CAP, CAP_CHGHOST, "%H +a %C", chan->channel, cptr);
+                                       0, CAP_CHGHOST, "%H +a %C %C", chan->channel, cptr,
+                                       cptr);
     if (IsChanOp(chan))
       sendcmdto_capflag_channel_butserv_butone(&his, CMD_MODE, chan->channel, cptr, 0,
-                                       _CAP_LAST_CAP, CAP_CHGHOST, "%H +ov %C %C", chan->channel, cptr,
-                                       cptr);    
+                                       0, CAP_CHGHOST, "%H +o %C %C", chan->channel, cptr,
+                                       cptr); 
     if (IsHalfOp(chan))
       sendcmdto_capflag_channel_butserv_butone(&his, CMD_MODE, chan->channel, cptr, 0,
-                                       _CAP_LAST_CAP, CAP_CHGHOST, "%H +h %C", chan->channel, cptr);
+                                       0, CAP_CHGHOST, "%H +h %C %C", chan->channel, cptr,
+                                       cptr);
     if (HasVoice(chan))
       sendcmdto_capflag_channel_butserv_butone(&his, CMD_MODE, chan->channel, cptr, 0,
-        _CAP_LAST_CAP, CAP_CHGHOST, "%H +v %C", chan->channel, cptr);
+                                       0, CAP_CHGHOST, "%H +v %C %C", chan->channel, cptr,
+                                       cptr);
   }
   return 0;
 }
@@ -1215,8 +1274,7 @@ int set_hostmask(struct Client *cptr, char *hostmask, char *password)
   for (chan = cli_user(cptr)->channel; chan; chan = chan->next_channel) {
     if (IsZombie(chan))
       continue;
-    sendcmdto_channel_butserv_butone(cptr, CMD_JOIN, chan->channel, cptr,
-      "%H", chan->channel);
+      sendjointo_channel_butserv(cptr, chan->channel, 0, 0);
     if (IsChannelManager(chan)) {
       sendcmdto_channel_butserv_butone(&me, CMD_MODE, chan->channel, cptr,
         "%H +q %C", chan->channel, cptr);
@@ -1254,8 +1312,7 @@ int set_hostmask(struct Client *cptr, char *hostmask, char *password)
         && (chan->channel->mode.mode & MODE_DELJOINS)) {
       SetDelayedJoin(chan);
     } else {
-      sendcmdto_channel_butserv_butone(cptr, CMD_JOIN, chan->channel, cptr, 0,
-        "%H", chan->channel);
+      sendjointo_channel_butserv(cptr, chan->channel, 0, 0);
     }
     if (IsChannelManager(chan)) {
       sendcmdto_channel_butserv_butone(&his, CMD_MODE, chan->channel, cptr, 0,

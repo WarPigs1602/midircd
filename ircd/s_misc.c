@@ -179,11 +179,17 @@ const char* get_client_name(const struct Client* sptr, int showip)
  * @param comment The QUIT comment to send.
  */
 /* Rewritten by Run - 24 sept 94 */
+/**
+ * Exit one client, local or remote. Assuming for local client that
+ * all dependents already have been removed, and socket is closed.
+ * @param bcptr Client being (s)quitted.
+ * @param comment The QUIT comment to send.
+ */
+/* Rewritten by Run - 24 sept 94 */
 static void exit_one_client(struct Client* bcptr, const char* comment)
 {
   struct SLink *lp;
   struct Ban *bp;
-  struct BanEx *bpe;
 
   if (cli_serv(bcptr) && cli_serv(bcptr)->client_list)  /* Was SetServerYXX called ? */
     ClearServerYXX(bcptr);      /* Removes server from server_list[] */
@@ -206,16 +212,7 @@ static void exit_one_client(struct Client* bcptr, const char* comment)
      * that the client can show the "**signoff" message).
      * (Note: The notice is to the local clients *only*)
      */
-    
-    char *anon = "anonymous!anoymous@anonymous.";
-    struct Membership* chan;
-    /* (slug for +u) removed !IsDelayedJoin(chan) as splidge said to */
-    for (chan = cli_user(bcptr)->channel; chan; chan = chan->next_channel) {
-        if ((chan->channel->mode.mode & MODE_ANONYMOUS)) {
-	        sendhostto_channel_butone(chan->channel, bcptr, anon, "PART", "%H :%s", chan->channel, comment);
-		} 
-    }	 
-    sendcmdto_common_channels_anonymous_butone(bcptr, CMD_QUIT, NULL, ":%s", comment);
+    sendcmdto_common_channels_butone(bcptr, CMD_QUIT, NULL, ":%s", comment);
 
     remove_user_from_all_channels(bcptr);
 
@@ -229,12 +226,6 @@ static void exit_one_client(struct Client* bcptr, const char* comment)
       free_ban(bp);
     }
 
-    /* Clean up silenceexfield */
-    while ((bpe = cli_user(bcptr)->silenceex)) {
-      cli_user(bcptr)->silenceex = bpe->next;
-      free_ban_exception(bpe);
-    }
-	
     /* Clean up snotice lists */
     if (MyUser(bcptr))
       set_snomask(bcptr, ~0, SNO_DEL);
@@ -408,7 +399,7 @@ int exit_client(struct Client *cptr,
 		cli_firsttime(victim), on_for,
 		cli_user(victim)->username, cli_sockhost(victim),
                 ircd_ntoa(&cli_ip(victim)),
-                IsAccount(victim) ? cli_username(victim) : "0",
+                cli_account(victim),
                 NumNick(victim), /* two %s's */
                 cli_name(victim), cli_info(victim));
 
@@ -508,11 +499,7 @@ int exit_client(struct Client *cptr,
   /* Then remove the client structures */
   if (IsServer(victim))
     exit_downlinks(victim, killer, comment1);
-
-  if (strncmp(comment, "G-lined", 7))  
-    exit_one_client(victim, comment); 
-  else 
-    exit_one_client(victim, "G-lined");
+  exit_one_client(victim, comment);
 
   /*
    *  cptr can only have been killed if it was cptr itself that got killed here,

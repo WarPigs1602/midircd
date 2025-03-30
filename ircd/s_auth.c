@@ -85,9 +85,11 @@ enum AuthRequestFlag {
     AR_NEEDS_PONG,      /**< user has not PONGed */
     AR_NEEDS_USER,      /**< user must send USER command */
     AR_NEEDS_NICK,      /**< user must send NICK command */
+    AR_NEEDS_SASL,      /**< user must send SASL command */
     AR_LAST_SCAN = AR_NEEDS_NICK, /**< maximum flag to scan through */
     AR_IAUTH_PENDING,   /**< iauth request sent, waiting for response */
     AR_IAUTH_HURRY,     /**< we told iauth to hurry up */
+    AR_IAUTH_SASL,     /**< we told iauth to SASL */
     AR_IAUTH_USERNAME,  /**< iauth sent a username (preferred or forced) */
     AR_IAUTH_FUSERNAME, /**< iauth sent a forced username */
     AR_IAUTH_SOFT_DONE, /**< iauth has no objection to client */
@@ -497,13 +499,17 @@ static int check_auth_finished(struct AuthRequest *auth, int bitclr)
         cli_firsttime(auth->client) = CurrentTime;
     }
 
+	if (!FlagHas(&auth->flags, AR_IAUTH_SASL))
+    {
+		FlagSet(&auth->flags, AR_IAUTH_SASL);
+	}
     /* Notify IAuth (if appropriate). */
     if (!from_iauth)
       iauth_notify(auth, (enum AuthRequestFlag)bitclr);
 
     /* Do we need to tell IAuth to hurry up? */
     if (hurry_up && IAuthHas(iauth, IAUTH_UNDERNET))
-      sendto_iauth(auth->client, "H");
+      sendto_iauth(auth->client, "H %s", get_client_class(auth->client));
 
     Debug((DEBUG_INFO, "Auth %p [%d] still has flag %d", auth,
            cli_fd(auth->client), AR_IAUTH_PENDING));
@@ -1214,6 +1220,15 @@ int auth_set_user(struct AuthRequest *auth, const char *username, const char *ho
   else if (IAuthHas(iauth, IAUTH_ADDLINFO))
     sendto_iauth(cptr, "U %s", username);
   return check_auth_finished(auth, AR_NEEDS_USER);
+}
+
+/** Handle SASL
+*/
+int auth_set_sasl(struct AuthRequest *auth, const char *nick, const char *reg, const char *pass)
+{
+  assert(auth != NULL);
+  sendto_iauth(auth->client, "Y %s %s %s", nick, reg, pass);
+  return 0;
 }
 
 /** Handle authorization-related aspects of initial nickname selection.
@@ -2071,6 +2086,49 @@ static int iauth_cmd_done_client(struct IAuth *iauth, struct Client *cli,
  * @param[in] params Account name and optional class name for client.
  * @return Non-zero if \a cli authorization should be checked for completion.
  */
+static int iauth_cmd_sasl(struct IAuth *iauth, struct Client *cli,
+				  int parc, char **params)
+{
+  /* Sanity check. */
+  if (EmptyString(params[0]) || EmptyString(params[1]) || EmptyString(params[2])) {
+    return 0;
+  }
+  char *cmd = params[0];
+  char *nick = params[1];
+  char *account = params[2]; 
+  struct Client *usr = FindClient(nick);
+  if(usr) { 
+	if(!ircd_strcmp(cmd, "S")) {
+		if (EmptyString(params[3]) || EmptyString(params[4])) {
+			return 0;
+		}		
+		char *timestamp = params[3];
+		char *id = params[4];     
+		ircd_strncpy(cli_user(usr)->account, account, ACCOUNTLEN);
+        cli_user(usr)->acc_create = atoi(timestamp);
+	    cli_user(usr)->acc_id = strtoul(id, NULL, 10);
+		SetAccount(usr);
+		send_reply(usr, RPL_LOGGEDIN, usr, cli_name(usr), account);
+		send_reply(usr, RPL_SASLSUCCESS);
+	} else if(!ircd_strcmp(cmd, "N")) {
+		send_reply(usr, ERR_NICKLOCKED); 
+		send_reply(usr, ERR_SASLFAIL); 
+	} else if(!ircd_strcmp(cmd, "A")) {
+		send_reply(usr, ERR_SASLALREADY); 
+	} else if(!ircd_strcmp(cmd, "F")) {
+		send_reply(usr, ERR_SASLFAIL);	
+	}
+  }
+  return 1;
+}
+
+/** Accept a client in IAuth and assign them to an account.
+ * @param[in] iauth Active IAuth session.
+ * @param[in] cli Client referenced by command.
+ * @param[in] parc Number of parameters.
+ * @param[in] params Account name and optional class name for client.
+ * @return Non-zero if \a cli authorization should be checked for completion.
+ */
 static int iauth_cmd_done_account(struct IAuth *iauth, struct Client *cli,
 				  int parc, char **params)
 {
@@ -2239,6 +2297,7 @@ static void iauth_parse(struct IAuth *iauth, char *message)
   case 'd': handler = iauth_cmd_soft_done; has_cli = 1; break;
   case 'D': handler = iauth_cmd_done_client; has_cli = 1; break;
   case 'R': handler = iauth_cmd_done_account; has_cli = 1; break;
+  case 'Y': handler = iauth_cmd_sasl; has_cli = 0; break;
   case 'k': /* The 'k' command indicates the user should be booted
 	     * off without telling opers.  There is no way to
 	     * signal that to exit_client(), so we fall through to

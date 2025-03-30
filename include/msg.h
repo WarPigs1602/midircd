@@ -396,6 +396,9 @@ struct Client;
 #define TOK_RENAME	"RE"
 #define CMD_RENAME	MSG_RENAME, TOK_RENAME
 
+#define MSG_STARTTLS  "STARTTLS"
+#define TOK_STARTTLS  "STARTTLS"
+#define CMD_STARTTLS  MSG_STARTTLS, TOK_STARTTLS
 /*
  * Constants
  */

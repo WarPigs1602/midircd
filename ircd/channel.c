@@ -4616,15 +4616,10 @@ joinbuf_join(struct JoinBuf *jbuf, struct Channel *chan, unsigned int flags)
 		}
 	  } else {
       /* Send the notification to the channel */
-      sendcmdto_capflag_channel_butserv_butone(jbuf->jb_source, CMD_JOIN, chan, NULL, 0,
-        _CAP_LAST_CAP, CAP_EXTJOIN, "%H", chan);
-      sendcmdto_capflag_channel_butserv_butone(jbuf->jb_source, CMD_JOIN, chan, NULL, 0,
-        CAP_EXTJOIN, _CAP_LAST_CAP, "%H %s :%s", chan,
-        IsAccount(jbuf->jb_source) ? cli_account(jbuf->jb_source) : "*",
-        cli_info(jbuf->jb_source));
+      sendjointo_channel_butserv(jbuf->jb_source, chan, 0, 0);
       if (cli_user(jbuf->jb_source)->away)
         sendcmdto_capflag_common_channels_butone(jbuf->jb_source, CMD_AWAY, jbuf->jb_connect,
-          CAP_AWAYNOTIFY, _CAP_LAST_CAP, ":%s", cli_user(jbuf->jb_source)->away);
+          CAP_AWAYNOTIFY, 0, ":%s", cli_user(jbuf->jb_source)->away);
 
       /* send an op, too, if needed */
       
@@ -4654,9 +4649,8 @@ joinbuf_join(struct JoinBuf *jbuf, struct Channel *chan, unsigned int flags)
 					 chan, jbuf->jb_source);
 	  }
     } else
-	if (MyUser(jbuf->jb_source)) {
-      sendcmdto_one(jbuf->jb_source, CMD_JOIN, jbuf->jb_source, ":%H", chan);
-	}
+    if (MyUser(jbuf->jb_source))
+      sendjointo_one(jbuf->jb_source, chan, jbuf->jb_source);
   }
 
   if (jbuf->jb_type == JOINBUF_TYPE_PARTALL ||
@@ -4744,17 +4738,13 @@ int IsInvited(struct Client* cptr, const void* chptr)
   return 0;
 }
 
-/* RevealDelayedJoin: sends a join for a hidden user */
-
 void RevealDelayedJoin(struct Membership *member)
 {
   ClearDelayedJoin(member);
-  sendcmdto_capflag_channel_butserv_butone(member->user, CMD_JOIN, member->channel, NULL, 0,
-        _CAP_LAST_CAP, CAP_EXTJOIN, "%H", member->channel);
-  sendcmdto_capflag_channel_butserv_butone(member->user, CMD_JOIN, member->channel, NULL, 0,
-        CAP_EXTJOIN, _CAP_LAST_CAP, "%H %s :%s", member->channel,
-        IsAccount(member->user) ? cli_account(member->user) : "*",
-        cli_info(member->user));
+  sendjointo_channel_butserv(member->user, member->channel, 0, 0);
+  if (cli_user(member->user)->away)
+    sendcmdto_capflag_channel_butserv_butone(member->user, CMD_AWAY, member->channel,
+      NULL, 0, CAP_AWAYNOTIFY, 0, ":%s", cli_user(member->user)->away);
   CheckDelayedJoins(member->channel);
 }
 
@@ -4767,4 +4757,13 @@ void CheckDelayedJoins(struct Channel *chan)
     sendcmdto_channel_butserv_butone(&his, CMD_MODE, chan, NULL, 0,
                                      "%H -d", chan);
   }
+}
+
+/** Send a join for the user if (s)he is a hidden member of the channel.
+ */
+void RevealDelayedJoinIfNeeded(struct Client *sptr, struct Channel *chptr)
+{
+  struct Membership *member = find_member_link(chptr, sptr);
+  if (member && IsDelayedJoin(member))
+    RevealDelayedJoin(member);
 }

@@ -18,7 +18,7 @@
  */
 /** @file
  * @brief Outbound message queue implementation.
- * @version $Id$
+ * @version $Id: msgq.c,v 1.12.2.1 2006/03/14 03:56:58 entrope Exp $
  */
 #include "config.h"
 
@@ -194,7 +194,7 @@ msgq_mapiov(const struct MsgQ *mq, struct iovec *iov, int count,
   assert(0 != count);
   assert(0 != len);
 
-  if (mq->length < 1) /* no data to map */
+  if (mq->length <= 0) /* no data to map */
     return 0;
 
   if (mq->queue.head && mq->queue.head->sent > 0) { /* partial msg on norm q */
@@ -247,8 +247,8 @@ msgq_mapiov(const struct MsgQ *mq, struct iovec *iov, int count,
 }
 
 /** Allocate a message buffer large enough to hold \a length bytes.
- *
- * @param[in] in_mb Buffer containing the desired message.
+ * TODO: \a in_mb needs better documentation.
+ * @param[in] in_mb Some other message buffer(?).
  * @param[in] length Number of bytes of space to reserve in output.
  * @return Pointer to some usable message buffer.
  */
@@ -549,41 +549,6 @@ msgq_add(struct MsgQ *mq, struct MsgBuf *mb, int prio)
   mq->count++; /* and the queue count */
 }
 
-static int msgqlist_excise(struct MsgQ *mq, struct MsgQList *qlist,
-                           const char *buf, unsigned int len)
-{
-  struct Msg *msg;
-
-  msg = qlist->head;
-  if (!msg)
-    return 0;
-
-  if (buf != msg->msg->msg)
-    return 0;
-
-  assert(len == msg->msg->length);
-  msgq_delmsg(mq, qlist, &len);
-  return 1;
-}
-
-/** Excise a message from the front of a message queue.
- *
- * This is used for TLS, where TLS libraries may return an EAGAIN-like
- * condition for a send but also require the application to provide
- * exactly the same contents for the next send.
- *
- * @warning \a buf must be at the front of one of \a mq's queues.
- * @param[in] mq Message queue to operate on.
- * @param[in] buf Buffered message to excise.
- * @param[in] len Length of buffered message.
- */
-void msgq_excise(struct MsgQ *mq, const char *buf, unsigned int len)
-{
-  if (!msgqlist_excise(mq, &mq->queue, buf, len)
-      && !msgqlist_excise(mq, &mq->prio, buf, len))
-    assert(0 && "msgq_excise() could not find message to excise");
-}
-
 /** Report memory statistics for message buffers.
  * @param[in] cptr Client requesting information.
  * @param[out] msg_alloc Receives number of bytes allocated in Msg structs.
@@ -624,6 +589,41 @@ msgq_count_memory(struct Client *cptr, size_t *msg_alloc, size_t *msgbuf_alloc)
     total += MQData.msgBufs[i - MB_BASE_SHIFT].alloc * size;
   }
   *msgbuf_alloc = total;
+}
+
+static int msgqlist_excise(struct MsgQ *mq, struct MsgQList *qlist,
+                           const char *buf, unsigned int len)
+{
+  struct Msg *msg;
+
+  msg = qlist->head;
+  if (!msg)
+    return 0;
+
+  if (buf != msg->msg->msg)
+    return 0;
+
+  assert(len == msg->msg->length);
+  msgq_delmsg(mq, qlist, &len);
+  return 1;
+}
+
+/** Excise a message from the front of a message queue.
+ *
+ * This is used for TLS, where TLS libraries may return an EAGAIN-like
+ * condition for a send but also require the application to provide
+ * exactly the same contents for the next send.
+ *
+ * @warning \a buf must be at the front of one of \a mq's queues.
+ * @param[in] mq Message queue to operate on.
+ * @param[in] buf Buffered message to excise.
+ * @param[in] len Length of buffered message.
+ */
+void msgq_excise(struct MsgQ *mq, const char *buf, unsigned int len)
+{
+  if (!msgqlist_excise(mq, &mq->queue, buf, len)
+      && !msgqlist_excise(mq, &mq->prio, buf, len))
+    assert(0 && "msgq_excise() could not find message to excise");
 }
 
 /** Report remaining space in a MsgBuf.

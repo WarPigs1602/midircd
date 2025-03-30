@@ -1091,7 +1091,7 @@ m_squit.o: m_squit.c ../config.h ../include/client.h \
 m_starttls.o: m_starttls.c ../config.h ../include/client.h \
  ../include/ircd_defs.h ../include/dbuf.h ../include/msgq.h \
  ../include/ircd_events.h ../include/ircd_handler.h ../include/res.h \
- ../include/capab.h ../include/dbuf.h ../include/handlers.h \
+ ../include/dbuf.h ../include/handlers.h \
  ../include/ircd_reply.h ../include/ircd_tls.h ../include/ircd_osdep.h \
  ../include/numeric.h ../include/send.h
 m_stats.o: m_stats.c ../config.h ../include/client.h \
