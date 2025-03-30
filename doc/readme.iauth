@@ -234,6 +234,15 @@ Comments: Indicates the server's name and upper bound on client
   identifiers.
 Compatibility: ircd does not include the <capacity> information.
   The <id> should be ignored: ircd sends 0 and ircu sends -1.
+  
+Y - SASL
+Syntax: <id> Y <nick> <account> <password>
+Example: 5 Y Buddha Buddha password
+States: REGISTER
+Comments: Indicates the server uses SASL auth and submit it to the iauthd
+Compatibility: This is an midircd extension and ircd does not support
+  this message.
+
 
 IAUTH MESSAGES
 ==============
@@ -430,3 +439,14 @@ Comments: Indicates that the iauth instance believes the specified
   should be assigned to that class.
 Compatibility: This is an Undernet extension and ircd does not support
   this message.
+
+Y - SASL
+Syntax: Y <cmd> <nick> <account> [timestamp] [id]
+Example: Y S Buddha Buddha 123456789 31337
+States: REGISTER, HURRY
+Next State: NORMAL
+Comments: Indicates that the specified client should be authed
+  with SASL.
+Compatibility: This is an midircd extension and ircd does not support
+  this message.
+  
