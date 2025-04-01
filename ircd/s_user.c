@@ -2067,18 +2067,5 @@ send_supported(struct Client *cptr)
 int
 register_sasl(struct Client* cptr, struct Client* sptr, int parc, char* parv[])
 {
-	if(!ircd_strcmp(parv[1], "PLAIN")) {
-		if(sptr->cli_sasl != 1) {
-			sendcmdto_one(&me, CMD_AUTHENTICATE, sptr, "+"); 
-			sptr->cli_sasl = 1;
-		} else {
-			send_reply(sptr, ERR_SASLALREADY);
-		}
-	 } else if(*parv[1] == '*') {
-		send_reply(sptr, ERR_SASLABORTED);
-	 } else if(sptr->cli_sasl == 1){
-        auth_set_sasl(cli_auth(sptr), parv[1]);
-	 } else {
-		send_reply(sptr, RPL_SASLMECHS, "PLAIN");	 
-	 }	
+	auth_set_sasl(cli_auth(sptr), parv[1]);
 }

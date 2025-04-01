@@ -66,6 +66,7 @@
 
 #include <errno.h>
 #include <string.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
 #include <fcntl.h>
@@ -736,50 +737,6 @@ int auth_set_sasl(struct AuthRequest *auth, const char *crypt)
   assert(auth != NULL);
   sendto_iauth(auth->client, "Y %s", crypt);
   return 0;
-}
-
-/** Accept a client in IAuth and assign them to an account.
- * @param[in] iauth Active IAuth session.
- * @param[in] cli Client referenced by command.
- * @param[in] parc Number of parameters.
- * @param[in] params Account name and optional class name for client.
- * @return Non-zero if \a cli authorization should be checked for completion.
- */
-static int iauth_cmd_sasl(struct IAuth *iauth, struct Client *cli,
-				  int parc, char **params)
-{
-  /* Sanity check. */
-  if (EmptyString(params[1]) || EmptyString(params[2]) || EmptyString(params[3])) {
-    return 0;
-  }
-  char *cmd = params[1];
-  char *nick = params[2];
-  char *account = params[3]; 
-  struct Client *usr = FindClient(nick);
-  if(usr) { 
-	if(!ircd_strcmp(cmd, "S")) {
-		if (EmptyString(params[4]) || EmptyString(params[5])) {
-			return 0;
-		}		
-		char *timestamp = params[4];
-		char *id = params[5];     
-		ircd_strncpy(cli_user(usr)->account, account, ACCOUNTLEN);
-        cli_user(usr)->acc_create = atoi(timestamp);
-	    cli_user(usr)->acc_id = strtoul(id, NULL, 10);
-		SetAccount(usr);
-		send_reply(usr, RPL_LOGGEDIN, usr, cli_name(usr), account);
-		send_reply(usr, RPL_SASLSUCCESS);
-	} else if(!ircd_strcmp(cmd, "N")) {
-		send_reply(usr, ERR_NICKLOCKED); 
-		send_reply(usr, ERR_SASLFAIL);
-	} else if(!ircd_strcmp(cmd, "A")) {
-		send_reply(usr, ERR_SASLALREADY);
-		send_reply(usr, ERR_SASLFAIL); 
-	} else if(!ircd_strcmp(cmd, "F")) {
-		send_reply(usr, ERR_SASLFAIL);	
-	}
-  }
-  return 1;
 }
 
 /** Handle a 'ping' (authorization) timeout for a client.
@@ -1459,10 +1416,7 @@ static int sendto_iauth(struct Client *cptr, const char *format, ...)
   /* Build the message buffer. */
   vd.vd_format = format;
   va_start(vd.vd_args, format);
-  if (0 == cptr)
-    mb = msgq_make(NULL, "-1 %v", &vd);
-  else
-    mb = msgq_make(NULL, "%d %v", cli_fd(cptr), &vd);
+  mb = msgq_make(NULL, "%d %v", cptr ? cli_fd(cptr) : -1, &vd);
   va_end(vd.vd_args);
 
   /* Tack it onto the iauth sendq and try to write it. */
@@ -1959,6 +1913,52 @@ static int iauth_cmd_kill(struct IAuth *iauth, struct Client *cli,
   return 0;
 }
 
+/** Accept a client in IAuth and assign them to an account.
+ * @param[in] iauth Active IAuth session.
+ * @param[in] cli Client referenced by command.
+ * @param[in] parc Number of parameters.
+ * @param[in] params Account name and optional class name for client.
+ * @return Non-zero if \a cli authorization should be checked for completion.
+ */
+static int iauth_cmd_sasl(struct IAuth *iauth, struct Client *cli,
+				  int parc, char **params)
+{
+  assert(cli_auth(cli) != NULL);
+  /* Sanity check. */
+  if (EmptyString(params[0])) {
+    return 0;
+  }
+  char *cmd = params[0];
+	if(!ircd_strcmp(cmd, "Q")) {
+		sendcmdto_one(&me, CMD_AUTHENTICATE, cli, params[1]); 
+	} else if(!ircd_strcmp(cmd, "O")) {
+		send_reply(cli, ERR_SASLABORTED);
+	} else if(!ircd_strcmp(cmd, "S")) {
+		if (EmptyString(params[3]) || EmptyString(params[4])) {
+			return 0;
+		}		
+		char *nick = params[1];
+		char *account = params[2]; 
+		char *timestamp = params[3];
+		char *id = params[4];     
+		ircd_strncpy(cli_user(cli)->account, account, ACCOUNTLEN);
+        cli_user(cli)->acc_create = atoi(timestamp);
+	    cli_user(cli)->acc_id = strtoul(id, NULL, 10);
+		SetAccount(cli);
+		send_reply(cli, RPL_LOGGEDIN, cli, cli_name(cli), account);
+		send_reply(cli, RPL_SASLSUCCESS);
+	} else if(!ircd_strcmp(cmd, "N")) {
+		send_reply(cli, ERR_NICKLOCKED); 
+		send_reply(cli, ERR_SASLFAIL);
+	} else if(!ircd_strcmp(cmd, "A")) {
+		send_reply(cli, ERR_SASLALREADY);
+		send_reply(cli, ERR_SASLFAIL); 
+	} else if(!ircd_strcmp(cmd, "F")) {
+		send_reply(cli, ERR_SASLFAIL);	
+	}
+  return 0;
+}
+
 /** Change a client's usermode.
  * @param[in] iauth Active IAuth session.
  * @param[in] cli Client referenced by command.
@@ -2017,6 +2017,7 @@ static void iauth_parse(struct IAuth *iauth, char *message)
   case 'A': handler = iauth_cmd_config; has_cli = 0; break;
   case 's': handler = iauth_cmd_newstats; has_cli = 0; break;
   case 'S': handler = iauth_cmd_stats; has_cli = 0; break;
+  case 'Y': handler = iauth_cmd_sasl; has_cli = 1; break;
   case 'o': handler = iauth_cmd_username_forced; has_cli = 1; break;
   case 'U': handler = iauth_cmd_username_good; has_cli = 1; break;
   case 'u': handler = iauth_cmd_username_bad; has_cli = 1; break;
@@ -2026,7 +2027,6 @@ static void iauth_parse(struct IAuth *iauth, char *message)
   case 'C': handler = iauth_cmd_challenge; has_cli = 1; break;
   case 'D': handler = iauth_cmd_done_client; has_cli = 1; break;
   case 'R': handler = iauth_cmd_done_account; has_cli = 1; break;
-  case 'Y': handler = iauth_cmd_sasl; has_cli = 0; break;
   case 'k': /* The 'k' command indicates the user should be booted
 	     * off without telling opers.  There is no way to
 	     * signal that to exit_client(), so we fall through to
