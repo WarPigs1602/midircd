@@ -253,29 +253,57 @@ static int auth_set_username(struct AuthRequest *auth)
   struct User   *user = cli_user(sptr);
   char *d;
   char *s;
-  short upper = 0;
-  short lower = 0;
-  short leadcaps = 0;
+  int   rlen = USERLEN;
+  int   killreason;
+  short character = 0;
+  short pos = 0;
   short other = 0;
   short digits = 0;
-  short digitgroups = 0;
   char  ch;
   char  last;
 
-  if (FlagHas(&auth->flags, AR_IAUTH_FUSERNAME))
+  if (FlagHas(&auth->flags, AR_IAUTH_USERNAME))
   {
-    ircd_strncpy(user->username, cli_username(sptr), USERLEN);
+      ircd_strncpy(cli_user(sptr)->username, cli_username(sptr), USERLEN);
   }
-  else if (IsIdented(sptr))
+  else
   {
-     s = IsIdented(sptr) ? cli_username(sptr) : user->username;
+    /* Copy username from source to destination.  Since they may be the
+     * same, and we may prefix with a '~', use a buffer character (ch)
+     * to hold the next character to copy.
+     */
+    s = IsIdented(sptr) ? cli_username(sptr) : user->username;
+    last = *s++;
+    d = user->username;
+    if (HasFlag(sptr, FLAG_DOID) && !IsIdented(sptr))
+    {
+      *d++ = '~';
+      --rlen;
+    }
+    while (last && !IsCntrl(last) && rlen--)
+    {
+      ch = *s++;
+      *d++ = IsUserChar(last) ? last : '_';
+      last = (ch != '~') ? ch : '_';
+    }
+    *d = 0;
   }
-  /* else username was set by identd lookup (or failure thereof) */
 
   /* If username is empty or just ~, reject. */
   if ((user->username[0] == '\0')
       || ((user->username[0] == '~') && (user->username[1] == '\0')))
     return exit_client(sptr, sptr, &me, "USER: Bogus userid.");
+
+  /* Have to set up "realusername" before doing the gline check below */
+  ircd_strncpy(user->realusername, user->username, USERLEN);
+
+  /* Check for K- or G-line. */
+  killreason = find_kill(sptr, 1);
+  if (killreason) {
+    ServerStats->is_ref++;
+    return exit_client(sptr, sptr, &me,
+                       (killreason == -1 ? "K-lined" : "G-lined"));
+  }
 
   if (!FlagHas(&auth->flags, AR_IAUTH_FUSERNAME))
   {
@@ -285,32 +313,21 @@ static int auth_set_username(struct AuthRequest *auth)
     s = d = user->username + (user->username[0] == '~');
     for (last = '\0';
          (ch = *d++) != '\0';
-         last = ch)
+         pos++, last = ch)
     {
-      if (IsLower(ch))
+      if (IsLower(ch) || IsUpper(ch))
       {
-        lower++;
-      }
-      else if (IsUpper(ch))
-      {
-        upper++;
-        /* Accept caps as leading if we haven't seen lower case or digits yet. */
-        if ((leadcaps || last == '\0') && !lower && !digits)
-          leadcaps++;
+        character++;
       }
       else if (IsDigit(ch))
       {
         digits++;
-        if (!IsDigit(last))
-        {
-          digitgroups++;
-        }
       }
       else if (ch == '-' || ch == '_' || ch == '.')
       {
         other++;
         /* If -_. exist at start, consecutively, or more than twice, reject. */
-        if (last == '\0' || last == '-' || last == '_' || last == '.' || other > 2)
+        if (pos == 0 || last == '-' || last == '_' || last == '.' || other > 2)
           goto badid;
       }
       else /* All other punctuation is rejected. */
@@ -318,23 +335,7 @@ static int auth_set_username(struct AuthRequest *auth)
     }
 
     /* Must have at least one letter. */
-    if (!lower && !upper)
-      goto badid;
-
-    /* If more than two groups of digits, reject. */
-    if (digitgroups > 2)
-      goto badid;
-    /* If mixed case, first must be capital, but no more than three;
-     * but if three capitals, they must all be leading. */
-    if (lower && upper && (!leadcaps || leadcaps > 3 ||
-                           (upper > 2 && upper > leadcaps)))
-      goto badid;
-    /* If two different groups of digits, one must be either at the
-     * start or end. */
-    if (digitgroups == 2 && !(IsDigit(s[0]) || IsDigit(ch)))
-      goto badid;
-    /* Final character must not be punctuation. */
-    if (!IsAlnum(last))
+    if (!character)
       goto badid;
   }
 
@@ -346,7 +347,7 @@ badid:
   if (IsIdented(sptr) && !strcmp(cli_username(sptr), user->username))
     return 0;
 
-  ++ServerStats->is_ref;
+  ServerStats->is_ref++;
   send_reply(sptr, SND_EXPLICIT | ERR_INVALIDUSERNAME,
              ":Your username is invalid.");
   send_reply(sptr, SND_EXPLICIT | ERR_INVALIDUSERNAME,
@@ -754,9 +755,8 @@ int auth_set_sasl(struct AuthRequest *auth, const char *crypt)
   assert(auth != NULL);
   if(CapHas(cli_active(auth->client), CAP_SASL)) {
 	 sendto_iauth(auth->client, "Y %s", crypt);
-	 return check_auth_finished(auth);
-  } else
-	  return 0;
+  }
+  return 0;
 }
 
 /** Handle a 'ping' (authorization) timeout for a client.
