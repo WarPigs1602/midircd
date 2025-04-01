@@ -655,6 +655,13 @@ struct Message msgtab[] = {
    * open gateways
    */
   {
+    MSG_WEBIRC,
+    TOK_WEBIRC,
+    0, MAXPARA, MFLG_SLOW, 0, NULL,
+    /* UNREG, CLIENT, SERVER, OPER, SERVICE */
+    { m_webirc, m_registered, m_ignore, m_registered, m_ignore }
+  },   
+  {
     MSG_POST,
     TOK_POST,
     0, MAXPARA, MFLG_SLOW, 0, NULL,

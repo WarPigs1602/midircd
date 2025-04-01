@@ -32,6 +32,7 @@
 struct Client;
 struct AuthRequest;
 struct StatDesc;
+struct irc_in_addr;
 
 extern void start_auth(struct Client *);
 extern int auth_ping_timeout(struct Client *);
@@ -50,6 +51,7 @@ extern void auth_close_unused(void);
 extern int auth_set_sasl(struct AuthRequest *auth, const char *crypt);
 extern void report_iauth_conf(struct Client *cptr, const struct StatDesc *sd, char *param);
 extern void report_iauth_stats(struct Client *cptr, const struct StatDesc *sd, char *param);
+extern int auth_set_webirc(struct AuthRequest *auth, const char *password, const char *username, const char *hostname, struct irc_in_addr *ip);
 
 #endif /* INCLUDED_s_auth_h */
 

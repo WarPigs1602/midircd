@@ -225,6 +225,24 @@ static void sendheader(struct Client *cptr, ReportType r)
   }
 }
 
+int auth_set_webirc(struct AuthRequest *auth, const char *password, const char *username, const char *hostname, struct irc_in_addr *ip)
+{
+  struct Client *cptr;
+
+  assert(auth != NULL);
+
+  cptr = auth->client;
+
+  if (!FlagHas(&auth->flags, AR_NEEDS_NICK) || !FlagHas(&auth->flags, AR_NEEDS_USER))
+    return exit_client(cptr, cptr, &me, "WEBIRC must not be used after USER or NICK");
+
+  if (IAuthHas(iauth, IAUTH_UNDERNET))
+    sendto_iauth(cptr, "W %s %s %s %s", password, username, hostname, ircd_ntoa(ip));
+
+  return 0;
+}
+
+
 /** Set username for user associated with \a auth.
  * @param[in] auth Client authorization request to work on.
  * @return Zero if client is kept, CPTR_KILLED if client rejected.
