@@ -35,7 +35,6 @@
 #include "ircd.h"
 #include "ircd_alloc.h"
 #include "ircd_chattr.h"
-#include "ircd_lexer.h"
 #include "ircd_log.h"
 #include "ircd_reply.h"
 #include "ircd_snprintf.h"
@@ -77,11 +76,6 @@ struct s_map     *GlobalServiceMapList;
 struct qline     *GlobalQuarantineList;
 /** Global list of spoofhosts. */
 struct sline    *GlobalSList = 0;
-/** Global list of webirc authorizations. */
-struct wline*      GlobalWebircList;
-
-/** Flag for whether to perform ident lookups. */
-int DoIdentLookups;
 
 /** Current line number in scanner input. */
 int lineno;
@@ -809,23 +803,6 @@ find_quarantine(const char *chname)
   return NULL;
 }
 
-/** Find a WebIRC authorization for the given client address.
- * @param addr IP address to search for.
- * @param passwd Client-provided password for block.
- * @return WebIRC authorization block, or NULL if none exists.
- */
-const struct wline *
-find_webirc(const struct irc_in_addr *addr, const char *passwd)
-{
-  struct wline *wline;
-
-  for (wline = GlobalWebircList; wline; wline = wline->next)
-    if (ipmask_check(addr, &wline->ip, wline->bits)
-        && (0 == strcmp(wline->passwd, passwd)))
-      return wline;
-  return NULL;
-}
-
 /** Free all qline structs from #GlobalQuarantineList. */
 void clear_quarantines(void)
 {
@@ -839,35 +816,13 @@ void clear_quarantines(void)
   }
 }
 
-/** Mark everything in #GlobalWebircList stale. */
-static void webirc_mark_stale(void)
-{
-  struct wline *wline;
-  for (wline = GlobalWebircList; wline; wline = wline->next)
-    wline->stale = 1;
-}
-
-/** Remove any still-stale entries in #GlobalWebircList. */
-static void webirc_remove_stale(void)
-{
-  struct wline *wline, **pp_w;
-
-  for (pp_w = &GlobalWebircList; (wline = *pp_w) != NULL; ) {
-    if (wline->stale) {
-      *pp_w = wline->next;
-      MyFree(wline->passwd);
-      MyFree(wline->description);
-      MyFree(wline);
-    } else {
-      pp_w = &wline->next;
-    }
-  }
-}
-
 /** When non-zero, indicates that a configuration error has been seen in this pass. */
 static int conf_error;
 /** When non-zero, indicates that the configuration file was loaded at least once. */
 static int conf_already_read;
+extern FILE *yyin;
+extern void yyparse(void);
+extern void init_lexer(void);
 
 /** Read configuration file.
  * @return Zero on failure, non-zero on success. */
@@ -876,10 +831,11 @@ int read_configuration_file(void)
   conf_error = 0;
   feature_unmark(); /* unmark all features for resetting later */
   clear_nameservers(); /* clear previous list of DNS servers */
-  if (!init_lexer())
-    return 0;
+  /* Now just open an fd. The buffering isn't really needed... */
+  init_lexer();
   yyparse();
-  deinit_lexer();
+  fclose(yyin);
+  yyin = NULL;
   feature_mark(); /* reset unmarked features */
   conf_already_read = 1;
   return 1;
@@ -997,9 +953,7 @@ int rehash(struct Client *cptr, int sig)
   class_mark_delete();
   mark_listeners_closing();
   auth_mark_closing();
-  webirc_mark_stale();
   close_mappings();
-  DoIdentLookups = 0;
 
   read_configuration_file();
 
@@ -1028,7 +982,6 @@ int rehash(struct Client *cptr, int sig)
 
   for (i = 0; i <= HighestFd; i++) {
     if ((acptr = LocalClientArray[i])) {
-      const struct wline *wline;
       assert(!IsMe(acptr));
       if (IsServer(acptr))
         det_confs_butmask(acptr, ~(CONF_UWORLD | CONF_ILLEGAL));
@@ -1036,7 +989,7 @@ int rehash(struct Client *cptr, int sig)
        * get past K/G's etc, we'll "fix" the bug by actually explaining
        * whats going on.
        */
-      if ((found_g = find_kill(acptr))) {
+      if ((found_g = find_kill(acptr, 0))) {
         sendto_opmask_butone(0, found_g == -2 ? SNO_GLINE : SNO_OPERKILL,
                              found_g == -2 ? "G-line active for %s%s" :
                              "K-line active for %s%s",
@@ -1045,16 +998,11 @@ int rehash(struct Client *cptr, int sig)
         if (exit_client(cptr, acptr, &me, found_g == -2 ? "G-lined" :
             "K-lined") == CPTR_KILLED)
           ret = CPTR_KILLED;
-      } else if ((wline = cli_wline(acptr)) && wline->stale) {
-        if (exit_client(cptr, acptr, &me, "WebIRC authorization removed")
-            == CPTR_KILLED)
-          ret = CPTR_KILLED;
       }
     }
   }
 
   attach_conf_uworld(&me);
-  webirc_remove_stale();
 
   return ret;
 }
@@ -1096,16 +1044,14 @@ int init_conf(void)
  * @return 0 if client is accepted; -1 if client was locally denied
  * (K-line); -2 if client was globally denied (G-line).
  */
-int find_kill(struct Client *cptr)
+int find_kill(struct Client *cptr, int glinecheck)
 {
   const char*      host;
-  const char*   spoofhost;
-  const char*   realhost;
-  const char*   realname;
   const char*      name;
-  const char*      authhost;
+  const char*      realname;
   struct DenyConf* deny;
   struct Gline*    agline = NULL;
+
   assert(0 != cptr);
 
   if (!cli_user(cptr))
@@ -1114,14 +1060,10 @@ int find_kill(struct Client *cptr)
   host = cli_sockhost(cptr);
   name = cli_user(cptr)->username;
   realname = cli_info(cptr);
-  spoofhost = cli_user(cptr)->host;
-  authhost = cli_user(cptr)->authhost;
 
   assert(strlen(host) <= HOSTLEN);
   assert((name ? strlen(name) : 0) <= HOSTLEN);
-  assert((spoofhost ? strlen(spoofhost) : 0) <= HOSTLEN);
   assert((realname ? strlen(realname) : 0) <= REALLEN);
-  assert((authhost ? strlen(authhost) : 0) <= HOSTLEN);
 
   /* 2000-07-14: Rewrote this loop for massive speed increases.
    *             -- Isomer
@@ -1134,13 +1076,9 @@ int find_kill(struct Client *cptr)
     if (deny->bits > 0) {
       if (!ipmask_check(&cli_ip(cptr), &deny->address, deny->bits))
         continue;
-    } else if (deny->hostmask && match(deny->hostmask, host)) {
+    } else if (deny->hostmask && match(deny->hostmask, host))
       continue;
-    } else if (deny->hostmask && match(deny->hostmask, spoofhost)) {
-      continue;
-    } else if (deny->hostmask && match(deny->hostmask, authhost)) {
-      continue;
-    }
+
     if (EmptyString(deny->message))
       send_reply(cptr, SND_EXPLICIT | ERR_YOUREBANNEDCREEP,
                  ":Connection from your host is refused on this server.");
@@ -1153,7 +1091,13 @@ int find_kill(struct Client *cptr)
     return -1;
   }
 
-  if (!feature_bool(FEAT_DISABLE_GLINES) && (agline = gline_lookup(cptr, 0))) {
+  /* added glinecheck to define if we check for glines too, shouldn't happen
+   * when rehashing as it is causing problems with big servers and lots of glines.
+   * Think of a 18000 user leaf with 18000 glines present, this will probably
+   * cause the server to split from the net.
+   * -skater_x
+   */
+  if (glinecheck && (agline = gline_lookup(cptr, 0)) && GlineIsActive(agline)) {
     /*
      * find active glines
      * added a check against the user's IP address to find_gline() -Kev

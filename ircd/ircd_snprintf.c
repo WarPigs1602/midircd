@@ -181,7 +181,6 @@ struct FieldData {
 #define CONV_CLIENT	0x06000000	/**< convert a struct Client */
 #define CONV_CHANNEL	0x07000000	/**< convert a struct Channel */
 #define CONV_REAL	0x08000000      /**< convert a struct Client and show realhost */
-#define CONV_RENAME	0x100000000      /**< convert a struct Client and show realhost */
 
 #define CONV_RESERVED6	0x09000000	/**< reserved for future expansion */
 #define CONV_RESERVED5	0x0a000000	/**< reserved for future expansion */
@@ -1789,12 +1788,6 @@ doprintf(struct Client *dest, struct BufData *buf_p, const char *fmt,
 			 FLAG_COLON | TYPE_MASK);
 	fld_s.flags |= ARG_PTR | CONV_CHANNEL;
 	break;
-	
-      case 'N': /* convert a channel name... */
-	fld_s.flags &= ~(FLAG_PLUS | FLAG_SPACE | FLAG_ALT | FLAG_ZERO |
-			 FLAG_COLON | TYPE_MASK);
-	fld_s.flags |= ARG_PTR | CONV_RENAME;
-	break;
 
       default: /* Unsupported, display a message and the entire format */
 	adds(buf_p, -1, "(Unsupported: %");
@@ -2117,21 +2110,6 @@ doprintf(struct Client *dest, struct BufData *buf_p, const char *fmt,
 	do_pad(buf_p, plen, spaces); /* post-padding */
     } else if ((fld_s.flags & CONV_MASK) == CONV_CHANNEL) {
       struct Channel *chan = (struct Channel *)fld_s.value.v_ptr;
-      char *str = chan->chname;
-      int slen, plen;
-
-      slen = my_strnlen(str, fld_s.prec); /* str lengths and pad lengths */
-      plen = (fld_s.width - slen <= 0 ? 0 : fld_s.width - slen);
-
-      if (plen > 0 && !(fld_s.flags & FLAG_MINUS))
-	do_pad(buf_p, plen, spaces); /* pre-padding */
-
-      adds(buf_p, slen, str); /* add the string */
-
-      if (plen > 0 &&  (fld_s.flags & FLAG_MINUS))
-	do_pad(buf_p, plen, spaces); /* post-padding */
-    } else if ((fld_s.flags & CONV_MASK) == CONV_RENAME) {
-      struct RenamedChan *chan = (struct RenamedChan *)fld_s.value.v_ptr;
       char *str = chan->chname;
       int slen, plen;
 

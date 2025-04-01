@@ -209,7 +209,6 @@ void count_memory(struct Client *cptr, const struct StatDesc *sd,
   struct Client *acptr;
   struct SLink *link;
   struct Ban *ban;
-  struct BanEx *banex;
   struct Channel *chptr;
   struct ConfItem *aconf;
   const struct ConnectionClass* cltmp;
@@ -222,7 +221,6 @@ void count_memory(struct Client *cptr, const struct StatDesc *sd,
       lcc = 0,                  /* local client conf links */
       chi = 0,                  /* channel invites */
       chb = 0,                  /* channel bans */
-      chbe = 0,                  /* channel ban exceptions */
       wwu = 0,                  /* whowas users */
       cl = 0,                   /* classes */
       co = 0,                   /* conf lines */
@@ -237,7 +235,6 @@ void count_memory(struct Client *cptr, const struct StatDesc *sd,
 
   size_t chm = 0,               /* memory used by channels */
       chbm = 0,                 /* memory used by channel bans */
-      chbem = 0,                /* memory used by channel ban exceptios */
       cm = 0,                   /* memory used by clients */
       cnm = 0,                  /* memory used by connections */
       us = 0,                   /* user structs */
@@ -300,11 +297,6 @@ void count_memory(struct Client *cptr, const struct StatDesc *sd,
       chb++;
       chbm += strlen(ban->who) + strlen(ban->banstr) + 2 + sizeof(*ban);
     }
-    for (banex = chptr->banexceptionlist; banex; banex = banex->next)
-    {
-      chbe++;
-      chbm += strlen(banex->who) + strlen(banex->banexceptstr) + 2 + sizeof(*banex);
-    }
   }
 
   for (aconf = GlobalConfList; aconf; aconf = aconf->next)
@@ -338,8 +330,6 @@ void count_memory(struct Client *cptr, const struct StatDesc *sd,
 
   send_reply(cptr, SND_EXPLICIT | RPL_STATSDEBUG,
 	     ":Channels %d(%zu) Bans %d(%zu)", ch, chm, chb, chbm);
-  send_reply(cptr, SND_EXPLICIT | RPL_STATSDEBUG,
-	     ":Channels %d(%zu) Ban except %d(%zu)", ch, chm, chbe, chbem);
   send_reply(cptr, SND_EXPLICIT | RPL_STATSDEBUG,
 	     ":Channel Members %d(%zu) Invites %d(%zu)", memberships,
 	     memberships * sizeof(struct Membership), chi,

@@ -1,8 +1,6 @@
 /*
  * IRC - Internet Relay Chat, ircd/s_user.c (formerly ircd/s_msg.c)
  * Copyright (C) 1990 Jarkko Oikarinen and
- * IRC - Internet Relay Chat, ircd/s_user.c (formerly ircd/s_msg.c)
- * Copyright (C) 1990 Jarkko Oikarinen and
  *                    University of Oulu, Computing Center
  *
  * See file AUTHORS in IRC package for additional names of
@@ -178,34 +176,22 @@ void do_who(struct Client* sptr, struct Client* acptr, struct Channel* repchan,
        * multiple channel status flags, as this is currently the only
        * way to know if someone has @'s *and* is +'d.
        */
-	  if (IsChanService(chan))
-        *(p1++) = '!';
-      if (IsChannelManager(chan))
-        *(p1++) = '~';
-      if (IsAdmin(chan))
-        *(p1++) = '&';
       if (IsChanOp(chan))
         *(p1++) = '@';
-      if (IsHalfOp(chan))
-        *(p1++) = '%';
       if (HasVoice(chan))
         *(p1++) = '+';
+      if (IsZombie(chan))
+        *(p1++) = '!';
       if (IsDelayedJoin(chan))
         *(p1++) = '<';
     }
     else {
-	  if (IsChanService(chan))
-        *(p1++) = '!';
-      else if (IsChannelManager(chan))
-        *(p1++) = '~';
-      else if (IsAdmin(chan))
-        *(p1++) = '&';
-      else if (IsChanOp(chan))
+      if (IsChanOp(chan))
         *(p1++) = '@';
-      else if (IsHalfOp(chan))
-        *(p1++) = '%';
       else if (HasVoice(chan))
         *(p1++) = '+';
+      else if (IsZombie(chan))
+        *(p1++) = '!';
       else if (IsDelayedJoin(chan))
         *(p1++) = '<';
     }
@@ -262,7 +248,7 @@ void do_who(struct Client* sptr, struct Client* acptr, struct Channel* repchan,
 
   if (fields & WHO_FIELD_OPL)
   {
-      if (!chan || (!IsChanService(chan) && !IsAdmin(chan) && !IsChanOp(chan) && !IsHalfOp(chan)))
+      if (!chan || !IsChanOp(chan))
       {
         strcpy(p1, " n/a");
         p1 += 4;

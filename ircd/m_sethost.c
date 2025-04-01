@@ -82,7 +82,6 @@
 #include "config.h"
 
 #include "client.h"
-#include "gline.h"
 #include "ircd_reply.h"
 #include "ircd_string.h"
 #include "ircd_snprintf.h"
@@ -90,7 +89,6 @@
 #include "msgq.h"
 #include "numeric.h"
 #include "s_conf.h"
-#include "s_misc.h"
 #include "s_user.h"
 #include "s_debug.h"
 #include "send.h"
@@ -160,8 +158,7 @@ int m_sethost(struct Client* cptr, struct Client* sptr, int parc, char* parv[])
       }
       if (set_hostmask(sptr, parv[1], parv[2]))
         FlagClr(&setflags, FLAG_SETHOST);
-	}
-	
+    }
   }  
 
   send_umode_out(cptr, sptr, &setflags, 0);
@@ -183,8 +180,6 @@ int ms_sethost(struct Client* cptr, struct Client* sptr, int parc, char* parv[])
   char hostmask[USERLEN + HOSTLEN + 2];
   struct Membership *chan;
   struct Flags setflags;
-  struct Gline *gline;
-  int killreason;
 
   if (parc < 4)
     return need_more_params(sptr, "SETHOST");
@@ -219,13 +214,14 @@ int ms_sethost(struct Client* cptr, struct Client* sptr, int parc, char* parv[])
   ircd_snprintf(0, hostmask, USERLEN + HOSTLEN + 2, "%s@%s", parv[2], parv[3]);
   if (!is_hostmask(hostmask))
     return protocol_violation(cptr, "Bad Host mask %s for user %s", hostmask, cli_name(target));
+
   sendcmdto_common_channels_butone(target, CMD_QUIT, target, ":Host change");
 
   /* Assign and propagate the fakehost */
   SetSetHost(target);
   ircd_strncpy(cli_user(target)->username, parv[2], USERLEN);
   ircd_strncpy(cli_user(target)->host, parv[3], HOSTLEN);
-
+  
   send_reply(target, RPL_HOSTHIDDEN, hostmask);
 
   /*
@@ -245,35 +241,15 @@ int ms_sethost(struct Client* cptr, struct Client* sptr, int parc, char* parv[])
       sendcmdto_channel_butserv_butone(target, CMD_JOIN, chan->channel, target, 0,
         "%H", chan->channel);
     }
-    if (IsChannelManager(chan)) {
+    if (IsChanOp(chan) && HasVoice(chan)) {
       sendcmdto_channel_butserv_butone(&his, CMD_MODE, chan->channel, target, 0,
-        "%H +q %C", chan->channel, target);
+        "%H +ov %C %C", chan->channel, target, target);
+    } else if (IsChanOp(chan) || HasVoice(chan)) {
+      sendcmdto_channel_butserv_butone(&his, CMD_MODE, chan->channel, target, 0,
+        "%H +%c %C", chan->channel, IsChanOp(chan) ? 'o' : 'v', target);
     }
-    if (IsAdmin(chan)) {
-      sendcmdto_channel_butserv_butone(&his, CMD_MODE, chan->channel, target, 0,
-        "%H +a %C", chan->channel, target);
-    }
-    if (IsChanOp(chan)) {
-      sendcmdto_channel_butserv_butone(&his, CMD_MODE, chan->channel, target, 0,
-        "%H +o %C", chan->channel, target);
-    }
-    if (IsHalfOp(chan)) {
-      sendcmdto_channel_butserv_butone(&his, CMD_MODE, chan->channel, target, 0,
-        "%H +h %C", chan->channel, target);
-    }
-    if (HasVoice(chan)) {
-      sendcmdto_channel_butserv_butone(&his, CMD_MODE, chan->channel, target, 0,
-        "%H +v %C", chan->channel, target);
-    }	
   }
 
   send_umode_out(target, target, &setflags, 0);
-  killreason = find_kill(target);
-  if (killreason)
-  {
-    ++ServerStats->is_ref;
-    return exit_client(target, target, sptr,
-                       (killreason == -1 ? "K-lined" : "G-lined"));
-  }
   return 0;
 }

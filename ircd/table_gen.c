@@ -105,7 +105,7 @@ static void makeTables(void)
   markRange(NTL_IRCCL, '\330', '\336');
 
   moveMacro(NTL_ALNUM, NTL_IRCHN);
-  markString(NTL_IRCHN, "-_.:");	/* Some DNS might allow '_' per RFC 1033 ! */
+  markString(NTL_IRCHN, "-_.");	/* Some DNS might allow '_' per RFC 1033 ! */
 
   moveMacro(NTL_DIGIT, NTL_IRCIP);
   markString(NTL_IRCIP, ".");
@@ -123,7 +123,7 @@ static void makeTables(void)
   markRange(NTL_IRCUI, '\xd8', '\xde');
   markString(NTL_IRCUI, ".-_^'`~");
   markString(NTL_EOL, "\n\r");
-  markString(NTL_CHPFX, "#&!");
+  markString(NTL_CHPFX, "#&");
   markString(NTL_KTIME, " ,-0123456789");
 
   /* And finally let's take care of the toLower/toUpper stuff */

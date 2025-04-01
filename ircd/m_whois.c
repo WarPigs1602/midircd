@@ -93,7 +93,6 @@
 #include "msg.h"
 #include "numeric.h"
 #include "numnicks.h"
-#include "s_conf.h"
 #include "s_user.h"
 #include "send.h"
 #include "whocmds.h"
@@ -169,8 +168,6 @@ static void do_whois(struct Client* sptr, struct Client *acptr, int parc)
            && feature_bool(FEAT_HIS_WHOIS_LOCALCHAN) && !IsAnOper(sptr))
 	  continue;
 
-       if (IsSaveChannel(chptr->chname) && !IsAnOper(sptr))
-	      continue;
        if (len+strlen(chptr->chname) + mlen > BUFSIZE - 5)
        {
           send_reply(sptr, SND_EXPLICIT | RPL_WHOISCHANNELS, "%s :%s", name, buf);
@@ -183,18 +180,12 @@ static void do_whois(struct Client* sptr, struct Client *acptr, int parc)
          *(buf + len++) = '*';
        if (IsDelayedJoin(chan) && (sptr != acptr))
          *(buf + len++) = '<';
-       else if (IsChannelService(acptr))
-         *(buf + len++) = '!';
-       else if (IsChannelManager(chan))
-         *(buf + len++) = '~';
-       else if (IsAdmin(chan))
-         *(buf + len++) = '&';
        else if (IsChanOp(chan))
          *(buf + len++) = '@';
-       else if (IsHalfOp(chan))
-         *(buf + len++) = '%';
        else if (HasVoice(chan))
          *(buf + len++) = '+';
+       else if (IsZombie(chan))
+         *(buf + len++) = '!';
        if (len)
           *(buf + len) = '\0';
        strcpy(buf + len, chptr->chname);
@@ -211,8 +202,6 @@ static void do_whois(struct Client* sptr, struct Client *acptr, int parc)
 
   if (user)
   {
-    const struct wline *wline;
-	
     if (user->away)
        send_reply(sptr, RPL_AWAY, name, user->away);
 
@@ -242,12 +231,6 @@ static void do_whois(struct Client* sptr, struct Client *acptr, int parc)
                               sptr == acptr || parc >= 3))))
        send_reply(sptr, RPL_WHOISIDLE, name, CurrentTime - user->last,
                   cli_firsttime(acptr));
-    if (MyConnect(acptr)
-        && ((parc >= 3 && !feature_bool(FEAT_HIS_WEBIRC))
-            || sptr == acptr || IsAnOper(sptr))
-        && ((wline = cli_wline(acptr)) != NULL))
-        send_reply(sptr, RPL_WHOISWEBIRC, name, wline->description
-                   ? wline->description : "(unspecified WebIRC proxy)");
   }
 }
 

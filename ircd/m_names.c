@@ -117,7 +117,6 @@ void do_names(struct Client* sptr, struct Channel* chptr, int filter)
   int needs_space; 
   int len; 
   char buf[BUFSIZE];
-  char anon[BUFSIZE];
   struct Client *c2ptr;
   struct Membership* member;
   
@@ -127,19 +126,13 @@ void do_names(struct Client* sptr, struct Channel* chptr, int filter)
 
   /* Tag Pub/Secret channels accordingly. */
 
-  strcpy(buf, "* ");  
-  strcpy(anon, "* ");
-  if (PubChannel(chptr)) {
+  strcpy(buf, "* ");
+  if (PubChannel(chptr))
     *buf = '=';
-	*anon = '=';
-  } else if (SecretChannel(chptr)) {
+  else if (SecretChannel(chptr))
     *buf = '@';
-	*anon = '@';
-  }
  
   len = strlen(chptr->chname);
-  strcpy(anon + 2, chptr->chname);
-  strcpy(anon + 2 + len, " :");
   strcpy(buf + 2, chptr->chname);
   strcpy(buf + 2 + len, " :");
 
@@ -153,18 +146,11 @@ void do_names(struct Client* sptr, struct Channel* chptr, int filter)
   /* Iterate over all channel members, and build up the list. */
 
   mlen = strlen(cli_name(&me)) + 10 + strlen(cli_name(sptr));
- 
+  
   for (member = chptr->members; member; member = member->next_member)
   {
     c2ptr = member->user;
-    if ((chptr->mode.mode & MODE_ANONYMOUS)) {
-	  strcpy(anon + idx, "anonymous");
-      idx = len + 4;
-      flag = 0;
-      needs_space=0;	  
-      send_reply(c2ptr, RPL_NAMREPLY, anon); 
-	  continue;
-    }
+
     if (((filter&NAMES_VIS)!=0) && IsInvisible(c2ptr))
       continue;
 
@@ -176,21 +162,14 @@ void do_names(struct Client* sptr, struct Channel* chptr, int filter)
 
     if ((!IsDelayedJoin(member) || (member->user == sptr)) && (filter & NAMES_DEL))
         continue;
+
     if (needs_space)
       buf[idx++] = ' ';
     needs_space=1;
-    if (IsChanService(member))
+    if (IsZombie(member))
       buf[idx++] = '!';
-    else if (IsChannelManager(member))
-      buf[idx++] = '~';
-    else if (IsAdmin(member))
-      buf[idx++] = '&';
-    else if (IsZombie(member))
-	  buf[idx++] = '$';
     else if (IsChanOp(member))
       buf[idx++] = '@';
-    else if (IsHalfOp(member))
-      buf[idx++] = '%';
     else if (HasVoice(member))
       buf[idx++] = '+';
     strcpy(buf + idx, cli_name(c2ptr));
@@ -306,7 +285,6 @@ int m_names(struct Client* cptr, struct Client* sptr, int parc, char* parv[])
 
         if (mlen + idx + NICKLEN + 3 > BUFSIZE)     /* space, \r\n\0 */
         {
-          buf[idx-1] = '\0';
           send_reply(sptr, RPL_NAMREPLY, buf);
           strcpy(buf, "* * :");
           idx = 5;
@@ -314,10 +292,7 @@ int m_names(struct Client* cptr, struct Client* sptr, int parc, char* parv[])
         }
       }
       if (flag)
-      {
-        buf[idx-1] = '\0';
         send_reply(sptr, RPL_NAMREPLY, buf);
-      }
       send_reply(sptr, RPL_ENDOFNAMES, "*");
     }
     else if ((chptr = FindChannel(para)) != NULL)

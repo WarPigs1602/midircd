@@ -104,10 +104,8 @@ stats_configured_links(struct Client *sptr, const struct StatDesc* sd,
       maximum = tmp->maximum;
       port = tmp->address.port;
 
-      if (tmp->status & CONF_UWORLD) {
-        const char *oper = (tmp->flags & CONF_UWORLD_OPER) ? "+" : "";
-        send_reply(sptr, RPL_STATSULINE, oper, host);
-	  }
+      if (tmp->status & CONF_UWORLD)
+	send_reply(sptr, RPL_STATSULINE, host);
       else if (tmp->status & CONF_SERVER)
 	send_reply(sptr, RPL_STATSCLINE, name, port, maximum, hub_limit, get_conf_class(tmp));
       else if (tmp->status & CONF_CLIENT)
@@ -534,29 +532,6 @@ stats_servers_verbose(struct Client* sptr, const struct StatDesc* sd,
   }
 }
 
-/** Lists WebIRC authorizations.
- * @param[in] to Client requesting statistics.
- * @param[in] sd Stats descriptor for request (ignored).
- * @param[in] param Extra parameter from user (ignored).
- */
-static void
-stats_webirc(struct Client *to, const struct StatDesc *sd, char *param)
-{
-  struct wline *wline;
-  char ip_text[SOCKIPLEN + 1];
-
-  for (wline = GlobalWebircList; wline; wline = wline->next) {
-    const char *desc = wline->description;
-    if (!desc)
-      desc = "(no description provided)";
-    if (wline->hidden)
-      strcpy(ip_text, "*");
-    else
-      ircd_ntoa_r(ip_text, &wline->ip);
-    send_reply(to, RPL_STATSWLINE, ip_text, wline->bits, desc);
-  }
-}
-
 /** Display objects allocated (and total memory used by them) for
  * several types of structures.
  * @param[in] to Client requesting statistics.
@@ -678,9 +653,6 @@ struct StatDesc statsinfo[] = {
   { 'w', "userload", STAT_FLAG_OPERFEAT, FEAT_HIS_STATS_w,
     calc_load, 0,
     "Userload statistics." },
-  { 'W', "webirc", (STAT_FLAG_OPERFEAT | STAT_FLAG_CASESENS), FEAT_HIS_STATS_W,
-    stats_webirc, 0,
-    "WebIRC authorizations." },
   { 'x', "memusage", STAT_FLAG_OPERFEAT, FEAT_HIS_STATS_x,
     stats_meminfo, 0,
     "List usage information." },

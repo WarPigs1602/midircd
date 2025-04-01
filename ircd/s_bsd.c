@@ -19,7 +19,7 @@
  */
 /** @file
  * @brief Functions that now (or in the past) relied on BSD APIs.
- * @version $Id$
+ * @version $Id: s_bsd.c,v 1.80.2.4 2007/05/29 03:08:33 entrope Exp $
  */
 #include "config.h"
 
@@ -183,7 +183,7 @@ int init_connection_limits(void)
   if (0 == limit)
     return 1;
   if (limit < 0) {
-    fprintf(stderr, "error setting max fds to %d: %s\n", limit, strerror(errno));
+    fprintf(stderr, "error setting max fd's to %d\n", limit);
   }
   else if (limit > 0) {
     fprintf(stderr, "ircd fd table too big\nHard Limit: %d IRC max: %d\n",
@@ -220,12 +220,6 @@ static int connect_inet(struct ConfItem* aconf, struct Client* cptr)
   cli_fd(cptr) = os_socket(local, SOCK_STREAM, cli_name(cptr), family);
   if (cli_fd(cptr) < 0)
     return 0;
-#ifdef AF_INET6
-  if ((family == 0) && !irc_in_addr_is_ipv4(&local->addr))
-    family = AF_INET6;
-  else
-#endif
-    family = AF_INET;
 
   /*
    * save connection info in client
@@ -245,7 +239,7 @@ static int connect_inet(struct ConfItem* aconf, struct Client* cptr)
   /*
    * Set the TOS bits - this is nonfatal if it doesn't stick.
    */
-  if (!os_set_tos(cli_fd(cptr), feature_int(FEAT_TOS_SERVER), family)) {
+  if (!os_set_tos(cli_fd(cptr), FEAT_TOS_SERVER)) {
     report_error(TOS_ERROR_MSG, cli_name(cptr), errno);
   }
   if ((result = os_connect_nonb(cli_fd(cptr), &aconf->address)) == IO_FAILURE) {
@@ -291,6 +285,7 @@ unsigned int deliver_it(struct Client *cptr, struct MsgQ *buf)
   switch (io_result) {
   case IO_SUCCESS:
     ClrFlag(cptr, FLAG_BLOCKED);
+
     cli_sendB(cptr) += bytes_written;
     cli_sendB(&me)  += bytes_written;
     /* A partial write implies that future writes will block. */
@@ -326,9 +321,7 @@ static int completed_connection(struct Client* cptr)
    * get the socket status from the fd first to check if
    * connection actually succeeded
    */
-  if (cli_fd(cptr) >= 0)
-      cli_error(cptr) = os_get_sockerr(cli_fd(cptr));
-  if (cli_error(cptr) != 0) {
+  if ((cli_error(cptr) = os_get_sockerr(cli_fd(cptr)))) {
     const char* msg = strerror(cli_error(cptr));
     if (!msg)
       msg = "Unknown error";
@@ -365,7 +358,7 @@ static int completed_connection(struct Client* cptr)
         return 1;
     }
   }
-
+  
   if (!EmptyString(aconf->passwd))
     sendrawto_one(cptr, MSG_PASS " :%s", aconf->passwd);
 
@@ -390,7 +383,7 @@ static int completed_connection(struct Client* cptr)
   cli_lasttime(cptr) = CurrentTime;
   ClearPingSent(cptr);
 
-  sendrawto_one(cptr, MSG_SERVER " %s 1 %Tu %Tu J%s %s%s +%s6 :%s",
+  sendrawto_one(cptr, MSG_SERVER " %s 1 %Tu %Tu J%s %s%s +%s6n :%s",
                 cli_name(&me), cli_serv(&me)->timestamp, newts,
 		MAJOR_PROTOCOL, NumServCap(&me),
 		feature_bool(FEAT_HUB) ? "h" : "", cli_info(&me));
@@ -536,10 +529,6 @@ void add_connection(struct Listener* listener, int fd) {
   {
     new_client = make_client(0, STAT_UNKNOWN_SERVER);
   }
-  else if (listener_webirc(listener))
-  {
-      new_client = make_client(0, STAT_WEBIRC);
-  }
   else
   {
     /*
@@ -588,6 +577,8 @@ void add_connection(struct Listener* listener, int fd) {
   cli_listener(new_client) = listener;
   ++listener->ref_count;
 
+  Count_newunknown(UserStats);
+  
   s_tls(&cli_socket(new_client)) = tls;
   if (tls)
   {
@@ -595,8 +586,7 @@ void add_connection(struct Listener* listener, int fd) {
     SetNegotiatingTLS(new_client);
     ircd_tls_negotiate(new_client);
   }
-
-  Count_newunknown(UserStats);
+  
   /* if we've made it this far we can put the client on the auth query pile */
   start_auth(new_client);
 }
@@ -633,7 +623,7 @@ static int read_packet(struct Client *cptr, int socket_ready)
 
   if (socket_ready &&
       !(IsUser(cptr) &&
-        DBufLength(&(cli_recvQ(cptr))) > GetMaxFlood(cptr))) {
+        DBufLength(&(cli_recvQ(cptr))) > feature_int(FEAT_CLIENT_FLOOD))) {
     IOResult io_result = IsTLS(cptr)
       ? ircd_tls_recv(cptr, readbuf, sizeof(readbuf), &length)
       : os_recv_nonb(cli_fd(cptr), readbuf, sizeof(readbuf), &length);
@@ -675,9 +665,11 @@ static int read_packet(struct Client *cptr, int socket_ready)
     if (length > 0 && dbuf_put(&(cli_recvQ(cptr)), readbuf, length) == 0)
       return exit_client(cptr, cptr, &me, "dbuf_put fail");
 
-    Debug((DEBUG_DEBUG, "dbuf: %u maxfl: %u", DBufLength(&(cli_recvQ(cptr))), GetMaxFlood(cptr)));
-    if (DBufLength(&(cli_recvQ(cptr))) > GetMaxFlood(cptr))
+    if (IsUser(cptr)) {
+      if (DBufLength(&(cli_recvQ(cptr))) > feature_int(FEAT_CLIENT_FLOOD)
+	&& !IsOper(cptr))
       return exit_client(cptr, cptr, &me, "Excess Flood");
+    }
 
     while (DBufLength(&(cli_recvQ(cptr))) && !NoNewLine(cptr) && 
            (IsTrusted(cptr) || cli_since(cptr) - CurrentTime < 10))
@@ -712,14 +704,22 @@ static int read_packet(struct Client *cptr, int socket_ready)
        */
       if (IsHandshake(cptr) || IsServer(cptr))
       {
-        while (1)
+        while (-1)
         {
           dolen = dbuf_get(&(cli_recvQ(cptr)), readbuf, sizeof(readbuf));
-          if (dolen == 0)
+          if (dolen <= 0)
             return 1;
-          if ((IsServer(cptr)
-               ? server_dopacket(cptr, readbuf, dolen)
-               : connect_dopacket(cptr, readbuf, dolen)) == CPTR_KILLED)
+          else if (dolen == 0)
+          {
+            if (DBufLength(&(cli_recvQ(cptr))) < 510)
+              SetFlag(cptr, FLAG_NONL);
+            else
+              DBufClear(&(cli_recvQ(cptr)));
+          }
+          else if ((IsServer(cptr) &&
+                    server_dopacket(cptr, readbuf, dolen) == CPTR_KILLED) ||
+                   (!IsServer(cptr) &&
+                    connect_dopacket(cptr, readbuf, dolen) == CPTR_KILLED))
             return CPTR_KILLED;
         }
       }

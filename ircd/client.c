@@ -137,10 +137,9 @@ static int privs_defaults_set;
  * @param[in] oper Configuration item describing oper's privileges.
  */
 void
-client_set_privs(struct Client *client, struct ConfItem *oper, int forceOper)
+client_set_privs(struct Client *client, struct ConfItem *oper)
 {
   struct Privs *source, *defaults;
-  struct ConnectionClass *class;
   enum Priv priv;
 
   if (!MyConnect(client))
@@ -149,13 +148,14 @@ client_set_privs(struct Client *client, struct ConfItem *oper, int forceOper)
   /* Clear out client's privileges. */
   memset(cli_privs(client), 0, sizeof(struct Privs));
 
-  if (!IsAnOper(client) || (!oper && !forceOper))
+  if (!IsAnOper(client) || !oper)
       return;
 
   if (!privs_defaults_set)
   {
     memset(&privs_global, -1, sizeof(privs_global));
     FlagClr(&privs_global, PRIV_WALK_LCHAN);
+    FlagClr(&privs_global, PRIV_UNLIMIT_QUERY);
     FlagClr(&privs_global, PRIV_SET);
     FlagClr(&privs_global, PRIV_BADCHAN);
     FlagClr(&privs_global, PRIV_LOCAL_BADCHAN);
@@ -178,33 +178,11 @@ client_set_privs(struct Client *client, struct ConfItem *oper, int forceOper)
     privs_defaults_set = 1;
   }
 
-  /* Should we look up the default remote oper block? */
-  if (oper)
-  {
-    class = oper->conn_class;
-  }
-  else
-  {
-    class = find_class("RemoteOpers");
-    if (class && (!FlagHas(&class->privs_dirty, PRIV_PROPAGATE)
-              || !FlagHas(&class->privs, PRIV_PROPAGATE)))
-      class = NULL;
-
-    /* For remote opers, we need to also set their max sendq and flood because
-     * we will not be attaching an Operator block to their client.
-     */
-    if (class && MaxSendq(class))
-      cli_max_sendq(client) = MaxSendq(class);
-
-    if (class && MaxFlood(class))
-      cli_max_flood(client) = MaxFlood(class);
-  }
-
   /* Decide whether to use global or local oper defaults. */
-  if (oper && FlagHas(&oper->privs_dirty, PRIV_PROPAGATE))
+  if (FlagHas(&oper->privs_dirty, PRIV_PROPAGATE))
     defaults = FlagHas(&oper->privs, PRIV_PROPAGATE) ? &privs_global : &privs_local;
-  else if (!class || FlagHas(&class->privs_dirty, PRIV_PROPAGATE))
-    defaults = (!class || FlagHas(&class->privs, PRIV_PROPAGATE)) ? &privs_global : &privs_local;
+  else if (FlagHas(&oper->conn_class->privs_dirty, PRIV_PROPAGATE))
+    defaults = FlagHas(&oper->conn_class->privs, PRIV_PROPAGATE) ? &privs_global : &privs_local;
   else {
     assert(0 && "Oper has no propagation and neither does connection class");
     return;
@@ -216,10 +194,10 @@ client_set_privs(struct Client *client, struct ConfItem *oper, int forceOper)
   for (priv = 0; priv < PRIV_LAST_PRIV; ++priv)
   {
     /* Figure out most applicable definition for the privilege. */
-    if (oper && FlagHas(&oper->privs_dirty, priv))
+    if (FlagHas(&oper->privs_dirty, priv))
       source = &oper->privs;
-    else if (class && FlagHas(&class->privs_dirty, priv))
-      source = &class->privs;
+    else if (FlagHas(&oper->conn_class->privs_dirty, priv))
+      source = &oper->conn_class->privs;
     else
       source = defaults;
 
@@ -289,4 +267,44 @@ client_report_privs(struct Client *to, struct Client *client)
   msgq_clean(mb);
 
   return 0;
+}
+
+/* WIP! */
+int
+ircd_tls_fingerprint_matches(struct Client *cptr,
+                             const char *fingerprint)
+{
+  if (!IsTLS(cptr))
+    return 1;
+
+  if (EmptyString(fingerprint))
+    return 1;
+
+  /*static const char hexdigits[] = "0123456789abcdef";
+  void *ctx;
+  int i;
+  char tls_fp[65];
+  memset(tls_fp, 0, sizeof(tls_fp));
+
+  if (EmptyString(fingerprint))
+    return 1;
+
+  ctx = s_tls(&cli_socket(cptr));
+  if (!ctx)
+    return 0;
+
+  ircd_tls_fingerprint(ctx, tls_fp);
+  Debug((DEBUG_DEBUG, "Checking fingerpint: %s - %s", fingerprint, tls_fp));
+  for (i = 0; i < sizeof(tls_fp); i++)
+  {
+    unsigned char ch = tls_fp[i];
+    if ((hexdigits[ch >> 4] != ToLower(fingerprint[2*i+0]))
+        || (hexdigits[ch & 15] != ToLower(fingerprint[2*i+1])))
+    {
+      return 0;
+    }
+  }
+
+  return 1;*/
+  return strcmp(cli_tls_fingerprint(cptr), fingerprint) == 0;
 }

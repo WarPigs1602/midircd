@@ -39,6 +39,7 @@ CHGRP = chgrp
 MKDIR = mkdir
 TOUCH = touch
 GREP = grep
+LEX = @LEX@
 YACC = @YACC@
 ENGINE_C = @ENGINE_C@
 TLS_C = @TLS_C@
@@ -72,7 +73,7 @@ ENGINE_SRC = \
 	engine_poll.c \
 	engine_kqueue.c \
 	engine_select.c
-	
+
 TLS_SRC = \
 	tls_none.c \
 	tls_gnutls.c \
@@ -105,7 +106,6 @@ IRCD_SRC = \
 	ircd.c \
 	ircd_alloc.c \
 	ircd_crypt.c \
-	ircd_crypt_b64.c \
 	ircd_events.c \
 	ircd_features.c \
 	ircd_log.c \
@@ -117,7 +117,7 @@ IRCD_SRC = \
 	ircd_snprintf.c \
 	ircd_string.c \
 	jupe.c \
-	ircd_lexer.c \
+	lex.yy.c \
 	list.c \
 	listener.c \
 	m_account.c \
@@ -168,7 +168,6 @@ IRCD_SRC = \
 	m_proto.c \
 	m_pseudo.c \
 	m_quit.c \
-	m_rename.c \
 	m_rehash.c \
 	m_reset.c \
 	m_restart.c \
@@ -195,12 +194,9 @@ IRCD_SRC = \
 	m_wallops.c \
 	m_wallusers.c \
 	m_wallvoices.c \
-	m_webirc.c \
 	m_who.c \
 	m_whois.c \
 	m_whowas.c \
-	m_xquery.c \
-	m_xreply.c \
 	match.c \
 	memdebug.c \
 	motd.c \
@@ -282,6 +278,9 @@ table_gen: table_gen.o
 chattr.tab.c: table_gen
 	./table_gen > chattr.tab.c
 
+lex.yy.c: ircd_lexer.l y.tab.h
+	${LEX} ${srcdir}/ircd_lexer.l
+
 y.tab.c y.tab.h: ircd_parser.y
 	${YACC} -d ${srcdir}/ircd_parser.y
 
@@ -334,7 +333,7 @@ uninstall:
 	@echo "Please remove the contents of ${DPATH} manually"
 
 clean:
-	${RM} -f *.o *.bak ircd version.c umkpasswd convert-conf chattr.tab.c table_gen y.tab.*
+	${RM} -f *.o *.bak ircd version.c umkpasswd convert-conf chattr.tab.c table_gen y.tab.* lex.yy.*
 
 distclean: clean
 	${RM} -f Makefile stamp-m
@@ -478,8 +477,6 @@ ircd_crypt.o: ircd_crypt.c ../config.h ../include/ircd_crypt.h \
   ../include/s_debug.h ../config.h ../include/ircd_defs.h \
   ../include/ircd_crypt_native.h ../include/ircd_crypt_plain.h \
   ../include/ircd_crypt_smd5.h
-ircd_crypt_b64.o: ircd_crypt_b64.c ../config.h ../include/ircd_crypt_b64.h \
-  /usr/include/openssl/bio.h /usr/include/openssl/evp.h 
 ircd_events.o: ircd_events.c ../config.h ../include/ircd_events.h \
   ../config.h ../include/ircd.h ../include/struct.h \
   ../include/ircd_defs.h ../include/ircd_alloc.h ../include/ircd_log.h \
@@ -563,12 +560,9 @@ jupe.o: jupe.c ../config.h ../include/jupe.h ../include/client.h \
   ../include/numeric.h ../include/numnicks.h ../include/s_bsd.h \
   ../include/s_misc.h ../include/send.h ../include/struct.h \
   ../include/sys.h
-ircd_lexer.o: ircd_lexer.c ../config.h ../include/ircd.h \
- ../include/struct.h ../include/ircd_defs.h ../include/ircd_alloc.h \
- ../include/ircd_log.h ../include/ircd_string.h ../include/ircd_chattr.h \
- ../include/s_conf.h ../include/client.h ../include/dbuf.h \
- ../include/msgq.h ../include/ircd_events.h ../include/ircd_handler.h \
- ../include/res.h ../include/capab.h y.tab.h
+lex.yy.o: lex.yy.c ../config.h ../include/ircd.h ../include/struct.h \
+  ../include/ircd_defs.h ../include/ircd_alloc.h ../include/ircd_string.h \
+  ../include/ircd_chattr.h ../include/s_debug.h ../config.h y.tab.h
 list.o: list.c ../config.h ../include/list.h ../include/client.h \
   ../include/ircd_defs.h ../include/dbuf.h ../include/msgq.h \
   ../include/ircd_events.h ../config.h ../include/ircd_handler.h \
@@ -989,16 +983,6 @@ m_quit.o: m_quit.c ../config.h ../include/channel.h \
   ../include/struct.h ../include/ircd_log.h ../include/ircd_string.h \
   ../include/ircd_chattr.h ../include/struct.h ../include/s_misc.h \
   ../include/ircd_reply.h
-m_rename.o: m_rename.c ../config.h ../include/channel.h \
-  ../include/ircd_defs.h ../include/res.h ../config.h ../include/client.h \
-  ../include/dbuf.h ../include/msgq.h ../include/ircd_events.h \
-  ../include/ircd_handler.h ../include/capab.h ../include/gline.h \
-  ../include/hash.h ../include/ircd.h ../include/struct.h \
-  ../include/ircd_chattr.h ../include/ircd_features.h \
-  ../include/ircd_log.h ../include/ircd_reply.h ../include/ircd_string.h \
-  ../include/msg.h ../include/numeric.h ../include/numnicks.h \
-  ../include/s_debug.h ../include/s_user.h ../include/send.h \
-  ../include/sys.h
 m_rehash.o: m_rehash.c ../config.h ../include/client.h \
   ../include/ircd_defs.h ../include/dbuf.h ../include/msgq.h \
   ../include/ircd_events.h ../config.h ../include/ircd_handler.h \
@@ -1040,7 +1024,12 @@ m_rpong.o: m_rpong.c ../config.h ../include/client.h \
   ../include/send.h
 m_sasl.o: m_sasl.c ../config.h ../include/client.h \
   ../include/ircd_defs.h ../include/dbuf.h ../include/msgq.h \
-  ../include/ircd_events.h ../config.h ../include/ircd_crypt_b64.h
+  ../include/ircd_events.h ../config.h ../include/ircd_handler.h \
+  ../include/res.h ../include/capab.h ../include/hash.h ../include/ircd.h \
+  ../include/struct.h ../include/ircd_log.h ../include/ircd_reply.h \
+  ../include/ircd_string.h ../include/ircd_chattr.h ../include/msg.h \
+  ../include/numeric.h ../include/numnicks.h ../include/opercmds.h \
+  ../include/send.h
 m_server.o: m_server.c ../config.h ../include/client.h \
   ../include/ircd_defs.h ../include/dbuf.h ../include/msgq.h \
   ../include/ircd_events.h ../config.h ../include/ircd_handler.h \
@@ -1091,7 +1080,7 @@ m_squit.o: m_squit.c ../config.h ../include/client.h \
 m_starttls.o: m_starttls.c ../config.h ../include/client.h \
  ../include/ircd_defs.h ../include/dbuf.h ../include/msgq.h \
  ../include/ircd_events.h ../include/ircd_handler.h ../include/res.h \
- ../include/dbuf.h ../include/handlers.h \
+ ../include/capab.h ../include/dbuf.h ../include/handlers.h \
  ../include/ircd_reply.h ../include/ircd_tls.h ../include/ircd_osdep.h \
  ../include/numeric.h ../include/send.h
 m_stats.o: m_stats.c ../config.h ../include/client.h \
@@ -1228,20 +1217,6 @@ m_whowas.o: m_whowas.c ../config.h ../include/client.h \
   ../include/ircd_chattr.h ../include/msg.h ../include/numeric.h \
   ../include/numnicks.h ../include/s_user.h ../include/s_misc.h \
   ../include/send.h ../include/whowas.h
-m_xquery.o: m_xquery.c ../config.h ../include/client.h \
- ../include/ircd_defs.h ../include/dbuf.h ../include/msgq.h \
- ../include/ircd_events.h ../include/ircd_handler.h ../include/res.h \
- ../include/capab.h ../include/ircd.h ../include/struct.h \
- ../include/ircd_log.h ../include/ircd_reply.h ../include/ircd_string.h \
- ../include/ircd_chattr.h ../include/msg.h ../include/numeric.h \
- ../include/numnicks.h ../include/send.h
-m_xreply.o: m_xreply.c ../config.h ../include/client.h \
- ../include/ircd_defs.h ../include/dbuf.h ../include/msgq.h \
- ../include/ircd_events.h ../include/ircd_handler.h ../include/res.h \
- ../include/capab.h ../include/ircd.h ../include/struct.h \
- ../include/ircd_log.h ../include/ircd_reply.h ../include/ircd_string.h \
- ../include/ircd_chattr.h ../include/msg.h ../include/numeric.h \
- ../include/numnicks.h ../include/s_auth.h ../include/send.h
 match.o: match.c ../config.h ../include/match.h ../include/res.h \
   ../config.h ../include/ircd_chattr.h ../include/ircd_string.h \
   ../include/ircd_snprintf.h

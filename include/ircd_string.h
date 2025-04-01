@@ -21,14 +21,8 @@ struct irc_in_addr;
 
 extern int string_has_wildcards(const char* str);
 
-extern void        ircd_time_str(char *dest);
-extern void        ircd_rand_str(char *dest, size_t len);
-extern char*       ircd_strtok(char** save, char* str, char* fs);
-
-extern char*       canonize(char* buf);
 extern char*       ircd_strncpy(char* dest, const char* src, size_t len);
 extern int         ircd_strcmp(const char *a, const char *b);
-extern int         regex_match(char *string, char *pattern);
 extern int         ircd_strncmp(const char *a, const char *b, size_t n);
 extern int         unique_name_vector(char* names, char token,
                                       char** vector, int size);
@@ -39,6 +33,9 @@ extern const char* ircd_ntoa_r(char* buf, const struct irc_in_addr* addr);
 #define ircd_aton(ADDR, STR) ipmask_parse((STR), (ADDR), NULL)
 extern int ipmask_parse(const char *in, struct irc_in_addr *mask, unsigned char *bits_ptr);
 extern char*       host_from_uh(char* buf, const char* userhost, size_t len);
+extern char*       ircd_strtok(char** save, char* str, char* fs);
+
+extern char*       canonize(char* buf);
 
 /** Make \a y a duplicate \a x, a la strdup(). */
 #define DupString(x, y)  (strcpy((x = (char*) MyMalloc(strlen(y) + 1)), y))

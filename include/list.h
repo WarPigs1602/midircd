@@ -12,7 +12,6 @@
 struct Client;
 struct Connection;
 struct Channel;
-struct RenamedChan;
 struct ConfItem;
 
 /*
@@ -26,7 +25,6 @@ struct SLink {
     struct Client *cptr;    /**< List element as a client. */
     struct Channel *chptr;  /**< List element as a channel. */
     struct ConfItem *aconf; /**< List element as a configuration item. */
-	struct RenamedChan *rchan;
     char *cp;               /**< List element as a string. */
   } value;                  /**< Value of list element. */
   unsigned int flags;       /**< Modifier flags for list element. */
@@ -39,7 +37,6 @@ struct DLink {
   union {
     struct Client*  cptr;   /**< List element as a client. */
     struct Channel* chptr;  /**< List element as a channel. */
-	struct RenamedChan *rchan;	
     char*           ch;     /**< List element as a string. */
   } value;                  /**< Value of list element. */
 };

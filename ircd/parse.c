@@ -282,13 +282,6 @@ struct Message msgtab[] = {
     { m_user, m_registered, m_ignore, m_registered, m_ignore }
   },
   {
-    MSG_WEBIRC,
-    TOK_WEBIRC,
-    0, MAXPARA, MFLG_SLOW, 0, NULL,
-    /* UNREG, CLIENT, SERVER, OPER, SERVICE */
-    { m_webirc, m_registered, m_ignore, m_registered, m_ignore }
-  },
-  {
     MSG_AWAY,
     TOK_AWAY,
     0, MAXPARA, MFLG_SLOW, 0, NULL,
@@ -632,54 +625,13 @@ struct Message msgtab[] = {
     { m_unregistered, m_sethost, ms_sethost, m_sethost, m_ignore }
   },
   {
-    MSG_RENAME,
-    TOK_RENAME,
-    0, MAXPARA, MFLG_SLOW, 0, NULL,
-    /* UNREG, CLIENT, SERVER, OPER, SERVICE */
-    { m_unregistered, m_rename, ms_rename, m_rename, m_ignore }
-  },   
-  {
-    MSG_AUTHENTICATE,
-    TOK_AUTHENTICATE,
-    0, MAXPARA, 0, 0, NULL,
-    /* UNREG, CLIENT, SERVER, OPER, SERVICE */
-    { m_sasl, m_ignore, m_ignore, m_ignore, m_ignore }
-  },  
-  {
-    MSG_XQUERY,
-    TOK_XQUERY,
-    0, MAXPARA, MFLG_SLOW, 0, NULL,
-    /* UNREG, CLIENT, SERVER, OPER, SERVICE */
-    { m_ignore, m_ignore, ms_xquery, mo_xquery, m_ignore }
-  },
-  {
-    MSG_XREPLY,
-    TOK_XREPLY,
-    0, MAXPARA, MFLG_SLOW, 0, NULL,
-    /* UNREG, CLIENT, SERVER, OPER, SERVICE */
-    { m_ignore, m_ignore, ms_xreply, m_ignore, m_ignore }
-  },  
-  {
     MSG_CAP,
     TOK_CAP,
     0, MAXPARA, 0, 0, NULL,
     /* UNREG, CLIENT, SERVER, OPER, SERVICE */
     { m_cap, m_cap, m_ignore, m_cap, m_ignore }
-  },  
-  {
-    MSG_SASL,
-    TOK_SASL,
-    0, MAXPARA, 0, 0, NULL,
-    /* UNREG, CLIENT, SERVER, OPER, SERVICE */
-    {  m_ignore, m_ignore, m_ignore, m_ignore, m_ignore }
   },
-  {
-    MSG_STARTTLS,
-    TOK_STARTTLS,
-    0, MAXPARA, MFLG_SLOW, 0, NULL,
-    /* UNREG, CLIENT, SERVER, OPER, SERVICE */
-    { m_starttls, m_starttls, m_starttls, m_starttls, m_ignore }
-  },
+
   /*
    * - ASUKA ---------------------------------------------------------------------
    * Add the command for CHECK.
@@ -708,7 +660,14 @@ struct Message msgtab[] = {
     0, MAXPARA, MFLG_SLOW, 0, NULL,
     /* UNREG, CLIENT, SERVER, OPER, SERVICE */
     { m_quit, m_ignore, m_ignore, m_ignore, m_ignore }
-  },
+  }, 
+  {
+    MSG_AUTHENTICATE,
+    TOK_AUTHENTICATE,
+    0, MAXPARA, 0, 0, NULL,
+    /* UNREG, CLIENT, SERVER, OPER, SERVICE */
+    { m_sasl, m_ignore, m_ignore, m_ignore, m_ignore }
+  }, 
   { 0 }
 };
 

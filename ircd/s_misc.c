@@ -179,13 +179,6 @@ const char* get_client_name(const struct Client* sptr, int showip)
  * @param comment The QUIT comment to send.
  */
 /* Rewritten by Run - 24 sept 94 */
-/**
- * Exit one client, local or remote. Assuming for local client that
- * all dependents already have been removed, and socket is closed.
- * @param bcptr Client being (s)quitted.
- * @param comment The QUIT comment to send.
- */
-/* Rewritten by Run - 24 sept 94 */
 static void exit_one_client(struct Client* bcptr, const char* comment)
 {
   struct SLink *lp;
@@ -388,9 +381,6 @@ int exit_client(struct Client *cptr,
 
     on_for = CurrentTime - cli_firsttime(victim);
 
-    /* This intentionally excludes WebIRC ports to make port scanning
-     * for it a little harder.
-     */
     if (IsUser(victim) || IsUserPort(victim))
       auth_send_exit(victim);
 
@@ -399,7 +389,7 @@ int exit_client(struct Client *cptr,
 		cli_firsttime(victim), on_for,
 		cli_user(victim)->username, cli_sockhost(victim),
                 ircd_ntoa(&cli_ip(victim)),
-                cli_account(victim),
+                IsAccount(victim) ? cli_username(victim) : "0",
                 NumNick(victim), /* two %s's */
                 cli_name(victim), cli_info(victim));
 
@@ -499,7 +489,11 @@ int exit_client(struct Client *cptr,
   /* Then remove the client structures */
   if (IsServer(victim))
     exit_downlinks(victim, killer, comment1);
-  exit_one_client(victim, comment);
+
+  if (strncmp(comment, "G-lined", 7))  
+    exit_one_client(victim, comment); 
+  else 
+    exit_one_client(victim, "G-lined");
 
   /*
    *  cptr can only have been killed if it was cptr itself that got killed here,

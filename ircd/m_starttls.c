@@ -29,7 +29,7 @@
 #include "numeric.h"
 #include "send.h"
 
-int m_starttls(struct Client *cptr, struct Client *sptr, int parc, char *parv[])
+int m_starttls(struct Client *cptr, struct Client *sptr, int parc, char*parv[])
 {
   if (IsTLS(sptr))
     return send_reply(sptr, ERR_STARTTLS, "already using TLS");

@@ -32,25 +32,22 @@
 struct Client;
 struct AuthRequest;
 struct StatDesc;
-struct irc_in_addr;
 
 extern void start_auth(struct Client *);
 extern int auth_ping_timeout(struct Client *);
-extern int auth_set_webirc(struct AuthRequest *auth, const char *password, const char *username, const char *hostname, struct irc_in_addr *ip);
 extern int auth_set_pong(struct AuthRequest *auth, unsigned int cookie);
 extern int auth_set_user(struct AuthRequest *auth, const char *username, const char *hostname, const char *servername, const char *userinfo);
 extern int auth_set_nick(struct AuthRequest *auth, const char *nickname);
 extern int auth_set_password(struct AuthRequest *auth, const char *password);
 extern int auth_cap_start(struct AuthRequest *auth);
 extern int auth_cap_done(struct AuthRequest *auth);
-extern int auth_spoof_user(struct AuthRequest *auth, const char *username, const char *hostname, const char *ip);
 extern void destroy_auth_request(struct AuthRequest *req);
+
 extern int auth_spawn(int argc, char *argv[]);
 extern void auth_send_exit(struct Client *cptr);
-extern void auth_send_xreply(struct Client *sptr, const char *routing, const char *reply);
-extern int auth_set_sasl(struct AuthRequest *auth, const char *nick, const char *reg, const char *pass);
 extern void auth_mark_closing(void);
 extern void auth_close_unused(void);
+extern int auth_set_sasl(struct AuthRequest *auth, const char *crypt);
 extern void report_iauth_conf(struct Client *cptr, const struct StatDesc *sd, char *param);
 extern void report_iauth_stats(struct Client *cptr, const struct StatDesc *sd, char *param);
 

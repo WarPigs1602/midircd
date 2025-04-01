@@ -52,8 +52,6 @@ enum ListenerFlag {
   LISTEN_IPV4,
   /** Port listens for IPv6 connections. */
   LISTEN_IPV6,
-  /** Port accepts only webirc connections. */
-  LISTEN_WEBIRC,
   /** Port uses TLS natively. */
   LISTEN_TLS,
   /** Sentinel for counting listener flags. */
@@ -73,7 +71,6 @@ struct Listener {
   int              index;              /**< index into poll array */
   time_t           last_accept;        /**< last time listener accepted */
   char*            tls_ciphers;        /**< ciphers to use for TLS */
-  void*            tls_ctx;            /**< TLS context for the listener */
   struct irc_sockaddr addr;            /**< virtual address and port */
   struct irc_in_addr mask;             /**< listener hostmask */
   struct Socket    socket_v4;          /**< describe IPv4 socket to event system */
@@ -82,7 +79,6 @@ struct Listener {
 
 #define listener_server(LISTENER) FlagHas(&(LISTENER)->flags, LISTEN_SERVER)
 #define listener_active(LISTENER) FlagHas(&(LISTENER)->flags, LISTEN_ACTIVE)
-#define listener_webirc(LISTENER) FlagHas(&(LISTENER)->flags, LISTEN_WEBIRC)
 #define listener_tls(LISTENER)    FlagHas(&(LISTENER)->flags, LISTEN_TLS)
 
 extern void        add_listener(int port, const char* vaddr_ip, 

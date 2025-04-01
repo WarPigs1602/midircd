@@ -322,11 +322,8 @@ int m_who(struct Client* cptr, struct Client* sptr, int parc, char* parv[])
     for (p = 0, nick = ircd_strtok(&p, mymask, ","); nick;
         nick = ircd_strtok(&p, 0, ","))
     {
-      if (IsChannelName(nick) && strIsIrcCh(nick) && (chptr = FindChannel(nick)))
+      if (IsChannelName(nick) && (chptr = FindChannel(nick)))
       {
-		if ((chptr->mode.mode & MODE_ANONYMOUS)) {
-			continue;
-		}
         isthere = (find_channel_member(sptr, chptr) != 0);
         if (isthere || SEE_CHANNEL(sptr, chptr, bitsel))
         {

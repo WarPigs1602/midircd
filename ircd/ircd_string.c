@@ -29,12 +29,7 @@
 #include "res.h"
 
 /* #include <assert.h> -- Now using assert in ircd_log.h */
-#include <regex.h>
-#include <stdbool.h>
-#include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
-#include <time.h>
 #include <sys/types.h>
 #include <netinet/in.h>
 
@@ -42,72 +37,6 @@
  * include the character attribute tables here
  */
 #include "chattr.tab.c"
-
-static char* itoa (unsigned long long  value,  char str[],  int radix)
-{
-    char        buf [66];
-    char*       dest = buf + sizeof(buf);
-    bool     sign = false;
-
-    if (value == 0) {
-        memcpy (str, "0", 2);
-        return str;
-    }
-
-    if (radix < 0) {
-        radix = -radix;
-        if ( (long long) value < 0) {
-            value = -value;
-            sign = true;
-        }
-    }
-
-    *--dest = '\0';
-
-    switch (radix)
-    {
-    case 16:
-        while (value) {
-            * --dest = '0' + (value & 0xF);
-            if (*dest > '9') *dest += 'A' - '9' - 1;
-            value >>= 4;
-        }
-        break;
-    case 10:
-        while (value) {
-            *--dest = '0' + (value % 10);
-            value /= 10;
-        }
-        break;
-
-    case 8:
-        while (value) {
-            *--dest = '0' + (value & 7);
-            value >>= 3;
-        }
-        break;
-
-    case 2:
-        while (value) {
-            *--dest = '0' + (value & 1);
-            value >>= 1;
-        }
-        break;
-
-    default:            // The slow version, but universal
-        while (value) {
-            *--dest = '0' + (value % radix);
-            if (*dest > '9') *dest += 'A' - '9' - 1;
-            value /= radix;
-        }
-        break;
-    }
-
-    if (sign) *--dest = '-';
-
-    memcpy (str, dest, buf +sizeof(buf) - dest);
-    return str;
-}
 
 /** Check whether \a str contains wildcard characters.
  * @param[in] str String that might contain wildcards.
@@ -126,29 +55,6 @@ int string_has_wildcards(const char* str)
       return 1;
   }
   return 0;
-}
-
-void ircd_time_str(char *dest) {
-	time_t now;
-	time(&now);
-    itoa(now, dest, 36);
-}
-
-/** Creates a random string.
- * @param[in] len String lenght.
- * @return The random string.
- */
-void ircd_rand_str(char *dest, size_t length) {
-	srand(time(NULL));
-    char charset[] = "0123456789"
-                     "abcdefghijklmnopqrstuvwxyz"
-                     "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
-
-    while (length-- > 0) {
-        size_t index = (double) rand() / RAND_MAX * (sizeof charset - 1);
-        *dest++ = charset[index];
-    }
-    *dest = '\0';
 }
 
 /** Split a string on certain delimiters.
@@ -281,21 +187,6 @@ int ircd_strcmp(const char *a, const char *b)
       ++rb;
   }
   return (ToLower(*ra) - ToLower(*rb));
-}
-
-/** Checks for regex
- * @param string The string to match.
- * @param pattern The pattern to match.
- * @return Zero If matches
- */
-int regex_match(char *string, char *pattern)
-{
-        int result;
-        regex_t reg;
-        if (regcomp(&reg, pattern, REG_EXTENDED | REG_NOSUB) != 0) return -1;
-        result = regexec(&reg, string, 0, 0, 0);
-        regfree(&reg);
-        return result;
 }
 
 /** Case insensitive comparison of the starts of two strings.
@@ -590,11 +481,9 @@ ircd_aton_ip4(const char *input, unsigned int *output, unsigned char *pbits)
       *pbits = bits;
     return pos;
   case '.':
-    if (++dots > 3)
-      return 0;
     if (input[++pos] == '.')
       return 0;
-    ip |= part << (32 - 8 * dots);
+    ip |= part << (24 - 8 * dots++);
     part = 0;
     if (input[pos] == '*') {
       while (input[++pos] == '*' || input[pos] == '.') ;
@@ -635,16 +524,16 @@ ircd_aton_ip4(const char *input, unsigned int *output, unsigned char *pbits)
 int
 ipmask_parse(const char *input, struct irc_in_addr *ip, unsigned char *pbits)
 {
-  char *colon_char;
+  char *colon;
   char *dot;
 
   assert(ip);
   assert(input);
   memset(ip, 0, sizeof(*ip));
-  colon_char = strchr(input, ':');
+  colon = strchr(input, ':');
   dot = strchr(input, '.');
 
-  if (colon_char && (!dot || (dot > colon_char))) {
+  if (colon && (!dot || (dot > colon))) {
     unsigned int part = 0, pos = 0, ii = 0, colon = 8;
     const char *part_start = NULL;
 
@@ -687,8 +576,6 @@ ipmask_parse(const char *input, struct irc_in_addr *ip, unsigned char *pbits)
       if (input[pos] == ':') {
         if (colon < 8)
           return 0;
-        if (ii == 8)
-            return 0;
         colon = ii;
         pos++;
       }
@@ -720,8 +607,6 @@ ipmask_parse(const char *input, struct irc_in_addr *ip, unsigned char *pbits)
       while (input[++pos] == '*' || input[pos] == ':') ;
       if (input[pos] != '\0' || colon < 8)
         return 0;
-      if (part && ii < 8)
-          ip->in6_16[ii++] = htons(part);
       if (pbits)
         *pbits = ii * 16;
       return pos;
@@ -735,8 +620,6 @@ ipmask_parse(const char *input, struct irc_in_addr *ip, unsigned char *pbits)
     default:
       return 0;
     }
-    if (input[pos] != '\0')
-      return 0;
   finish:
     if (colon < 8) {
       unsigned int jj;

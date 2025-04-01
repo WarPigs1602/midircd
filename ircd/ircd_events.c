@@ -18,7 +18,7 @@
  */
 /** @file
  * @brief Implementation of event loop mid-layer.
- * @version $Id$
+ * @version $Id: ircd_events.c,v 1.10.2.1 2007/04/01 02:11:41 entrope Exp $
  */
 #include "config.h"
 

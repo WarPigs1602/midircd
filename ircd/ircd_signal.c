@@ -253,10 +253,7 @@ void setup_signals(void)
    * after signal is the default. The following 'siginterrupt'
    * should change that default to interrupting calls.
    */
-    sigemptyset(&act.sa_mask);
-    act.sa_flags = SA_RESTART;
-    sigaction(SIGALRM, &act, 0);
-   
+  siginterrupt(SIGALRM, 1);
 #endif
 }
 

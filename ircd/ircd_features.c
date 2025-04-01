@@ -313,11 +313,8 @@ static struct FeatureDesc {
   F_B(USER_HIDEIDLETIME, 0, 0, 0),
   F_B(OPLEVELS, 0, 1, 0),
   F_B(ZANNELS, 0, 1, 0),
-  F_B(LOCAL_CHANNELS, 0, 0, 0),
-  F_B(SECURE_CHANNELS, 0, 0, 0),
+  F_B(LOCAL_CHANNELS, 0, 1, 0),
   F_B(TOPIC_BURST, 0, 0, 0),
-  F_B(DISABLE_GLINES, 0, 0, 0),
-  F_B(ENABLE_GLINE_OPER_EXCEPTION, 0, 0, 0),
   F_B(AUTOCHANMODES, 0, 1, 0),
   F_S(AUTOCHANMODES_LIST, FEAT_CASE | FEAT_NULL, "ntCN", 0),
 
@@ -372,21 +369,16 @@ static struct FeatureDesc {
   F_B(SETHOST, 0, 0, 0),
   F_B(SETHOST_USER, 0, 0, 0),
   F_B(SETHOST_AUTO, 0, 0, 0),
-  
+
   /* IRCv3 capabilities */
   F_B(CAP_ACCOUNTNOTIFY, 0, 1, 0),
   F_B(CAP_AWAYNOTIFY, 0, 1, 0),
   F_B(CAP_CHGHOST, 0, 1, 0),
   F_B(CAP_ECHOMESSAGE, 0, 1, 0),
   F_B(CAP_EXTJOIN, 0, 1, 0),
-  F_B(CAP_INVITENOTIFY, 0, 1, 0),
-  F_B(CAP_RENAME, 0, 1, 0),
-  F_B(CAP_SASL, 0, 1, 0),
-  F_B(CAP_STANDARDREPLYS, 0, 1, 0),
+  F_B(CAP_INVITENOTIFY, 0, 1, 0), 
+  F_B(CAP_SASL, 0, 1, 0), 
 
-  /* Anonymous mode for safe channels */
-  F_B(ANONYMOUS, 0, 0, 0),
- 
   /* HEAD_IN_SAND Features */
   F_B(HIS_SNOTICES, 0, 1, 0),
   F_B(HIS_SNOTICES_OPER_ONLY, 0, 1, 0),
@@ -421,12 +413,10 @@ static struct FeatureDesc {
   F_B(HIS_STATS_U, 0, 1, 0),
   F_B(HIS_STATS_v, 0, 1, 0),
   F_B(HIS_STATS_w, 0, 1, 0),
-  F_B(HIS_STATS_W, 0, 1, 0),
   F_B(HIS_STATS_x, 0, 1, 0),
   F_B(HIS_STATS_y, 0, 1, 0),
   F_B(HIS_STATS_z, 0, 1, 0),
   F_B(HIS_STATS_IAUTH, 0, 1, 0),
-  F_B(HIS_WEBIRC, 0, 1, 0),
   F_B(HIS_WHOIS_SERVERNAME, 0, 1, 0),
   F_B(HIS_WHOIS_IDLETIME, 0, 1, 0),
   F_B(HIS_WHOIS_LOCALCHAN, 0, 1, 0),

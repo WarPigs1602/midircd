@@ -146,7 +146,6 @@ int ms_destruct(struct Client* cptr, struct Client* sptr, int parc, char* parv[]
     struct Membership *member;
     struct ModeBuf mbuf;
     struct Ban *link;
-    struct BanEx *linkex;
 
     /* Next, send all PARTs upstream. */
     for (member = chptr->members; member; member = member->next_member)
@@ -181,10 +180,6 @@ int ms_destruct(struct Client* cptr, struct Client* sptr, int parc, char* parv[]
       modebuf_mode_string(&mbuf, MODE_DEL | MODE_APASS, chptr->mode.apass, 0);
     for (link = chptr->banlist; link; link = link->next)
       modebuf_mode_string(&mbuf, MODE_DEL | MODE_BAN, link->banstr, 0);
-    for (linkex = chptr->banexceptionlist; linkex; linkex = linkex->next)
-      modebuf_mode_string(&mbuf, MODE_DEL | MODE_BAN_EXCEPTION, linkex->banexceptstr, 0);
-    if (chptr->mode.link)
-      modebuf_mode_string(&mbuf, MODE_DEL | MODE_LINK, chptr->mode.link, 0);
     modebuf_flush(&mbuf);
 #endif
 

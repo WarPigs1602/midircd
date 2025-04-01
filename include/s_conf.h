@@ -39,8 +39,6 @@ struct Message;
 /* These flags apply to Port blocks: */
 #define CONF_PORT_TLS           0x0001     /**< Port should use TLS */
 
-#define CONF_UWORLD_OPER        0x0001     /**< UWorld server can remotely oper users */
-
 /** Indicates ConfItem types that count associated clients. */
 #define CONF_CLIENT_MASK        (CONF_CLIENT | CONF_OPERATOR | CONF_SERVER)
 
@@ -87,18 +85,6 @@ struct qline
   struct qline *next; /**< Next qline in #GlobalQuarantineList. */
   char *chname;       /**< Quarantined channel name. */
   char *reason;       /**< Reason for quarantine. */
-};
-
-/** Webirc authorization structure. */
-struct wline
-{
-  struct wline *next;    /**< Next wline in #GlobalWebircList. */
-  struct irc_in_addr ip; /**< IP of webirc service. */
-  unsigned char bits;    /**< Number of bits used in #ip. */
-  unsigned char stale;   /**< Non-zero during config re-read. */
-  unsigned char hidden;  /**< If non-zero, hide IP in /stats webirc. */
-  char *passwd;          /**< Password field. */
-  char *description;     /**< Text description, e.g. for provider. */
 };
 
 struct sline {
@@ -193,8 +179,6 @@ extern int              GlobalConfCount;
 extern struct s_map*    GlobalServiceMapList;
 extern struct qline*    GlobalQuarantineList;
 extern struct sline*	GlobalSList;
-extern struct wline*    GlobalWebircList;
-extern int              DoIdentLookups;
 
 /*
  * Proto types
@@ -219,9 +203,8 @@ extern struct ConfItem* find_conf_exact(const char* name, struct Client *cptr, i
 extern enum AuthorizationCheckResult conf_check_client(struct Client *cptr);
 extern int  conf_check_server(struct Client *cptr);
 extern int rehash(struct Client *cptr, int sig);
-extern int find_kill(struct Client *cptr);
+extern int find_kill(struct Client *cptr, int glinecheck);
 extern const char *find_quarantine(const char* chname);
-extern const struct wline *find_webirc(const struct irc_in_addr *addr, const char *passwd);
 extern void lookup_confhost(struct ConfItem *aconf);
 extern void conf_parse_userhost(struct ConfItem *aconf, char *host);
 extern struct ConfItem *conf_debug_iline(const char *client);

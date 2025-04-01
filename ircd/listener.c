@@ -147,9 +147,7 @@ void show_ports(struct Client* sptr, const struct StatDesc* sd,
     if (port && port != listener->addr.port)
       continue;
     len = 0;
-    flags[len++] = listener_server(listener) ? 'S'
-        : listener_webirc(listener) ? 'W'
-        : 'C';
+    flags[len++] = listener_server(listener) ? 'S' : 'C';
     if (FlagHas(&listener->flags, LISTEN_HIDDEN))
     {
       if (!show_hidden)
@@ -200,17 +198,16 @@ void show_ports(struct Client* sptr, const struct StatDesc* sd,
 /** Set or update socket options for \a listener.
  * @param[in] listener Listener to determine socket option values.
  * @param[in] fd File descriptor being updated.
- * @param[in] family Address family for \a fd.
  * @return Non-zero on success, zero on failure.
  */
-static int set_listener_options(struct Listener *listener, int fd, int family)
+static int set_listener_options(struct Listener *listener, int fd)
 {
   int is_server;
 
   is_server = listener_server(listener);
   /*
    * Set the buffer sizes for the listener. Accepted connections
-   * inherit the accepting sockets settings for SO_RCVBUF SO_SNDBUF
+   * inherit the accepting sockets settings for SO_RCVBUF S_SNDBUF
    * The window size is set during the SYN ACK so setting it anywhere
    * else has no effect whatsoever on the connection.
    * NOTE: this must be set before listen is called
@@ -226,7 +223,7 @@ static int set_listener_options(struct Listener *listener, int fd, int family)
   /*
    * Set the TOS bits - this is nonfatal if it doesn't stick.
    */
-  if (!os_set_tos(fd, feature_int(is_server ? FEAT_TOS_SERVER : FEAT_TOS_CLIENT), family)) {
+  if (!os_set_tos(fd,feature_int(is_server ? FEAT_TOS_SERVER : FEAT_TOS_CLIENT))) {
     report_error(TOS_ERROR_MSG, get_listener_name(listener), errno);
   }
 
@@ -254,7 +251,7 @@ static int inetport(struct Listener* listener, int family)
     close(fd);
     return -1;
   }
-  if (!set_listener_options(listener, fd, family))
+  if (!set_listener_options(listener, fd))
     return -1;
   sock = (family == AF_INET) ? &listener->socket_v4 : &listener->socket_v6;
   if (!socket_add(sock, accept_connection, (void*) listener,
@@ -339,7 +336,7 @@ void add_listener(int port, const char* vhost_ip, const char* mask,
   if (FlagHas(&listener->flags, LISTEN_IPV6)
       && (irc_in_addr_unspec(&vaddr) || !irc_in_addr_is_ipv4(&vaddr))) {
     if (listener->fd_v6 >= 0) {
-      set_listener_options(listener, listener->fd_v6, AF_INET6);
+      set_listener_options(listener, listener->fd_v6);
       okay = 1;
     } else if ((fd = inetport(listener, AF_INET6)) >= 0) {
       listener->fd_v6 = fd;
@@ -355,7 +352,7 @@ void add_listener(int port, const char* vhost_ip, const char* mask,
   if (FlagHas(&listener->flags, LISTEN_IPV4)
       && (irc_in_addr_unspec(&vaddr) || irc_in_addr_is_ipv4(&vaddr))) {
     if (listener->fd_v4 >= 0) {
-      set_listener_options(listener, listener->fd_v4, AF_INET);
+      set_listener_options(listener, listener->fd_v4);
       okay = 1;
     } else if ((fd = inetport(listener, AF_INET)) >= 0) {
       listener->fd_v4 = fd;
@@ -366,11 +363,6 @@ void add_listener(int port, const char* vhost_ip, const char* mask,
     socket_del(&listener->socket_v4);
     listener->fd_v4 = -1;
   }
-
-  if (okay
-      && FlagHas(flags, LISTEN_TLS)
-      && ircd_tls_listen(listener))
-    okay = 0;
 
   if (!okay)
     free_listener(listener);
@@ -455,85 +447,94 @@ void release_listener(struct Listener* listener)
 static void accept_connection(struct Event* ev)
 {
   struct Listener*    listener;
-  struct Socket*      socket;
   struct irc_sockaddr addr;
-  const char*         msg;
   int                 fd;
-  int                 len;
-  char                msgbuf[BUFSIZE];
 
   assert(0 != ev_socket(ev));
   assert(0 != s_data(ev_socket(ev)));
 
-  socket = ev_socket(ev);
-  listener = (struct Listener*) s_data(socket);
+  listener = (struct Listener*) s_data(ev_socket(ev));
 
   if (ev_type(ev) == ET_DESTROY) /* being destroyed */
     return;
+  else {
+    assert(ev_type(ev) == ET_ACCEPT || ev_type(ev) == ET_ERROR);
 
-  assert(ev_type(ev) == ET_ACCEPT || ev_type(ev) == ET_ERROR);
-
-  listener->last_accept = CurrentTime;
-  /* To be efficient, and to support edge-triggered event loops, we
-   * accept all the connections we can until we encounter an error.
-   */
-  while ((fd = os_accept(s_fd(socket), &addr)) >= 0)
-  {
+    listener->last_accept = CurrentTime;
     /*
-     * Check for connection limit. If this fd exceeds the limit,
-     * all further accept()ed connections will also exceed it.
-     * Enable the server to clear out other connections before
-     * continuing to accept() new connections.
+     * There may be many reasons for error return, but
+     * in otherwise correctly working environment the
+     * probable cause is running out of file descriptors
+     * (EMFILE, ENFILE or others?). The man pages for
+     * accept don't seem to list these as possible,
+     * although it's obvious that it may happen here.
+     * Thus no specific errors are tested at this
+     * point, just assume that connections cannot
+     * be accepted until some old is closed first.
+     *
+     * This piece of code implements multi-accept, based
+     * on the idea that poll/select can only be efficient,
+     * if we succeed in handling all available events,
+     * i.e. accept all pending connections.
+     *
+     * http://www.hpl.hp.com/techreports/2000/HPL-2000-174.html
      */
-    if (fd >= MAXCLIENTS)
+    while (1)
     {
-      msg = "All connections in use";
-      ++ServerStats->is_ref;
-    reject:
-      len = snprintf(msgbuf, sizeof(msgbuf), ":%s ERROR :%s\r\n",
-        cli_name(&me), msg);
-      if (len < sizeof(msgbuf))
-        send(fd, msgbuf, len, 0);
-      close(fd);
-      continue;
-    }
-    /*
-     * check to see if listener is shutting down. Continue
-     * to accept(), because it makes sense to clear our the
-     * socket's queue as fast as possible.
-     */
-    if (!listener_active(listener))
-    {
-      msg = "Use another port";
-      ++ServerStats->is_ref;
-      goto reject;
-    }
-    /*
-     * check to see if connection is allowed for this address mask
-     */
-    if (!ipmask_check(&addr.addr, &listener->mask, listener->mask_bits))
-    {
-      msg = "Use another port";
-      ++ServerStats->is_ref;
-      goto reject;
-    }
-
-    ++ServerStats->is_ac;
-    add_connection(listener, fd);
-  }
-
-  if ((errno != EAGAIN)
+      if ((fd = os_accept(s_fd(ev_socket(ev)), &addr)) == -1)
+      {
+        if (errno == EAGAIN ||
 #ifdef EWOULDBLOCK
-      && (errno != EWOULDBLOCK)
+            errno == EWOULDBLOCK)
 #endif
-  )
-  {
-    /* Lotsa admins seem to have problems with not giving enough file
-     * descriptors to their server so we'll add a generic warning mechanism
-     * here.  If it turns out too many messages are generated for
-     * meaningless reasons we can filter them back.
-     */
-    sendto_opmask_butone(0, SNO_TCPCOMMON,
-        "Unable to accept connection: %m");
+          return;
+      /* Lotsa admins seem to have problems with not giving enough file
+       * descriptors to their server so we'll add a generic warning mechanism
+       * here.  If it turns out too many messages are generated for
+       * meaningless reasons we can filter them back.
+       */
+      sendto_opmask_butone(0, SNO_TCPCOMMON,
+			   "Unable to accept connection: %m");
+      return;
+      }
+      /*
+       * check for connection limit. If this fd exceeds the limit,
+       * all further accept()ed connections will also exceed it.
+       * Enable the server to clear out other connections before
+       * continuing to accept() new connections.
+       */
+      if (fd > MAXCLIENTS - 1)
+      {
+        ++ServerStats->is_ref;
+        send(fd, "ERROR :All connections in use\r\n", 32, 0);
+        close(fd);
+        return;
+      }
+      /*
+       * check to see if listener is shutting down. Continue
+       * to accept(), because it makes sense to clear our the
+       * socket's queue as fast as possible.
+       */
+      if (!listener_active(listener))
+      {
+        ++ServerStats->is_ref;
+        send(fd, "ERROR :Use another port\r\n", 25, 0);
+        close(fd);
+        continue;
+      }
+      /*
+       * check to see if connection is allowed for this address mask
+       */
+      if (!ipmask_check(&addr.addr, &listener->mask, listener->mask_bits))
+      {
+        ++ServerStats->is_ref;
+        send(fd, "ERROR :Use another port\r\n", 25, 0);
+        close(fd);
+        continue;
+      }
+      ++ServerStats->is_ac;
+      /* nextping = CurrentTime; */
+      add_connection(listener, fd);
+    }
   }
 }

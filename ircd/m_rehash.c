@@ -134,4 +134,3 @@ int mo_rehash(struct Client* cptr, struct Client* sptr, int parc, char* parv[])
 
   return rehash(cptr, flag);
 }
-

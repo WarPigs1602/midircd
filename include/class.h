@@ -19,7 +19,7 @@
  */
 /** @file
  * @brief Declarations and interfaces for handling connection classes.
- * @version $Id$
+ * @version $Id: class.h,v 1.20.2.1 2005/10/05 01:51:34 entrope Exp $
  */
 #ifndef INCLUDED_class_h
 #define INCLUDED_class_h
@@ -47,7 +47,6 @@ struct ConnectionClass {
   struct Privs            privs_dirty;    /**< Indication of which bits in
                                              ConnectionClass::privs are valid. */
   unsigned int            max_sendq;      /**< Maximum client SendQ in bytes. */
-  unsigned int            max_flood;      /**< Client flood limit in bytes. */
   unsigned int            max_links;      /**< Maximum connections allowed. */
   unsigned int            ref_count;      /**< Number of references to class. */
   unsigned short          ping_freq;      /**< Ping frequency for clients. */
@@ -70,12 +69,8 @@ struct ConnectionClass {
 #define MaxLinks(x)     ((x)->max_links)
 /** Get maximum SendQ size for \a x. */
 #define MaxSendq(x)     ((x)->max_sendq)
-/** Get flood limit for \a x. */
-#define MaxFlood(x)     ((x)->max_flood)
 /** Get number of references to \a x. */
 #define Links(x)        ((x)->ref_count)
-/** Get default usermode for \a x. */
-#define CCUmode(x)      ((x)->default_umode)
 
 /** Get class name for ConfItem \a x. */
 #define ConfClass(x)    ((x)->conn_class->cc_name)
@@ -87,8 +82,6 @@ struct ConnectionClass {
 #define ConfMaxLinks(x) ((x)->conn_class->max_links)
 /** Get maximum SendQ size for ConfItem \a x. */
 #define ConfSendq(x)    ((x)->conn_class->max_sendq)
-/** Get flood limit for ConfItem \a x. */
-#define ConfMaxFlood(x) ((x)->conn_class->max_flood)
 /** Get number of references to class in ConfItem \a x. */
 #define ConfLinks(x)    ((x)->conn_class->ref_count)
 /** Get default usermode for ConfItem \a x. */
@@ -113,12 +106,11 @@ extern char *get_conf_class(const struct ConfItem *aconf);
 extern int get_conf_ping(const struct ConfItem *aconf);
 extern char *get_client_class(struct Client *acptr);
 extern void add_class(char *name, unsigned int ping,
-                      unsigned int confreq, unsigned int maxfl,
-                      unsigned int maxli, unsigned int sendq);
+                      unsigned int confreq, unsigned int maxli,
+                      unsigned int sendq);
 extern void report_classes(struct Client *sptr, const struct StatDesc *sd,
                            char *param);
 extern unsigned int get_sendq(struct Client* cptr);
-extern unsigned int find_max_flood(struct Client* cptr);
 
 extern void class_send_meminfo(struct Client* cptr);
 #endif /* INCLUDED_class_h */

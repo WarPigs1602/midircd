@@ -219,10 +219,6 @@ void do_trace(struct Client *cptr, struct Client *sptr, int parc, char *parv[])
       case STAT_ME:
         break;
       case STAT_UNKNOWN:
-      case STAT_WEBIRC:
-        send_reply(sptr, RPL_TRACEUNKNOWN, conClass,
-                   get_client_name(acptr, HIDE_IP));
-        break;
       case STAT_UNKNOWN_USER:
 	send_reply(sptr, RPL_TRACEUNKNOWN, conClass,
 		   get_client_name(acptr, HIDE_IP));

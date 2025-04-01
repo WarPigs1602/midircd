@@ -227,10 +227,9 @@ void ircd_tls_close(void *ctx, const char *message)
   gnutls_deinit(ctx);
 }
 
-int ircd_tls_listen(struct Listener *listener)
+void ircd_tls_fingerprint(void *ctx, char *fingerprint)
 {
-  /* noop for gnutls */
-  return 0;
+  memset(fingerprint, 0, 65);
 }
 
 static void handle_blocked(struct Client *cptr, gnutls_session_t tls)
@@ -244,11 +243,7 @@ static void handle_blocked(struct Client *cptr, gnutls_session_t tls)
 int ircd_tls_negotiate(struct Client *cptr)
 {
   gnutls_session_t tls;
-  gnutls_x509_crt_t crt;
-  const gnutls_datum_t *datum;
-  size_t len;
   int res;
-  char buf[32];
 
   tls = s_tls(&cli_socket(cptr));
 
@@ -258,6 +253,8 @@ int ircd_tls_negotiate(struct Client *cptr)
   res = gnutls_handshake(tls);
   switch (res)
   {
+  case GNUTLS_E_SUCCESS:
+    return 1;
   case GNUTLS_E_INTERRUPTED:
   case GNUTLS_E_AGAIN:
     handle_blocked(cptr, tls);
@@ -265,46 +262,6 @@ int ircd_tls_negotiate(struct Client *cptr)
   case GNUTLS_E_WARNING_ALERT_RECEIVED:
   case GNUTLS_E_GOT_APPLICATION_DATA:
     return 0;
-
-  case GNUTLS_E_SUCCESS:
-    ClearNegotiatingTLS(cptr);
-
-    datum = gnutls_certificate_get_peers(tls, NULL);
-    if (!datum)
-    {
-      log_write(LS_SYSTEM, L_ERROR, 0, "gnutls_certificate_get_peers failed for %s",
-        cli_name(cptr));
-      return 1;
-    }
-
-    res = gnutls_x509_crt_init(&crt);
-    if (res)
-    {
-      log_write(LS_SYSTEM, L_ERROR, 0, "gnutls_x509_crt_init failed for %s: %d",
-        cli_name(cptr), res);
-        return 1;
-    }
-
-    /* TODO: extract peer's X.509 certificate */
-    res = gnutls_x509_crt_import(crt, datum, GNUTLS_X509_FMT_DER);
-    if (res)
-    {
-      log_write(LS_SYSTEM, L_ERROR, 0, "gnutls_x509_crt_import failed for %s: %d",
-        cli_name(cptr), res);
-      return 1;
-    }
-
-    len = sizeof(buf);
-    res = gnutls_x509_crt_get_fingerprint(crt, GNUTLS_DIG_SHA256, buf, &len);
-    if (res)
-    {
-      log_write(LS_SYSTEM, L_ERROR, 0, "gnutls_x509_crt_get_fingerprint failed for %s: %d",
-        cli_name(cptr), res);
-        return 1;
-    }
-    /* TODO: convert buf to hex (into cli_tls_fingerprint(cptr)) */
-    return 1;
-
   default:
     Debug((DEBUG_DEBUG, " ... gnutls_handshake() failed -> %s (%d)",
            gnutls_strerror(res), res));

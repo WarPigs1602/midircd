@@ -38,7 +38,6 @@
 #include "ircd_string.h"
 #include "list.h"
 #include "msg.h"
-#include "match.h"
 #include "numeric.h"
 #include "numnicks.h"
 #include "s_user.h"
@@ -103,63 +102,6 @@ apply_silence(struct Client *sptr, char *mask)
 
   /* Apply it to the silence list. */
   res = apply_ban(&cli_user(sptr)->silence, sile, 1);
-  return res ? NULL : sile;
-}
-
-/** Attempt to apply a SILENCE update to a user.
- *
- * Silences are propagated lazily between servers to save on bandwidth
- * and remote memory.  Any removal and any silence exception must be
- * propagated until a server has not seen the mask being removed or
- * has no positive silences for the user.
- *
- * @param[in] sptr Client to update.
- * @param[in] mask Single silence mask to apply, optionally preceded by '+' or '-' and maybe '~'.
- * @return The new ban entry on success, NULL on failure.
- */
-static struct BanEx *
-apply_silence_exception(struct Client *sptr, char *mask)
-{
-  struct BanEx *sile;
-  int flags;
-  int res;
-  char orig_mask[NICKLEN+USERLEN+HOSTLEN+3];
-
-  assert(mask && mask[0]);
-
-  /* Check for add or remove. */
-  if (mask[0] == '-') {
-    flags = BAN_EXCEPTION_DEL;
-    mask++;
-  } else if (mask[0] == '+') {
-    flags = BAN_EXCEPTION_ADD;
-    mask++;
-  } else
-    flags = BAN_EXCEPTION_ADD;
-
-  /* Check for being an exception. */
-  if (mask[0] == '~') {
-    flags |= BAN_EXCEPTION;
-    mask++;
-  }
-
-  /* Make the silence and set additional flags. */
-  ircd_strncpy(orig_mask, mask, sizeof(orig_mask) - 1);
-  sile = make_ban_exception(pretty_mask(mask));
-  sile->flags |= flags;
-
-  /* If they're a local user trying to ban too broad a mask, forbid it. */
-  if (MyUser(sptr)
-      && (sile->flags & BAN_EXCEPTION_IPMASK)
-      && sile->addrbits > 0
-      && sile->addrbits < (irc_in_addr_is_ipv4(&sile->address) ? 112 : 32)) {
-    send_reply(sptr, ERR_MASKTOOWIDE, orig_mask);
-    free_ban_exception(sile);
-    return NULL;
-  }
-
-  /* Apply it to the silence list. */
-  res = apply_ban_exception(&cli_user(sptr)->silenceex, sile, 1);
   return res ? NULL : sile;
 }
 
@@ -323,166 +265,6 @@ forward_silences(struct Client *sptr, char *silences, struct Client *dest)
   }
 }
 
-/** Apply and send silence updates for a user.
- * @param[in] sptr Client whose silence list has been updated.
- * @param[in] silences Comma-separated list of silence updates.
- * @param[in] dest Direction to send updates in (NULL for broadcast).
- */
-static void
-forward_silence_exceptions(struct Client *sptr, char *silences, struct Client *dest)
-{
-  struct BanEx *accepted[MAXPARA], *sile, **plast;
-  char *cp, *p, buf[BUFSIZE];
-  size_t ac_count, buf_used, slen, ii;
-
-  /* Split the list of silences and try to apply each one in turn. */
-  for (cp = ircd_strtok(&p, silences, ","), ac_count = 0;
-       cp && (ac_count < MAXPARA);
-       cp = ircd_strtok(&p, 0, ",")) {
-    if ((sile = apply_silence_exception(sptr, cp)))
-      accepted[ac_count++] = sile;
-  }
-
-  if (MyUser(sptr)) {
-    size_t siles, maxsiles, totlength, maxlength, jj;
-
-    /* Check that silence count and total length are permitted. */
-    maxsiles = feature_int(FEAT_MAXSILES);
-    maxlength = maxsiles * feature_int(FEAT_AVBANLEN);
-    siles = totlength = 0;
-    /* Count number of current silences and their total length. */
-    plast = &cli_user(sptr)->silenceex;
-    for (sile = cli_user(sptr)->silenceex; sile; sile = sile->next) {
-      if (sile->flags & (BAN_EXCEPTION_OVERLAPPED | BAN_EXCEPTION_ADD | BAN_EXCEPTION_DEL))
-        continue;
-      siles++;
-      totlength += strlen(sile->banexceptstr);
-      plast = &sile->next;
-    }
-    for (ii = jj = 0; ii < ac_count; ++ii) {
-      sile = accepted[ii];
-      /* If the update is being added, and we would exceed the maximum
-       * count or length, drop the update.
-       */
-      if (!(sile->flags & (BAN_EXCEPTION_OVERLAPPED | BAN_EXCEPTION_DEL))) {
-        slen = strlen(sile->banexceptstr);
-        if ((siles >= maxsiles) || (totlength + slen >= maxlength)) {
-          *plast = NULL;
-          if (MyUser(sptr))
-            send_reply(sptr, ERR_SILELISTFULL, accepted[ii]->banexceptstr);
-          free_ban_exception(accepted[ii]);
-          continue;
-        }
-        /* Update counts. */
-        siles++;
-        totlength += slen;
-        plast = &sile->next;
-      }
-      /* Store the update. */
-      accepted[jj++] = sile;
-    }
-    /* Write back the number of accepted updates. */
-    ac_count = jj;
-
-    /* Send the silence update list, including overlapped silences (to
-     * make it easier on clients).
-     */
-    buf_used = 0;
-    for (sile = cli_user(sptr)->silenceex; sile; sile = sile->next) {
-      char ch;
-      if (sile->flags & (BAN_OVERLAPPED | BAN_DEL))
-        ch = '-';
-      else if (sile->flags & BAN_ADD)
-        ch = '+';
-      else
-        continue;
-      slen = strlen(sile->banexceptstr);
-      if (buf_used + slen + 4 > 400) {
-        buf[buf_used] = '\0';
-        sendcmdto_one(sptr, CMD_SILENCE, sptr, "%s", buf);
-        buf_used = 0;
-      }
-      if (buf_used)
-        buf[buf_used++] = ',';
-      buf[buf_used++] = ch;
-      if (sile->flags & BAN_EXCEPTION)
-        buf[buf_used++] = '~';
-      memcpy(buf + buf_used, sile->banexceptstr, slen);
-      buf_used += slen;
-    }
-    if (buf_used > 0) {
-        buf[buf_used] = '\0';
-        sendcmdto_one(sptr, CMD_SILENCE, sptr, "%s", buf);
-        buf_used = 0;
-    }
-  }
-
-  /* Forward any silence removals or exceptions updates to other
-   * servers if the user has positive silences.
-   */
-  if (!dest || !MyUser(dest)) {
-    for (ii = buf_used = 0; ii < ac_count; ++ii) {
-      char ch;
-      sile = accepted[ii];
-      if (sile->flags & BAN_OVERLAPPED)
-        continue;
-      else if (sile->flags & BAN_DEL)
-        ch = '-';
-      else if (sile->flags & BAN_ADD) {
-        if (!(sile->flags & BAN_EXCEPTION))
-          continue;
-        ch = '+';
-      } else
-        continue;
-      slen = strlen(sile->banexceptstr);
-      if (buf_used + slen + 4 > 400) {
-        buf[buf_used] = '\0';
-        if (dest)
-          sendcmdto_one(sptr, CMD_SILENCE, dest, "%C %s", dest, buf);
-        else
-          sendcmdto_serv_butone(sptr, CMD_SILENCE, sptr, "* %s", buf);
-        buf_used = 0;
-      }
-      if (buf_used)
-        buf[buf_used++] = ',';
-      buf[buf_used++] = ch;
-      if (sile->flags & BAN_EXCEPTION)
-        buf[buf_used++] = '~';
-      memcpy(buf + buf_used, sile->banexceptstr, slen);
-      buf_used += slen;
-    }
-    if (buf_used > 0) {
-        buf[buf_used] = '\0';
-        if (dest)
-          sendcmdto_one(sptr, CMD_SILENCE, dest, "%C %s", dest, buf);
-        else
-          sendcmdto_serv_butone(sptr, CMD_SILENCE, sptr, "* %s", buf);
-        buf_used = 0;
-    }
-  }
-
-  /* Remove overlapped and deleted silences from the user's silence
-   * list.  Clear BAN_ADD since we're walking the list anyway.
-   */
-  for (plast = &cli_user(sptr)->silenceex; (sile = *plast) != NULL; ) {
-    if (sile->flags & (BAN_EXCEPTION_OVERLAPPED | BAN_EXCEPTION_DEL)) {
-      *plast = sile->next;
-      free_ban_exception(sile);
-    } else {
-      sile->flags &= ~BAN_ADD;
-      *plast = sile;
-      plast = &sile->next;
-    }
-  }
-
-  /* Free any silence-deleting updates. */
-  for (ii = 0; ii < ac_count; ++ii) {
-    if ((accepted[ii]->flags & (BAN_ADD | BAN_DEL)) == BAN_DEL) {
-      free_ban_exception(accepted[ii]);
-    }
-  }
-}
-
 /** Handle a SILENCE command from a local user.
  * See @ref m_functions for general discussion of parameters.
  *
@@ -500,7 +282,6 @@ int m_silence(struct Client* cptr, struct Client* sptr, int parc, char* parv[])
 {
   struct Client *acptr;
   struct Ban *sile;
-  struct BanEx *sileex;
 
   assert(0 != cptr);
   assert(cptr == sptr);
@@ -510,9 +291,7 @@ int m_silence(struct Client* cptr, struct Client* sptr, int parc, char* parv[])
   if (parc < 2 || EmptyString(parv[1]) || (acptr = FindUser(parv[1]))) {
     if (cli_user(acptr)) {
       for (sile = cli_user(acptr)->silence; sile; sile = sile->next) {
-        for (sileex = cli_user(acptr)->silenceex; sileex; sileex = sileex->next)
-			if(!mmatch(sileex->banexceptstr, sile->banstr))
-				send_reply(sptr, RPL_SILELIST, cli_name(acptr),
+        send_reply(sptr, RPL_SILELIST, cli_name(acptr),
                    (sile->flags & BAN_EXCEPTION ? "~" : ""),  sile->banstr);
       }
     }
@@ -522,7 +301,6 @@ int m_silence(struct Client* cptr, struct Client* sptr, int parc, char* parv[])
 
   /* The user must be attempting to update their list. */
   forward_silences(sptr, parv[1], NULL);
-  forward_silence_exceptions(sptr, parv[1], NULL);
   return 0;
 }
 
@@ -549,7 +327,6 @@ int ms_silence(struct Client* cptr, struct Client* sptr, int parc, char* parv[])
 
   /* Figure out which silences can be forwarded. */
   forward_silences(sptr, parv[2], findNUser(parv[1]));
-  forward_silence_exceptions(sptr, parv[2], findNUser(parv[1]));
   return 0;
   (void)cptr;
 }

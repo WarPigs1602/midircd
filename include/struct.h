@@ -69,7 +69,6 @@ struct User {
   struct Membership* channel;        /**< chain of channel pointer blocks */
   struct SLink*      invited;        /**< chain of invite pointer blocks */
   struct Ban*        silence;        /**< chain of silence pointer blocks */
-  struct BanEx*      silenceex;      /**< chain of silence pointer ignore blocks */
   char*              away;           /**< pointer to away message */
   time_t             last;           /**< last time user sent a message */
   unsigned int       refcnt;         /**< Number of times this block is referenced */
@@ -84,10 +83,7 @@ struct User {
   char               host[HOSTLEN + 1];         /**< displayed hostname */
   char               realusername[USERLEN + 1]; /**< actual username */
   char               realhost[HOSTLEN + 1];     /**< actual hostname */
-  char               account[ACCOUNTLEN + 1];   /**< actual hostname */
-  char               authhost[ACCOUNTLEN + HOSTLEN + 2];    /**< actual hostname */
-
-  /**< IRC account name */
+  char               account[ACCOUNTLEN + 1];   /**< IRC account name */
   time_t	     acc_create;                /**< IRC account timestamp */
   unsigned long       acc_id;                    /**< IRC account unique id */
   char*              opername;                  /**< IRC Oper Account name */

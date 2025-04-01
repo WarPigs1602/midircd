@@ -7,7 +7,6 @@
 
 struct Client;
 struct Channel;
-struct RenamedChan;
 
 
 /*

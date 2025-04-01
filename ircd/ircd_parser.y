@@ -26,14 +26,13 @@
 #include "class.h"
 #include "client.h"
 #include "crule.h"
+#include "ircd_features.h"
 #include "fileio.h"
 #include "gline.h"
 #include "hash.h"
-#include "IPcheck.h"
 #include "ircd.h"
 #include "ircd_alloc.h"
 #include "ircd_chattr.h"
-#include "ircd_features.h"
 #include "ircd_log.h"
 #include "ircd_reply.h"
 #include "ircd_snprintf.h"
@@ -72,11 +71,10 @@
   extern struct s_map*      GlobalServiceMapList;
   extern struct qline*      GlobalQuarantineList;
   extern struct sline*      GlobalSList;
-  extern struct wline*      GlobalWebircList;
 
   int yylex(void);
   /* Now all the globals we need :/... */
-  int tping, tconn, maxflood, maxlinks, sendq, port, invert, stringno, flags;
+  int tping, tconn, maxlinks, sendq, port, invert, stringno, flags;
   char *name, *pass, *host, *ip, *username, *origin, *hub_limit;
   char *tls_certfile, *tls_ciphers, *tls_fingerprint, *tls_keyfile;
   struct SLink *hosts;
@@ -123,7 +121,6 @@ static void free_slist(struct SLink **link) {
 %token CHANNEL
 %token PINGFREQ
 %token CONNECTFREQ
-%token MAXFLOOD
 %token MAXLINKS
 %token MAXHOPS
 %token SENDQ
@@ -183,17 +180,11 @@ static void free_slist(struct SLink **link) {
 %token SPOOFHOST
 %token TOK_IPV4 TOK_IPV6
 %token DNS
-%token WEBIRC
 %token TLS
 %token CERTFILE
 %token CIPHERS
 %token FINGERPRINT
 %token KEYFILE
-%token IPCHECK
-%token EXCEPT
-%token INCLUDE
-%token TEOF
-%token TOKERR
 /* and now a lot of privileges... */
 %token TPRIV_CHAN_LIMIT TPRIV_MODE_LCHAN TPRIV_DEOP_LCHAN TPRIV_WALK_LCHAN
 %token TPRIV_LOCAL_KILL TPRIV_REHASH TPRIV_RESTART TPRIV_DIE
@@ -223,7 +214,7 @@ blocks: blocks block | block;
 block: adminblock | generalblock | classblock | connectblock |
        uworldblock | operblock | portblock | jupeblock | clientblock |
        killblock | cruleblock | motdblock | featuresblock | quarantineblock |
-       pseudoblock | iauthblock | webircblock | spoofblock | error ';';
+       pseudoblock | iauthblock | spoofblock | error ';';
 
 /* The timespec, sizespec and expr was ripped straight from
  * ircd-hybrid-7. */
@@ -464,7 +455,7 @@ classblock: CLASS {
   if (name != NULL)
   {
     struct ConnectionClass *c_class;
-    add_class(name, tping, tconn, maxflood, maxlinks, sendq);
+    add_class(name, tping, tconn, maxlinks, sendq);
     c_class = find_class(name);
     MyFree(c_class->default_umode);
     c_class->default_umode = pass;
@@ -477,15 +468,14 @@ classblock: CLASS {
   name = NULL;
   pass = NULL;
   tconn = 0;
-  maxflood = 0;
   maxlinks = 0;
   sendq = 0;
   memset(&privs, 0, sizeof(privs));
   memset(&privs_dirty, 0, sizeof(privs_dirty));
 };
 classitems: classitem classitems | classitem;
-classitem: classname | classpingfreq | classconnfreq | classmaxflood |
-           classmaxlinks | classsendq | classusermode | priv;
+classitem: classname | classpingfreq | classconnfreq | classmaxlinks |
+           classsendq | classusermode | priv;
 classname: NAME '=' QSTRING ';'
 {
   MyFree(name);
@@ -498,10 +488,6 @@ classpingfreq: PINGFREQ '=' timespec ';'
 classconnfreq: CONNECTFREQ '=' timespec ';'
 {
   tconn = $3;
-};
-classmaxflood: MAXFLOOD '=' sizespec ';'
-{
-  maxflood = $3;
 };
 classmaxlinks: MAXLINKS '=' expr ';'
 {
@@ -561,8 +547,8 @@ connectblock: CONNECT
    MyFree(tls_fingerprint);
  }
  name = pass = host = origin = hub_limit = NULL;
- tls_ciphers = tls_fingerprint = NULL;
  c_class = NULL;
+ tls_ciphers = tls_fingerprint = NULL; 
  port = flags = 0;
 };
 connectitems: connectitem connectitems | connectitem;
@@ -621,6 +607,7 @@ connectmaxhops: MAXHOPS '=' expr ';'
 };
 connectauto: AUTOCONNECT '=' YES ';' { flags |= CONF_AUTOCONNECT; }
  | AUTOCONNECT '=' NO ';' { flags &= ~CONF_AUTOCONNECT; };
+
 connecttls: TLS '=' YES ';'
 {
   flags |= CONF_CONNECT_TLS;
@@ -780,7 +767,6 @@ tlsciphers: TLS CIPHERS '=' QSTRING ';'
   tls_ciphers = $4;
 };
 
-
 /* not a recursive definition because some pedant will just come along
  * and whine that the parser accepts "ipv4 ipv4 ipv4 ipv4"
  */
@@ -832,15 +818,12 @@ portblock: PORT '{' portitems '}' ';' {
   port = 0;
 };
 portitems: portitem portitems | portitem;
-portitem: portnumber | portvhost | portvhostnumber | portmask | portserver 
-| portwebirc | porthidden | porttls | tlsciphers;
+portitem: portnumber | portvhost | portvhostnumber | portmask | portserver | porthidden
+   | porttls | tlsciphers;
 portnumber: PORT '=' address_family NUMBER ';'
 {
   if ($4 < 1 || $4 > 65535) {
     parse_error("Port %d is out of range", port);
-  } else if (FlagHas(&listen_flags, LISTEN_WEBIRC)
-             && FlagHas(&listen_flags, LISTEN_SERVER)) {
-    parse_error("Port %d cannot be both WEBIRC and SERVER", port);
   } else {
     port = $3 | $4;
     if (hosts && (0 == (hosts->flags & 65535)))
@@ -894,14 +877,6 @@ porthidden: HIDDEN '=' YES ';'
   FlagClr(&listen_flags, LISTEN_HIDDEN);
 };
 
-portwebirc: WEBIRC '=' YES ';'
-{
-  FlagSet(&listen_flags, LISTEN_WEBIRC);
-} | WEBIRC '=' NO ';'
-{
-  FlagClr(&listen_flags, LISTEN_WEBIRC);
-};
-
 porttls: TLS '=' YES ';'
 {
   FlagSet(&listen_flags, LISTEN_TLS);
@@ -948,11 +923,8 @@ clientblock: CLIENT
     MyFree(ip);
     MyFree(pass);
   }
-  if (username)
-    DoIdentLookups = 1;
   host = NULL;
   username = NULL;
-  maxlinks = 0;
   c_class = NULL;
   ip = NULL;
   pass = NULL;
@@ -1281,56 +1253,6 @@ iauthprogram: PROGRAM '='
     MyFree(stringlist[stringno]);
   }
 } stringlist ';';
-
-webircblock: WEBIRC '{' webircitems '}' ';'
-{
-  struct wline *wline;
-  struct irc_in_addr peer;
-  unsigned char bits;
-
-  if (!ip)
-    parse_error("Missing IP address in WebIRC block");
-  else if (!pass)
-    parse_error("Missing password in WebIRC block");
-  else if (!ipmask_parse(ip, &peer, &bits))
-    parse_error("Invalid IP address in WebIRC block");
-  else {
-    /* Search for a wline with the same IP (mask) and password. */
-    for (wline = GlobalWebircList; wline; wline = wline->next) {
-      if ((bits == wline->bits)
-          && ipmask_check(&peer, &wline->ip, bits)
-          && (0 == strcmp(pass, wline->passwd)))
-        break;
-    }
-
-    /* Update it, or create a new structure. */
-    if (wline) {
-      MyFree(wline->description);
-    } else {
-      wline = (struct wline *) MyMalloc(sizeof(*wline));
-      memcpy(&wline->ip, &peer, sizeof(wline->ip));
-      wline->bits = bits;
-      wline->passwd = pass;
-      wline->next = GlobalWebircList;
-      GlobalWebircList = wline;
-    }
-    wline->stale = 0;
-    wline->hidden = (flags & 1) != 0;
-    wline->description = name;
-
-    MyFree(ip);
-    ip = NULL;
-    pass = NULL;
-    name = NULL;
-  }
-};
-
-webircitems: webircitem | webircitems webircitem;
-webircitem: webircip | webircpass | webircdesc | webirchidden;
-webircip: IP '=' QSTRING ';' { MyFree(ip); ip = $3; };
-webircpass: PASS '=' QSTRING ';' { MyFree(pass); pass = $3; };
-webircdesc: DESCRIPTION '=' QSTRING ';' { MyFree(name); name = $3; };
-webirchidden: HIDDEN '=' YES ';' { flags = flags | 1; }
 
 spoofblock: SPOOFHOST QSTRING '{'
 {

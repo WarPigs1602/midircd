@@ -81,25 +81,17 @@
 #include "config.h"
 
 #include "client.h"
-#include "gline.h"
-#include "hash.h"
 #include "ircd.h"
-#include "ircd_features.h"
 #include "ircd_log.h"
 #include "ircd_reply.h"
-#include "ircd_snprintf.h"
 #include "ircd_string.h"
 #include "msg.h"
-#include "numeric.h"
 #include "numnicks.h"
-#include "s_conf.h"
 #include "s_debug.h"
-#include "s_misc.h"
 #include "s_user.h"
 #include "send.h"
 
 /* #include <assert.h> -- Now using assert in ircd_log.h */
-#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -116,8 +108,6 @@ int ms_account(struct Client* cptr, struct Client* sptr, int parc,
 	       char* parv[])
 {
   struct Client *acptr;
-  struct Gline *gline;
-  int killreason;
 
   if (parc < 3)
     return need_more_params(sptr, "ACCOUNT");
@@ -126,7 +116,7 @@ int ms_account(struct Client* cptr, struct Client* sptr, int parc,
     return protocol_violation(cptr, "ACCOUNT from non-server %s",
 			      cli_name(sptr));
 
-  if (!(acptr = findNUser(parv[1])) && !(acptr = FindClient(parv[1])))
+  if (!(acptr = findNUser(parv[1])))
     return 0; /* Ignore ACCOUNT for a user that QUIT; probably crossed */
 
   if (IsAccount(acptr) && ((parc < 5) || (parc >= 5 && cli_user(acptr)->acc_id)))
@@ -169,7 +159,11 @@ int ms_account(struct Client* cptr, struct Client* sptr, int parc,
   }
 
   ircd_strncpy(cli_user(acptr)->account, parv[2], ACCOUNTLEN);
-    hide_hostmask(acptr, FLAG_ACCOUNT);
+  hide_hostmask(acptr, FLAG_ACCOUNT);
+  
+    sendcmdto_capflag_common_channels_butone(acptr, CMD_ACCOUNT, NULL, CAP_ACCOUNTNOTIFY,
+                          0, "%s", cli_user(acptr)->account);  
+
    if (cli_user(acptr)->acc_id) {
      sendcmdto_serv_butone(sptr, CMD_ACCOUNT, cptr, "%C %s %Tu %lu",
                            acptr, cli_user(acptr)->account,
@@ -183,21 +177,6 @@ int ms_account(struct Client* cptr, struct Client* sptr, int parc,
      sendcmdto_serv_butone(sptr, CMD_ACCOUNT, cptr, "%C %s",
                            acptr, cli_user(acptr)->account);
    }
-   
-    sendcmdto_capflag_common_channels_butone(acptr, CMD_ACCOUNT, NULL, CAP_ACCOUNTNOTIFY,
-                          0, "%s", cli_user(acptr)->account);
 
-  if (CapHas(cli_active(acptr), CAP_ACCOUNTNOTIFY))
-    sendcmdto_one(acptr, CMD_ACCOUNT, cli_from(acptr), "%s", cli_user(acptr)->account);
-
-  /* G-Line fix for accounts */
-   ircd_snprintf(0, cli_user(acptr)->authhost, HOSTLEN, "%s.%s", parv[2], feature_str(FEAT_HIDDEN_HOST));	
-   killreason = find_kill(acptr);
-   if (killreason)
-   {
-     ++ServerStats->is_ref;
-     return exit_client(acptr, acptr, cptr,
-                        (killreason == -1 ? "K-lined" : "G-lined"));
-   }
   return 0;
 }

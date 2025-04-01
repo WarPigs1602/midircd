@@ -124,7 +124,7 @@ int m_kick(struct Client *cptr, struct Client *sptr, int parc, char *parv[])
     return send_reply(sptr, ERR_NOSUCHCHANNEL, name);
 
   if (!(member2 = find_member_link(chptr, sptr)) || IsZombie(member2)
-      || !IsOpped(member2) && !IsHalfOp(member2) && !IsChannelManager(member2))
+      || !IsChanOp(member2))
     return send_reply(sptr, ERR_CHANOPRIVSNEEDED, name);
 
   if (!(who = find_chasing(sptr, parv[2], 0)))
@@ -153,9 +153,9 @@ int m_kick(struct Client *cptr, struct Client *sptr, int parc, char *parv[])
   /* Don't allow to kick member with a higher op-level,
    * or members with the same op-level unless both are MAXOPLEVEL.
    */
-  if (!IsHalfOp(member2) && (OpLevel(member) < OpLevel(member2)
+  if (OpLevel(member) < OpLevel(member2)
       || (OpLevel(member) == OpLevel(member2)
-          && OpLevel(member) < MAXOPLEVEL)))
+          && OpLevel(member) < MAXOPLEVEL))
     return send_reply(sptr, ERR_NOTLOWEROPLEVEL, cli_name(who), chptr->chname,
 	OpLevel(member2), OpLevel(member), "kick",
 	OpLevel(member) == OpLevel(member2) ? "the same" : "a higher");
@@ -166,7 +166,6 @@ int m_kick(struct Client *cptr, struct Client *sptr, int parc, char *parv[])
   if (!IsLocalChannel(name))
     sendcmdto_serv_butone(sptr, CMD_KICK, cptr, "%H %C :%s", chptr, who,
 			  comment);
-
   if (IsDelayedJoin(member)) {
     /* If it's a delayed join, only send the KICK to the person doing
      * the kicking and the victim */
@@ -176,7 +175,7 @@ int m_kick(struct Client *cptr, struct Client *sptr, int parc, char *parv[])
     sendcmdto_one(sptr, CMD_KICK, sptr, "%H %C :%s", chptr, who, comment);
     CheckDelayedJoins(chptr);
   } else
-    sendcmdto_channel_butserv_butone((IsServer(sptr) ? &me : sptr), CMD_KICK, chptr, NULL, 0, "%H %C :%s", chptr, who,
+    sendcmdto_channel_butserv_butone(sptr, CMD_KICK, chptr, NULL, 0, "%H %C :%s", chptr, who,
                                      comment);
 
   make_zombie(member, who, cptr, sptr, chptr);
@@ -230,14 +229,14 @@ int ms_kick(struct Client *cptr, struct Client *sptr, int parc, char *parv[])
    * operator, bounce the kick
    */
   if (!IsServer(sptr) && member && cli_from(who) != cptr &&
-      (!(sptr_link = find_member_link(chptr, sptr)) || !IsOpped(sptr_link))) {
+      (!(sptr_link = find_member_link(chptr, sptr)) || !IsChanOp(sptr_link))) {
     sendto_opmask_butone(0, SNO_HACK2, "HACK: %C KICK %H %C %s", sptr, chptr,
 			 who, comment);
 
-	sendjointo_one(who, chptr, cptr);
+    sendjointo_one(who, chptr, cptr);
 
     /* Reop/revoice member */
-    if (IsOpped(member) || HasVoice(member)) {
+    if (IsChanOp(member) || HasVoice(member)) {
       struct ModeBuf mbuf;
 
       modebuf_init(&mbuf, sptr, cptr, chptr,
@@ -245,7 +244,7 @@ int ms_kick(struct Client *cptr, struct Client *sptr, int parc, char *parv[])
 		    MODEBUF_DEST_DEOP   |  /* Deop the source */
 		    MODEBUF_DEST_BOUNCE)); /* And bounce the MODE */
 
-      if (IsOpped(member))
+      if (IsChanOp(member))
 	modebuf_mode_client(&mbuf, MODE_DEL | MODE_CHANOP, who, OpLevel(member));
       if (HasVoice(member))
 	modebuf_mode_client(&mbuf, MODE_DEL | MODE_VOICE, who, MAXOPLEVEL + 1);

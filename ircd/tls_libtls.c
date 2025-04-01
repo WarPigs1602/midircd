@@ -36,13 +36,20 @@
 
 #define CONCAT(A, B) A # B
 const char *ircd_tls_version = CONCAT("libtls ", TLS_API);
+static struct tls_config *tls_cfg;
+static struct tls *tls_srv;
 
 int ircd_tls_init(void)
 {
   static int libtls_init;
+  struct tls_config *new_cfg = NULL;
+  struct tls *new_srv = NULL;
+  uint32_t protos;
+  const char *str;
+  int res;
 
   if (EmptyString(ircd_tls_keyfile) || EmptyString(ircd_tls_certfile))
-    return 0;
+    goto done;
 
   if (!libtls_init)
   {
@@ -54,29 +61,29 @@ int ircd_tls_init(void)
     }
   }
 
-  return 0;
-}
-
-static struct tls_config *make_tls_config(const char *ciphers)
-{
-  struct tls_config *new_cfg;
-  uint32_t protos;
-  const char *str;
-
   new_cfg = tls_config_new();
   if (!new_cfg)
   {
     log_write(LS_SYSTEM, L_ERROR, 0, "tls_config_new() failed");
-    return NULL;
+    return 2;
   }
 
-  if (tls_config_add_keypair_file(new_cfg, ircd_tls_certfile, ircd_tls_keyfile) < 0)
+  new_srv = tls_server();
+  if (!new_srv)
+  {
+    log_write(LS_SYSTEM, L_ERROR, 0, "unable to create new TLS server context");
+    tls_config_free(new_cfg);
+    return 3;
+  }
+
+  res = tls_config_add_keypair_file(new_cfg, ircd_tls_certfile, ircd_tls_keyfile);
+  if (res < 0)
   {
     log_write(LS_SYSTEM, L_ERROR, 0, "unable to load certificate and key: %s",
               tls_config_error(new_cfg));
-  fail:
     tls_config_free(new_cfg);
-    return NULL;
+    tls_free(new_srv);
+    return 4;
   }
 
   str = feature_str(FEAT_TLS_CACERTDIR);
@@ -87,7 +94,6 @@ static struct tls_config *make_tls_config(const char *ciphers)
       log_write(LS_SYSTEM, L_ERROR, 0, "unable to set CA path to %s: %s",
                 str, tls_config_error(new_cfg));
     }
-    goto fail;
   }
 
   str = feature_str(FEAT_TLS_CACERTFILE);
@@ -98,7 +104,6 @@ static struct tls_config *make_tls_config(const char *ciphers)
       log_write(LS_SYSTEM, L_ERROR, 0, "unable to set CA file to %s: %s",
                 str, tls_config_error(new_cfg));
     }
-    goto fail;
   }
 
   protos = 0;
@@ -117,33 +122,47 @@ static struct tls_config *make_tls_config(const char *ciphers)
   {
     log_write(LS_SYSTEM, L_ERROR, 0, "unable to select TLS versions: %s",
               tls_config_error(new_cfg));
-    goto fail;
   }
 
-  str = ciphers;
-  if (EmptyString(str))
-    str = feature_str(FEAT_TLS_CIPHERS);
+  str = feature_str(FEAT_TLS_CIPHERS);
   if (!EmptyString(str))
   {
     if (tls_config_set_ciphers(new_cfg, str) < 0)
     {
       log_write(LS_SYSTEM, L_ERROR, 0, "unable to select TLS ciphers: %s",
                 tls_config_error(new_cfg));
-      goto fail;
     }
   }
 
-  return new_cfg;
+  tls_config_verify_client_optional(new_cfg);
+
+  if (tls_configure(new_srv, new_cfg) < 0)
+  {
+    log_write(LS_SYSTEM, L_ERROR, 0, "unable to configure TLS server context: %s",
+              tls_error(new_srv));
+    tls_config_free(new_cfg);
+    tls_free(new_srv);
+    return 5;
+  }
+
+done:
+  tls_config_free(tls_cfg);
+  tls_cfg = new_cfg;
+  tls_free(tls_srv);
+  tls_srv = new_srv;
+  return 0;
 }
 
 void *ircd_tls_accept(struct Listener *listener, int fd)
 {
   struct tls *tls;
 
-  if (tls_accept_socket(listener->tls_ctx, &tls, fd) < 0)
+  /* TODO: adjust acceptable ciphers list */
+
+  if (tls_accept_socket(tls_srv, &tls, fd) < 0)
   {
     log_write(LS_SYSTEM, L_ERROR, 0, "TLS accept failed: %s",
-              tls_error(listener->tls_ctx));
+              tls_error(tls_srv));
     return NULL;
   }
 
@@ -152,14 +171,7 @@ void *ircd_tls_accept(struct Listener *listener, int fd)
 
 void *ircd_tls_connect(struct ConfItem *aconf, int fd)
 {
-  struct tls_config *cfg;
   struct tls *tls;
-
-  cfg = make_tls_config(aconf->tls_ciphers);
-  if (!cfg)
-  {
-    return NULL;
-  }
 
   tls = tls_client();
   if (!tls)
@@ -168,11 +180,12 @@ void *ircd_tls_connect(struct ConfItem *aconf, int fd)
     return NULL;
   }
 
-  if (tls_configure(tls, cfg) < 0)
+  /* TODO: adjust acceptable ciphers list */
+
+  if (tls_configure(tls, tls_cfg) < 0)
   {
     log_write(LS_SYSTEM, L_ERROR, 0, "tls_configure failed for client: %s",
               tls_error(tls));
-  fail:
     tls_free(tls);
     return NULL;
   }
@@ -181,7 +194,8 @@ void *ircd_tls_connect(struct ConfItem *aconf, int fd)
   {
     log_write(LS_SYSTEM, L_ERROR, 0, "tls_connect_socket failed for %s: %s",
               aconf->name, tls_error(tls));
-    goto fail;
+    tls_free(tls);
+    return NULL;
   }
 
   return tls;
@@ -192,6 +206,19 @@ void ircd_tls_close(void *ctx, const char *message)
   /* TODO: handle TLS_WANT_POLL{IN,OUT} from tls_close() */
   tls_close(ctx);
   tls_free(ctx);
+}
+
+void ircd_tls_fingerprint(void *ctx, char *fingerprint)
+{
+  const char *text;
+
+  text = tls_peer_cert_hash(ctx);
+  if (text && !ircd_strncmp(text, "SHA256:", 7))
+  {
+    /* TODO: convert from ASCII hex to binary */
+    return;
+  }
+  memset(fingerprint, 0, 65);
 }
 
 static int tls_handle_error(struct Client *cptr, struct tls *tls, int err)
@@ -212,37 +239,8 @@ static int tls_handle_error(struct Client *cptr, struct tls *tls, int err)
   return -1;
 }
 
-int ircd_tls_listen(struct Listener *listener)
-{
-  struct tls_config *cfg;
-  struct tls *srv;
-
-  cfg = make_tls_config(listener->tls_ciphers);
-  if (!cfg)
-    return 1;
-  tls_config_verify_client_optional(cfg);
-
-  if (listener->tls_ctx)
-    tls_reset(listener->tls_ctx);
-  else if (!(listener->tls_ctx = tls_server()))
-  {
-    log_write(LS_SYSTEM, L_ERROR, 0, "tls_server failed");
-    return 2;
-  }
-
-  if (tls_configure(listener->tls_ctx, cfg) < 0)
-  {
-    log_write(LS_SYSTEM, L_ERROR, 0, "unable to configure TLS server context: %s",
-              tls_error(listener->tls_ctx));
-    return 3;
-  }
-
-  return 0;
-}
-
 int ircd_tls_negotiate(struct Client *cptr)
 {
-  const char *hash;
   struct tls *tls;
   int res;
 
@@ -251,16 +249,8 @@ int ircd_tls_negotiate(struct Client *cptr)
     return 1;
 
   res = tls_handshake(tls);
-  if (res == 0)
-  {
-    hash = tls_peer_cert_hash(tls);
-    if (hash && !ircd_strncmp(hash, "SHA256:", 7))
-    {
-      ircd_strncpy(cli_tls_fingerprint(cptr), hash+7, 64);
-    }
-    ClearNegotiatingTLS(cptr);
+  if (res == 1)
     return 1;
-  }
   return tls_handle_error(cptr, tls, res);
 }
 

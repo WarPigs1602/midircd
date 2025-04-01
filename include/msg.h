@@ -68,11 +68,6 @@ struct Client;
 #define TOK_USER                "USER"
 #define CMD_USER		MSG_USER, TOK_USER
 
-#define MSG_WEBIRC              "WEBIRC"        /* WEBI */
-#define TOK_WEBIRC              "WEBIRC"
-#define CMD_WEBIRC              MSG_WEBIRC, TOK_WEBIRC
-
-
 #define MSG_NICK                "NICK"          /* NICK */
 #define TOK_NICK                "N"
 #define CMD_NICK		MSG_NICK, TOK_NICK
@@ -372,33 +367,14 @@ struct Client;
 #define TOK_CAP			"CAP"
 #define CMD_CAP			MSG_CAP, TOK_CAP
 
-#define MSG_XQUERY		"XQUERY"
-#define TOK_XQUERY		"XQ"
-#define CMD_XQUERY		MSG_XQUERY, TOK_XQUERY
-
-#define MSG_XREPLY		"XREPLY"
-#define TOK_XREPLY		"XR"
-#define CMD_XREPLY		MSG_XREPLY, TOK_XREPLY
-
 #define MSG_CHGHOST		"CHGHOST"
 #define TOK_CHGHOST		"CHGHOST"
 #define CMD_CHGHOST		MSG_CHGHOST, TOK_CHGHOST
-
-#define MSG_SASL	"SASL"
-#define TOK_SASL	"SASL"
-#define CMD_SASL	MSG_SASL, TOK_SASL
 
 #define MSG_AUTHENTICATE	"AUTHENTICATE"
 #define TOK_AUTHENTICATE	"AUTHENTICATE"
 #define CMD_AUTHENTICATE	MSG_AUTHENTICATE, TOK_AUTHENTICATE
 
-#define MSG_RENAME	"RENAME"
-#define TOK_RENAME	"RE"
-#define CMD_RENAME	MSG_RENAME, TOK_RENAME
-
-#define MSG_STARTTLS  "STARTTLS"
-#define TOK_STARTTLS  "STARTTLS"
-#define CMD_STARTTLS  MSG_STARTTLS, TOK_STARTTLS
 /*
  * Constants
  */

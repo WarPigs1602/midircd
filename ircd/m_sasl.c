@@ -1,5 +1,5 @@
 /*
- * IRC - Internet Relay Chat, ircd/m_asll.c
+ * IRC - Internet Relay Chat, ircd/m_sasl.c
  * Copyright (C) 2002 Alex Badea <vampire@p16.pub.ro>
  *
  * See file AUTHORS in IRC package for additional names of
@@ -19,7 +19,7 @@
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
  *
- * $Id: m_asll.c,v 1.3.2.1 2007/03/28 04:04:32 entrope Exp $
+ * $Id: m_sasl.c,v 1.3.2.1 2025/04/01 04:04:32 entrope Exp $
  */
 
 /*
@@ -84,7 +84,6 @@
 #include "hash.h"
 #include "ircd.h"
 #include "ircd_alloc.h"
-#include "ircd_crypt_b64.h"
 #include "ircd_features.h"
 #include "ircd_log.h"
 #include "ircd_relay.h"

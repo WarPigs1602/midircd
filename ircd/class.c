@@ -65,11 +65,6 @@ struct ConnectionClass* make_class(void)
     tmp->next = connClassList->next;
     connClassList->next = tmp;
   }
-  else
-  {
-    tmp->next = 0;
-    connClassList = tmp;
-  }
   ++connClassAllocCount;
   return tmp;
 }
@@ -91,22 +86,22 @@ void free_class(struct ConnectionClass* p)
 
 /** Initialize the connection class list.
  * A connection class named "default" is created, with ping frequency,
- * connection frequency, maximum links, max SendQ and max flood values from the
+ * connection frequency, maximum links and max SendQ values from the
  * corresponding configuration features.
  */
 void init_class(void)
 {
   if (!connClassList) {
-    make_class();
+    connClassList = (struct ConnectionClass*) make_class();
+    connClassList->next   = 0;
   }
 
   /* We had better not try and free this... */
   ConClass(connClassList) = "default";
   PingFreq(connClassList) = feature_int(FEAT_PINGFREQUENCY);
   ConFreq(connClassList)  = feature_int(FEAT_CONNECTFREQUENCY);
+  MaxLinks(connClassList) = feature_int(FEAT_MAXIMUM_LINKS);
   MaxSendq(connClassList) = feature_int(FEAT_DEFAULTMAXSENDQLENGTH);
-  MaxFlood(connClassList) = feature_int(FEAT_CLIENT_FLOOD);
-  MaxLinks(connClassList) = 1;
   connClassList->valid    = 1;
   Links(connClassList)    = 1;
 }
@@ -134,11 +129,10 @@ void class_delete_marked(void)
 
   Debug((DEBUG_DEBUG, "Class check:"));
 
-  prev = connClassList;
-  while ((cl = prev->next) != NULL) {
-    Debug((DEBUG_DEBUG, "Class %s : CF: %d PF: %d ML: %d LI: %d SQ: %d MF: %d",
+  for (prev = cl = connClassList; cl; cl = prev->next) {
+    Debug((DEBUG_DEBUG, "Class %s : CF: %d PF: %d ML: %d LI: %d SQ: %d",
            ConClass(cl), ConFreq(cl), PingFreq(cl), MaxLinks(cl),
-           Links(cl), MaxSendq(cl), MaxFlood(cl)));
+           Links(cl), MaxSendq(cl)));
     /*
      * unlink marked classes, delete unreferenced ones
      */
@@ -204,22 +198,21 @@ get_client_class(struct Client *acptr)
 
 /** Make sure we have a connection class named \a name.
  * If one does not exist, create it.  Then set its ping frequency,
- * connection frequency, maximum link count, max SendQ and max flood according
+ * connection frequency, maximum link count, and max SendQ according
  * to the parameters.
  * @param[in] name Connection class name.
  * @param[in] ping Ping frequency for clients in this class.
  * @param[in] confreq Connection frequency for clients.
- * @param[in] maxfl Max flood for clients.
  * @param[in] maxli Maximum link count for class.
  * @param[in] sendq Max SendQ for clients.
  */
 void add_class(char *name, unsigned int ping, unsigned int confreq,
-               unsigned int maxfl, unsigned int maxli, unsigned int sendq)
+               unsigned int maxli, unsigned int sendq)
 {
   struct ConnectionClass* p;
 
-  Debug((DEBUG_DEBUG, "Add Class %s: cf: %u pf: %u ml: %u sq: %d mf: %d",
-         name, confreq, ping, maxli, sendq, maxfl));
+  Debug((DEBUG_DEBUG, "Add Class %s: cf: %u pf: %u ml: %u sq: %d",
+         name, confreq, ping, maxli, sendq));
   assert(name != NULL);
   p = do_find_class(name, 1);
   if (!p)
@@ -232,8 +225,6 @@ void add_class(char *name, unsigned int ping, unsigned int confreq,
   MaxLinks(p) = maxli;
   MaxSendq(p) = (sendq > 0) ?
      sendq : feature_int(FEAT_DEFAULTMAXSENDQLENGTH);
-  MaxFlood(p) = (maxfl > 0) ?
-     maxfl : feature_int(FEAT_CLIENT_FLOOD);
   p->valid = 1;
 }
 
@@ -269,8 +260,7 @@ report_classes(struct Client *sptr, const struct StatDesc *sd,
   for (cltmp = connClassList; cltmp; cltmp = cltmp->next)
     send_reply(sptr, RPL_STATSYLINE, (cltmp->valid ? 'Y' : 'y'),
                ConClass(cltmp), PingFreq(cltmp), ConFreq(cltmp),
-               MaxLinks(cltmp), MaxSendq(cltmp), MaxFlood(cltmp),
-               Links(cltmp) - 1, CCUmode(cltmp) ? CCUmode(cltmp) : "+");
+               MaxLinks(cltmp), MaxSendq(cltmp), Links(cltmp) - 1);
 }
 
 /** Return maximum SendQ length for a client.
@@ -300,32 +290,6 @@ get_sendq(struct Client *cptr)
     }
   }
   return feature_int(FEAT_DEFAULTMAXSENDQLENGTH);
-}
-
-/** Return maximum flood for a client.
- * @param[in] cptr Local client to check.
- * @return Number of bytes flood allowed for \a cptr.
- */
-unsigned int
-find_max_flood(struct Client *cptr)
-{
-  assert(0 != cptr);
-  assert(0 != cli_local(cptr));
-
-  if (cli_confs(cptr)) {
-    struct SLink*     tmp;
-    struct ConnectionClass* cl;
-
-    for (tmp = cli_confs(cptr); tmp; tmp = tmp->next) {
-      if (!tmp->value.aconf || !(cl = tmp->value.aconf->conn_class))
-        continue;
-      if (ConClass(cl) != NULL) {
-        cli_max_flood(cptr) = MaxFlood(cl);
-        return cli_max_flood(cptr);
-      }
-    }
-  }
-  return feature_int(FEAT_CLIENT_FLOOD);
 }
 
 /** Report connection class memory statistics to a client.

@@ -93,7 +93,7 @@ typedef unsigned long flagpage_t;
 #define FlagClr(set,flag) ((set)->bits[FLAGSET_INDEX(flag)] &= ~FLAGSET_MASK(flag))
 
 /** String containing valid user modes, in no particular order. */
-#define infousermodes "dioswkgxRXInPc"
+#define infousermodes "dioswkgxRXInP"
 
 /** Character to indicate no oper name available */
 #define NOOPERNAMECHARACTER '-'
@@ -138,7 +138,6 @@ enum Priv
     PRIV_FREEFORM,       /* oper can use freeform sethost */
     PRIV_PARANOID,       /* oper can set paranoid */
     PRIV_CHECK,          /* oper can use /check */
-    PRIV_CLOAK,          /* oper can use /check */
     PRIV_LAST_PRIV /**< number of privileges */
   };
 
@@ -168,7 +167,6 @@ enum Flag
     FLAG_BURST,                     /**< Server is receiving a net.burst */
     FLAG_BURST_ACK,                 /**< Server is waiting for eob ack */
     FLAG_IPCHECK,                   /**< Added or updated IPregistry data */
-    FLAG_NEGOTIATING_TLS,           /**< TLS negotation ongoing */
     FLAG_LOCOP,                     /**< Local operator -- SRB */
     FLAG_SERVNOTICE,                /**< server notices such as kill */
     FLAG_OPER,                      /**< Operator */
@@ -182,13 +180,13 @@ enum Flag
     FLAG_ACCOUNTONLY,               /**< ASUKA_R: hide privmsgs/notices if
 				      user is not authed or opered */
     FLAG_PARANOID,                  /**< ASUKA_P: sends notices on whois */
-    FLAG_CLOAK,                  /**< ASUKA_P: sends cloak */
     FLAG_HIDDENHOST,                /**< user's host is hidden */
     FLAG_SETHOST,                   /**< ASUKA_h: oper's host is changed */
     FLAG_NOCHAN,                    /**< user's channels are hidden */
     FLAG_NOIDLE,                    /**< user's idletime is hidden */
     FLAG_XTRAOP,                    /**< oper has special powers */
     FLAG_OPERNAME,                  /**< Server sends oper name in mode string */
+    FLAG_NEGOTIATING_TLS,           /**< TLS negotation ongoing */
     FLAG_TLS,                       /**< user is using TLS */
 
     FLAG_LAST_FLAG,                 /**< number of flags */
@@ -235,7 +233,6 @@ struct Connection
                                         for parsing. */
   struct ListingArgs* con_listing;   /**< Current LIST status. */
   unsigned int        con_max_sendq; /**< cached max send queue for client */
-  unsigned int        con_max_flood; /**< cached client flood limit */
   unsigned int        con_ping_freq; /**< cached ping freq */
   unsigned short      con_lastsq;    /**< # 2k blocks when sendqueued
                                         called last. */
@@ -258,7 +255,6 @@ struct Connection
   capset_t            con_capab;     /**< Client capabilities (from us) */
   capset_t            con_active;    /**< Active capabilities (to us) */
   struct AuthRequest* con_auth;      /**< Auth request for client */
-  const struct wline* con_wline;     /**< WebIRC authorization for client */
   char*               con_rexmit;    /**< TLS retransmission data */
   size_t              con_rexmit_len; /**, TLS retransmission length */
 };
@@ -286,9 +282,6 @@ struct Client {
   struct irc_in_addr cli_ip;      /**< Real IP of client */
   short          cli_status;      /**< Client type */
   int  			 cli_sasl;        /**< Client uses sasl */
-  int  			 cli_sasla;        /**< Client uses sasl */
-  char cli_saslacc[BUFSIZE + 1];        /**< Client uses sasl */
-  char cli_saslnick[BUFSIZE + 1];        /**< Client uses sasl */
   char cli_name[HOSTLEN + 1];     /**< Unique name of the client, nick or host */
   char cli_username[USERLEN + 1]; /**< Username determined by ident lookup */
   char cli_info[REALLEN + 1];     /**< Free form additional client information */
@@ -351,6 +344,8 @@ struct Client {
 #define cli_username(cli)	((cli)->cli_username)
 /** Get client realname (information field). */
 #define cli_info(cli)		((cli)->cli_info)
+/** Get client account string. */
+#define cli_account(cli)	(cli_user(cli) ? cli_user(cli)->account : "0")
 
 /** Get number of incoming bytes queued for client. */
 #define cli_count(cli)		con_count(cli_connect(cli))
@@ -388,8 +383,6 @@ struct Client {
 #define cli_listing(cli)	con_listing(cli_connect(cli))
 /** Get cached max SendQ for client. */
 #define cli_max_sendq(cli)	con_max_sendq(cli_connect(cli))
-/** Get cached flood limit for client. */
-#define cli_max_flood(cli)	con_max_flood(cli_connect(cli))
 /** Get ping frequency for client. */
 #define cli_ping_freq(cli)	con_ping_freq(cli_connect(cli))
 /** Get lastsq for client's connection. */
@@ -412,12 +405,8 @@ struct Client {
 #define cli_proc(cli)		con_proc(cli_connect(cli))
 /** Get auth request for client. */
 #define cli_auth(cli)		con_auth(cli_connect(cli))
-/** Get WebIRC authorization for client. */
-#define cli_wline(cli)          con_wline(cli_connect(cli))
 /** Get sentalong marker for client. */
 #define cli_sentalong(cli)      con_sentalong(cli_connect(cli))
-/** Get client account string. */
-#define cli_account(cli)	(cli_user(cli) ? cli_user(cli)->account : "0")
 
 /** Verify that a connection is valid. */
 #define con_verify(con)		((con)->con_magic == CONNECTION_MAGIC)
@@ -471,8 +460,6 @@ struct Client {
 #define con_listing(con)	((con)->con_listing)
 /** Get the maximum permitted SendQ size for the connection. */
 #define con_max_sendq(con)	((con)->con_max_sendq)
-/** Get the flood limit for the connection. */
-#define con_max_flood(con)	((con)->con_max_flood)
 /** Get the ping frequency for the connection. */
 #define con_ping_freq(con)	((con)->con_ping_freq)
 /** Get the lastsq for the connection. */
@@ -501,8 +488,6 @@ struct Client {
 #define con_active(con)         ((con)->con_active)
 /** Get the auth request for the connection. */
 #define con_auth(con)		((con)->con_auth)
-/** Get the WebIRC block (if any) used by the connection. */
-#define con_wline(con)          ((con)->con_wline)
 
 #define STAT_CONNECTING         0x001 /**< connecting to another server */
 #define STAT_HANDSHAKE          0x002 /**< pass - server sent */
@@ -512,7 +497,6 @@ struct Client {
 #define STAT_UNKNOWN_SERVER     0x020 /**< connection on a server port */
 #define STAT_SERVER             0x040 /**< fully registered server */
 #define STAT_USER               0x080 /**< fully registered user */
-#define STAT_WEBIRC             0x100 /**< connection on a webirc port */
 
 /*
  * status macros.
@@ -529,16 +513,13 @@ struct Client {
 #define IsMe(x)                 (cli_status(x) == STAT_ME)
 /** Return non-zero if the client has not yet registered. */
 #define IsUnknown(x)            (cli_status(x) & \
-        (STAT_UNKNOWN | STAT_UNKNOWN_USER | STAT_UNKNOWN_SERVER | STAT_WEBIRC))
+        (STAT_UNKNOWN | STAT_UNKNOWN_USER | STAT_UNKNOWN_SERVER))
 /** Return non-zero if the client is an unregistered connection on a
  * server port. */
 #define IsServerPort(x)         (cli_status(x) == STAT_UNKNOWN_SERVER )
 /** Return non-zero if the client is an unregistered connection on a
  * user port. */
 #define IsUserPort(x)           (cli_status(x) == STAT_UNKNOWN_USER )
-/** Return non-zero if the client is an unregistered connection on a
- * WebIRC port that has not yet sent WEBIRC. */
-#define IsWebircPort(x)         (cli_status(x) == STAT_WEBIRC)
 /** Return non-zero if the client is a real client connection. */
 #define IsClient(x)             (cli_status(x) & \
         (STAT_HANDSHAKE | STAT_ME | STAT_UNKNOWN |\
@@ -649,8 +630,6 @@ struct Client {
 /** Return non-zero if the client should receive notices when someone
  * does a whois on it. */
 #define IsParanoid(x)           HasFlag(x, FLAG_PARANOID)
-/** Return non-zero if the client should be cloaked. */
-#define IsCloak(x)           HasFlag(x, FLAG_CLOAK)
 /** Return non-zero if the server should send opername information */
 #define IsSendOperName(x)         HasFlag(x, FLAG_OPERNAME)
 
@@ -720,8 +699,6 @@ struct Client {
 #define SetAccountOnly(x)       SetFlag(x, FLAG_ACCOUNTONLY)
 /** Mark a client as having mode +P (paranoid). */
 #define SetParanoid(x)          SetFlag(x, FLAG_PARANOID)
-/** Mark a client as having mode +C (cloak). */
-#define SetCloak(x)          SetFlag(x, FLAG_CLOAK)
 
 /** Return non-zero if \a sptr sees \a acptr as an operator. */
 #define SeeOper(sptr,acptr) (IsAnOper(acptr) && (HasPriv(acptr, PRIV_DISPLAY) \
@@ -767,8 +744,6 @@ struct Client {
 #define ClearAccountOnly(x)     ClrFlag(x, FLAG_ACCOUNTONLY)
 /** Remove mode +P (paranoid) from a client */
 #define ClearParanoid(x)        ClrFlag(x, FLAG_PARANOID)
-/** Remove mode +C (cloak) from a client */
-#define ClearCloak(x)        ClrFlag(x, FLAG_CLOAK)
 /** Mark a client's TLS negotation as complete. */
 #define ClearNegotiatingTLS(x)  ClrFlag(x, FLAG_NEGOTIATING_TLS)
 
@@ -833,9 +808,6 @@ struct Client {
 /** Test whether a client has the capability active */
 #define CapActive(cli, cap) CapHas(cli_active(cli), (cap))
 
-/** A client's max flood limit; either set in its class, its privilege class (if applicabe) or default setting.  */
-#define GetMaxFlood(cli) (cli_max_flood(cli) ? cli_max_flood(cli) : find_max_flood(cli))
-
 #define HIDE_IP 0 /**< Do not show IP address in get_client_name() */
 #define SHOW_IP 1 /**< Show ident and IP address in get_client_name() */
 
@@ -845,8 +817,7 @@ extern int client_get_ping(const struct Client* local_client);
 extern void client_drop_sendq(struct Connection* con);
 extern void client_add_sendq(struct Connection* con,
 			     struct Connection** con_p);
-extern void client_set_privs(struct Client *client, struct ConfItem *oper,
-			     int forceOper);
+extern void client_set_privs(struct Client *client, struct ConfItem *oper);
 extern int client_report_privs(struct Client* to, struct Client* client);
 
 #endif /* INCLUDED_client_h */

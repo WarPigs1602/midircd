@@ -134,7 +134,6 @@ int m_wallchops(struct Client* cptr, struct Client* sptr, int parc, char* parv[]
             return 0;
           }
 
-      RevealDelayedJoinIfNeeded(sptr, chptr);
       sendcmdto_channel_butone(sptr, CMD_WALLCHOPS, chptr, cptr,
 			       SKIP_DEAF | SKIP_BURST | SKIP_NONOPS,
 			       "%H :@ %s", chptr, parv[parc - 1]);

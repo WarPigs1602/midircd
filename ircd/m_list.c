@@ -278,8 +278,7 @@ param_parse(struct Client *sptr, const char *param, struct ListingArgs *args,
         if (param[0] != '*' &&
             param[0] != '?' &&
             param[0] != '#' &&
-            param[0] != '&' &&
-            param[0] != '!')
+            param[0] != '&')
           return show_usage(sptr);
 
         tmp1 = strchr(param, ',');

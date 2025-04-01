@@ -591,41 +591,6 @@ msgq_count_memory(struct Client *cptr, size_t *msg_alloc, size_t *msgbuf_alloc)
   *msgbuf_alloc = total;
 }
 
-static int msgqlist_excise(struct MsgQ *mq, struct MsgQList *qlist,
-                           const char *buf, unsigned int len)
-{
-  struct Msg *msg;
-
-  msg = qlist->head;
-  if (!msg)
-    return 0;
-
-  if (buf != msg->msg->msg)
-    return 0;
-
-  assert(len == msg->msg->length);
-  msgq_delmsg(mq, qlist, &len);
-  return 1;
-}
-
-/** Excise a message from the front of a message queue.
- *
- * This is used for TLS, where TLS libraries may return an EAGAIN-like
- * condition for a send but also require the application to provide
- * exactly the same contents for the next send.
- *
- * @warning \a buf must be at the front of one of \a mq's queues.
- * @param[in] mq Message queue to operate on.
- * @param[in] buf Buffered message to excise.
- * @param[in] len Length of buffered message.
- */
-void msgq_excise(struct MsgQ *mq, const char *buf, unsigned int len)
-{
-  if (!msgqlist_excise(mq, &mq->queue, buf, len)
-      && !msgqlist_excise(mq, &mq->prio, buf, len))
-    assert(0 && "msgq_excise() could not find message to excise");
-}
-
 /** Report remaining space in a MsgBuf.
  * @param[in] mb Message buffer to check.
  * @return Number of additional bytes that can be appended to the message.
@@ -660,4 +625,39 @@ msgq_histogram(struct Client *cptr, const struct StatDesc *sd, char *param)
 	       tmp.sizes[i +  9], tmp.sizes[i + 10], tmp.sizes[i + 11],
 	       tmp.sizes[i + 12], tmp.sizes[i + 13], tmp.sizes[i + 14],
 	       tmp.sizes[i + 15]);
+}
+
+static int msgqlist_excise(struct MsgQ *mq, struct MsgQList *qlist,
+                           const char *buf, unsigned int len)
+{
+  struct Msg *msg;
+
+  msg = qlist->head;
+  if (!msg)
+    return 0;
+
+  if (buf != msg->msg->msg)
+    return 0;
+
+  assert(len == msg->msg->length);
+  msgq_delmsg(mq, qlist, &len);
+  return 1;
+}
+
+/** Excise a message from the front of a message queue.
+ *
+ * This is used for TLS, where TLS libraries may return an EAGAIN-like
+ * condition for a send but also require the application to provide
+ * exactly the same contents for the next send.
+ *
+ * @warning \a buf must be at the front of one of \a mq's queues.
+ * @param[in] mq Message queue to operate on.
+ * @param[in] buf Buffered message to excise.
+ * @param[in] len Length of buffered message.
+ */
+void msgq_excise(struct MsgQ *mq, const char *buf, unsigned int len)
+{
+  if (!msgqlist_excise(mq, &mq->queue, buf, len)
+      && !msgqlist_excise(mq, &mq->prio, buf, len))
+    assert(0 && "msgq_excise() could not find message to excise");
 }
