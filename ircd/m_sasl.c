@@ -112,10 +112,6 @@ int m_sasl(struct Client* cptr, struct Client* sptr, int parc, char* parv[])
 {		
   if (parc < 2 || *parv[1] == '\0')
     return need_more_params(sptr, "AUTHENTICATE");	
-  if(CapHas(cli_active(sptr), CAP_SASL)) {
-	 send_reply(sptr, ERR_SASLFAIL); 
-  } else {
-     register_sasl(cptr, sptr, parc, parv);
-  }
+  register_sasl(cptr, sptr, parc, parv);
   return 0;
 }
