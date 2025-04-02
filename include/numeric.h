@@ -468,7 +468,8 @@ extern const struct Numeric* get_error_numeric(int err);
 #define ERR_QUARANTINED      524        /* Undernet extension -Vampire */
 #define ERR_BADHOSTMASK      530	/* QuakeNet extension -froo */
 #define ERR_HOSTUNAVAIL      531	/* QuakeNet extension -froo */
-
+#define ERR_TLSCLIFINGERPRINT 532
+#define ERR_TLSMODE          533
 #define ERR_NOTLOWEROPLEVEL  560	/* Undernet extension */
 #define ERR_NOTMANAGER       561	/* Undernet extension */
 #define ERR_CHANSECURED      562	/* Undernet extension */
@@ -476,7 +477,6 @@ extern const struct Numeric* get_error_numeric(int err);
 #define ERR_UPASSNOTSET      564	/* Undernet extension */
 #define ERR_NOMANAGER        566	/* Undernet extension */
 #define ERR_UPASS_SAME_APASS 567        /* Undernet extension */
-#define ERR_TLSCLIFINGERPRINT 632   /* Nefarious & Undernet extension */
 
 #define RPL_STARTTLS         670    /* Nefarious, Undernet */
 

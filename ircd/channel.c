@@ -3416,6 +3416,13 @@ mode_parse(struct ModeBuf *mbuf, struct Client *cptr, struct Client *sptr,
 	mode_parse_ban(&state, flag_p);
 	break;
 
+      case 'Z': /* deal with TLS */
+		if(IsTLS(state.cptr))
+	mode_parse_mode(&state, flag_p);
+	else
+  send_reply(state.cptr, ERR_TLSMODE, state.chptr->chname);		
+	break;
+
       case 'o': /* deal with ops/voice */
       case 'v':
 	mode_parse_client(&state, flag_p);

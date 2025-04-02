@@ -1098,7 +1098,7 @@ static Numeric replyTable[] = {
 /* 532 */
   { ERR_TLSCLIFINGERPRINT, ":TLS certificate fingerprint did not match", "532" },
 /* 533 */
-  { 0 },
+  { ERR_TLSMODE, ":Cannot set mode on %s, you are not connected with TLS", "533" },
 /* 534 */
   { 0 },
 /* 535 */
