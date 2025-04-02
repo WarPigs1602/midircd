@@ -233,7 +233,7 @@ static void do_whois(struct Client* sptr, struct Client *acptr, int parc)
                   cli_firsttime(acptr));
     if ((sptr == acptr || IsAnOper(sptr))
         && IsWebirc(acptr))
-        send_reply(sptr, RPL_WHOISWEBIRC, name, "webirc");
+        send_reply(sptr, RPL_WHOISWEBIRC, name, feature_str(FEAT_HIS_WEBIRC_NAME));
  }
 }
 
