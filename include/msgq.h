@@ -86,5 +86,6 @@ extern void msgq_count_memory(struct Client *cptr,
 extern void msgq_histogram(struct Client *cptr, const struct StatDesc *sd,
                            char *param);
 extern unsigned int msgq_bufleft(struct MsgBuf *mb);
+extern void msgq_excise(struct MsgQ *mq, const char *buf, unsigned int len);
 
 #endif /* INCLUDED_msgq_h */
