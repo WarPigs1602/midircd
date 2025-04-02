@@ -1967,6 +1967,14 @@ static int iauth_cmd_sasl(struct IAuth *iauth, struct Client *cli,
         cli_user(cli)->acc_create = atoi(timestamp);
 	    cli_user(cli)->acc_id = strtoul(id, NULL, 10);
 		SetAccount(cli);
+		ircd_snprintf(0, cli_user(cli)->authhost, HOSTLEN, "%s.%s", account, feature_str(FEAT_HIDDEN_HOST));
+		int killreason = find_kill(cli,1);	
+	    if (killreason)
+	    {
+		  ++ServerStats->is_ref;
+		  return exit_client(cli, cli, &me,
+							(killreason == -1 ? "K-lined" : "G-lined"));
+	    }		
 		send_reply(cli, RPL_LOGGEDIN, cli, cli_name(cli), account);
 		send_reply(cli, RPL_SASLSUCCESS);
 	} else if(!ircd_strcmp(cmd, "N")) {
