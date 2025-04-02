@@ -3417,10 +3417,10 @@ mode_parse(struct ModeBuf *mbuf, struct Client *cptr, struct Client *sptr,
 	break;
 
       case 'Z': /* deal with TLS */
-		if(IsTLS(state.cptr))
+		if(IsTLS(state.sptr))
 	mode_parse_mode(&state, flag_p);
 	else
-  send_reply(state.cptr, ERR_TLSMODE, state.chptr->chname);		
+  send_reply(state.sptr, ERR_TLSMODE, state.chptr->chname);		
 	break;
 
       case 'o': /* deal with ops/voice */
