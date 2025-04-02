@@ -282,6 +282,8 @@ struct Client {
   struct irc_in_addr cli_ip;      /**< Real IP of client */
   short          cli_status;      /**< Client type */
   int  			 cli_sasl;        /**< Client uses sasl */
+  int  			 cli_webi;        /**< Client uses webirc */
+  char cli_webirc[BUFSIZE + 1];     /**< Unique name of the client, nick or host */
   char cli_name[HOSTLEN + 1];     /**< Unique name of the client, nick or host */
   char cli_username[USERLEN + 1]; /**< Username determined by ident lookup */
   char cli_info[REALLEN + 1];     /**< Free form additional client information */
@@ -308,6 +310,8 @@ struct Client {
 #define cli_user(cli)		((cli)->cli_user)
 /** Get Server structure for client, if client is a server. */
 #define cli_serv(cli)		((cli)->cli_serv)
+/** Get Server structure for client, if client is using webirc. */
+#define cli_webirc(cli)		((cli)->cli_webirc)
 /** Get Whowas link for client. */
 #define cli_whowas(cli)		((cli)->cli_whowas)
 /** Get client numnick. */

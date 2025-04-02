@@ -236,9 +236,11 @@ int auth_set_webirc(struct AuthRequest *auth, const char *password, const char *
   if (!FlagHas(&auth->flags, AR_NEEDS_NICK) || !FlagHas(&auth->flags, AR_NEEDS_USER))
     return exit_client(cptr, cptr, &me, "WEBIRC must not be used after USER or NICK");
 
-  if (IAuthHas(iauth, IAUTH_UNDERNET))
+  if (IAuthHas(iauth, IAUTH_UNDERNET)) {
     sendto_iauth(cptr, "W %s %s %s %s", password, username, hostname, ircd_ntoa(ip));
-
+	cptr->cli_webi = 1;
+    ircd_strncpy(cli_webirc(cptr), username, BUFSIZE);
+  }
   return 0;
 }
 
