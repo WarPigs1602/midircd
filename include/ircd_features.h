@@ -64,6 +64,7 @@ enum Feature {
   FEAT_TOPIC_BURST,
   FEAT_AUTOCHANMODES,
   FEAT_AUTOCHANMODES_LIST,
+  FEAT_ENABLE_GLINE_OPER_EXCEPTION,
 
   /* features that probably should not be touched */
   FEAT_KILLCHASETIMELIMIT,

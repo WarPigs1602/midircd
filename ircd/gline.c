@@ -201,6 +201,48 @@ make_gline(char *nick, char *user, char *host, char *reason, time_t expire, time
   return gline;
 }
 
+/** This scans all users for the real host
+ * @param[in] host The host to parse
+ */
+static void 
+get_realhost(char **host) {
+  struct Client *acptr;	
+  int fd;   
+  /*
+   * checks G-line affects accounts!
+   */  
+  for (fd = HighestFd; fd >= 0; --fd) {
+    /*
+     * get the users!
+     */
+    if ((acptr = LocalClientArray[fd])) {
+      if (!cli_user(acptr))
+        continue;
+	  if (IsAccount(acptr)) { 
+	    if(match(*host, cli_user(acptr)->authhost)) {
+          return;
+		}
+	  }
+	}
+  }
+  /*
+   * G-lines the real host!
+   */  
+  for (fd = HighestFd; fd >= 0; --fd) {
+   /*
+   * get the users!
+   */  
+    if ((acptr = LocalClientArray[fd])) {
+      if (!cli_user(acptr))
+        continue;
+	  if (cli_user(acptr)->realhost && match(*host, cli_user(acptr)->host)) {
+	    *host = cli_user(acptr)->realhost; 
+		return;
+      }
+	}
+  }  
+}
+
 /** Check local clients against a new G-line.
  * If the G-line is inactive, return immediately.
  * Otherwise, if any users match it, disconnect them or kick them if the G-line is a BADCHAN.
@@ -256,19 +298,22 @@ do_gline(struct Client *cptr, struct Client *sptr, struct Gline *gline)
           if (cli_name(acptr) &&
               match(gline->gl_nick, cli_name(acptr)) !=0)
             continue;
-
           if (cli_user(acptr)->username &&
               match(gline->gl_user, (cli_user(acptr))->realusername) != 0)
             continue;
-
           if (GlineIsIpMask(gline)) {
             if (!ipmask_check(&cli_ip(acptr), &gline->gl_addr, gline->gl_bits))
               continue;
           }
           else {
-            if (match(gline->gl_host, cli_sockhost(acptr)) != 0)
+			if (match(gline->gl_host, cli_user(acptr)->host) != 0 && match(gline->gl_host, cli_sockhost(acptr)) != 0 && match(gline->gl_host, cli_user(acptr)->authhost) != 0)
               continue;
           }
+          if (IsAnOper(acptr) && FEAT_ENABLE_GLINE_OPER_EXCEPTION) {
+                    sendto_opmask_butone(0, SNO_GLINE, "G-line for %s ignored, nick is an oper...",
+                             cli_name(acptr));
+			continue;
+		  }
         }
 
         /* ok, here's one that got G-lined */
@@ -420,11 +465,13 @@ gline_add(struct Client *cptr, struct Client *sptr, char *userhost,
   char uhmask[NICKLEN + USERLEN + HOSTLEN + 3];
   char *nick, *user, *host;
   int tmp;
-
+  
+  // Detects the real host
+  
   assert(0 != userhost);
   assert(0 != reason);
 
-  if (*userhost == '#' || *userhost == '&') {
+  if (*userhost == '#' || *userhost == '&' || *userhost == '!') {
     if ((flags & GLINE_LOCAL) && !HasPriv(sptr, PRIV_LOCAL_BADCHAN))
       return send_reply(sptr, ERR_NOPRIVILEGES);
 
@@ -449,7 +496,8 @@ gline_add(struct Client *cptr, struct Client *sptr, char *userhost,
      user = (*userhost =='$' ? userhost : userhost+2);
      host = 0;
   } else {
-    canon_userhost(userhost, &nick, &user, &host, "*");
+	canon_userhost(userhost, &nick, &user, &host, "*");
+	get_realhost(&host);
     if (sizeof(uhmask) <
 	ircd_snprintf(0, uhmask, sizeof(uhmask), "%s@%s", user, host))
       return send_reply(sptr, ERR_LONGMASK);
@@ -698,7 +746,7 @@ gline_find(char *userhost, unsigned int flags)
   }
 
   if ((flags & (GLINE_BADCHAN | GLINE_ANY)) == GLINE_BADCHAN ||
-      *userhost == '#' || *userhost == '&')
+      *userhost == '#' || *userhost == '&' || *userhost == '!')
     return 0;
 
   DupString(t_uh, userhost);
@@ -795,13 +843,14 @@ gline_lookup(struct Client *cptr, unsigned int flags)
         continue;
       if (match(gline->gl_user, (cli_user(cptr))->realusername) != 0)
         continue;
-
+      if (IsAnOper(cptr) && FEAT_ENABLE_GLINE_OPER_EXCEPTION) 
+		continue;
       if (GlineIsIpMask(gline)) {
         if (!ipmask_check(&cli_ip(cptr), &gline->gl_addr, gline->gl_bits))
           continue;
       }
       else {
-        if (match(gline->gl_host, (cli_user(cptr))->realhost) != 0)
+          if (match(gline->gl_host, cli_user(cptr)->host) != 0 && match(gline->gl_host, cli_sockhost(cptr)) != 0 && match(gline->gl_host, cli_user(cptr)->authhost) != 0)
           continue;
       }
     }
@@ -1035,13 +1084,15 @@ IsNickGlined(struct Client *cptr, char *nick)
 
     if (match(gline->gl_user, (cli_user(cptr))->username) != 0)
       continue;
-
+    if (IsAnOper(cptr) && FEAT_ENABLE_GLINE_OPER_EXCEPTION) {
+      continue;
+	}
     if (GlineIsIpMask(gline)) {
       if (!ipmask_check(&(cli_ip(cptr)), &gline->gl_addr, gline->gl_bits))
         continue;
     }
     else {
-      if (match(gline->gl_host, (cli_user(cptr))->realhost) != 0)
+        if (match(gline->gl_host, cli_user(cptr)->host) != 0 && match(gline->gl_host, cli_sockhost(cptr)) != 0 && match(gline->gl_host, cli_user(cptr)->authhost) != 0)
         continue;
     }
     return gline;
@@ -1051,4 +1102,3 @@ IsNickGlined(struct Client *cptr, char *nick)
    */
   return 0;
 }
-

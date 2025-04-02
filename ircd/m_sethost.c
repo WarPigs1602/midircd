@@ -89,6 +89,7 @@
 #include "msgq.h"
 #include "numeric.h"
 #include "s_conf.h"
+#include "s_misc.h"
 #include "s_user.h"
 #include "s_debug.h"
 #include "send.h"
@@ -180,6 +181,7 @@ int ms_sethost(struct Client* cptr, struct Client* sptr, int parc, char* parv[])
   char hostmask[USERLEN + HOSTLEN + 2];
   struct Membership *chan;
   struct Flags setflags;
+  int killreason;
 
   if (parc < 4)
     return need_more_params(sptr, "SETHOST");
@@ -250,6 +252,14 @@ int ms_sethost(struct Client* cptr, struct Client* sptr, int parc, char* parv[])
     }
   }
 
-  send_umode_out(target, target, &setflags, 0);
+  killreason = find_kill(target,1);
+  if (killreason)
+  {
+    ++ServerStats->is_ref;
+    return exit_client(target, target, sptr,
+                       (killreason == -1 ? "K-lined" : "G-lined"));
+  }
+  send_umode_out(target, target, &setflags, 0); 
+  
   return 0;
 }

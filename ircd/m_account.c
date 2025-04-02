@@ -81,13 +81,19 @@
 #include "config.h"
 
 #include "client.h"
+#include "hash.h"
 #include "ircd.h"
+#include "ircd_features.h"
 #include "ircd_log.h"
 #include "ircd_reply.h"
+#include "ircd_snprintf.h"
 #include "ircd_string.h"
 #include "msg.h"
+#include "numeric.h"
 #include "numnicks.h"
+#include "s_conf.h"
 #include "s_debug.h"
+#include "s_misc.h"
 #include "s_user.h"
 #include "send.h"
 
@@ -108,6 +114,7 @@ int ms_account(struct Client* cptr, struct Client* sptr, int parc,
 	       char* parv[])
 {
   struct Client *acptr;
+  int killreason;
 
   if (parc < 3)
     return need_more_params(sptr, "ACCOUNT");
@@ -178,5 +185,14 @@ int ms_account(struct Client* cptr, struct Client* sptr, int parc,
                            acptr, cli_user(acptr)->account);
    }
 
+  /* G-Line fix for accounts */
+   ircd_snprintf(0, cli_user(acptr)->authhost, HOSTLEN, "%s.%s", parv[2], feature_str(FEAT_HIDDEN_HOST));	
+   killreason = find_kill(acptr,1);
+   if (killreason)
+   {
+     ++ServerStats->is_ref;
+     return exit_client(acptr, acptr, cptr,
+                        (killreason == -1 ? "K-lined" : "G-lined"));
+   }
   return 0;
 }

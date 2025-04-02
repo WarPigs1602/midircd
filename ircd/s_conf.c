@@ -1049,6 +1049,7 @@ int find_kill(struct Client *cptr, int glinecheck)
   const char*      host;
   const char*      name;
   const char*      realname;
+  const char*      authhost;
   struct DenyConf* deny;
   struct Gline*    agline = NULL;
 
@@ -1060,6 +1061,7 @@ int find_kill(struct Client *cptr, int glinecheck)
   host = cli_sockhost(cptr);
   name = cli_user(cptr)->username;
   realname = cli_info(cptr);
+  authhost = cli_user(cptr)->authhost;
 
   assert(strlen(host) <= HOSTLEN);
   assert((name ? strlen(name) : 0) <= HOSTLEN);
@@ -1076,8 +1078,11 @@ int find_kill(struct Client *cptr, int glinecheck)
     if (deny->bits > 0) {
       if (!ipmask_check(&cli_ip(cptr), &deny->address, deny->bits))
         continue;
-    } else if (deny->hostmask && match(deny->hostmask, host))
+    } else if (deny->hostmask && match(deny->hostmask, host)) {
       continue;
+	} else if (deny->hostmask && match(deny->hostmask, authhost)) {
+      continue;
+    }
 
     if (EmptyString(deny->message))
       send_reply(cptr, SND_EXPLICIT | ERR_YOUREBANNEDCREEP,
