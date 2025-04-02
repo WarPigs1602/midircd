@@ -188,6 +188,7 @@ enum Flag
     FLAG_OPERNAME,                  /**< Server sends oper name in mode string */
     FLAG_NEGOTIATING_TLS,           /**< TLS negotation ongoing */
     FLAG_TLS,                       /**< user is using TLS */
+    FLAG_WEBIRC,                    /**< user is using Webirc */
 
     FLAG_LAST_FLAG,                 /**< number of flags */
     FLAG_LOCAL_UMODES = FLAG_LOCOP, /**< First local mode flag */
@@ -628,6 +629,8 @@ struct Client {
 #define IsTLS(x)                HasFlag(x, FLAG_TLS)
 /** Return non-zero if the client is (re-)negotiating TLS. */
 #define IsNegotiatingTLS(x)     HasFlag(x, FLAG_NEGOTIATING_TLS)
+/** Return non-zero if the client is using WEBIRC */
+#define IsWebirc(x)                HasFlag(x, FLAG_WEBIRC)
 /** Return non-zero if the client should not receive privmsgs/notices
  * from unauthed users */
 #define IsAccountOnly(x)        HasFlag(x, FLAG_ACCOUNTONLY)
@@ -699,6 +702,8 @@ struct Client {
 #define SetTLS(x)               SetFlag(x, FLAG_TLS)
 /** Mark a client as (re-)negotiating TLS. */
 #define SetNegotiatingTLS(x)    SetFlag(x, FLAG_NEGOTIATING_TLS)
+/** Mark a client as using Webirc. */
+#define SetWebirc(x)               SetFlag(x, FLAG_WEBIRC)
 /** Mark a client as having mode +R (account only). */
 #define SetAccountOnly(x)       SetFlag(x, FLAG_ACCOUNTONLY)
 /** Mark a client as having mode +P (paranoid). */

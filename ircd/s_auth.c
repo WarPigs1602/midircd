@@ -238,8 +238,7 @@ int auth_set_webirc(struct AuthRequest *auth, const char *password, const char *
 
   if (IAuthHas(iauth, IAUTH_UNDERNET)) {
     sendto_iauth(cptr, "W %s %s %s %s", password, username, hostname, ircd_ntoa(ip));
-	cptr->cli_webi = 1;
-    ircd_strncpy(cli_webirc(cptr), username, BUFSIZE);
+	SetWebirc(cptr);
   }
   return 0;
 }

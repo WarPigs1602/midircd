@@ -231,10 +231,9 @@ static void do_whois(struct Client* sptr, struct Client *acptr, int parc)
                               sptr == acptr || parc >= 3))))
        send_reply(sptr, RPL_WHOISIDLE, name, CurrentTime - user->last,
                   cli_firsttime(acptr));
-    if (MyConnect(acptr)
-        && (parc >= 3 || sptr == acptr || IsAnOper(sptr))
-        && acptr->cli_webi == 1)
-        send_reply(sptr, RPL_WHOISWEBIRC, name, cli_webirc(acptr)); 
+    if ((sptr == acptr || IsAnOper(sptr))
+        && IsWebirc(acptr))
+        send_reply(sptr, RPL_WHOISWEBIRC, name, "webirc");
  }
 }
 

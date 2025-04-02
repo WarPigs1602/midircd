@@ -553,7 +553,8 @@ static const struct UserMode {
   { FLAG_NOIDLE,      'I' },
   { FLAG_SETHOST,     'h' },
   { FLAG_PARANOID,    'P' },
-  { FLAG_TLS,         'z' }
+  { FLAG_TLS,         'z' },
+  { FLAG_WEBIRC,      'W' }
 };
 
 /** Length of #userModeList. */
@@ -1447,6 +1448,11 @@ int set_user_mode(struct Client *cptr, struct Client *sptr, int parc,
           SetTLS(sptr);
         /* There is no -z */
         break;
+      case 'W':
+        if (what == MODE_ADD)
+          SetWebirc(sptr);
+        /* There is no -W */
+        break;
       default:
         send_reply(sptr, ERR_UMODEUNKNOWNFLAG, *m);
         break;
@@ -1469,6 +1475,10 @@ int set_user_mode(struct Client *cptr, struct Client *sptr, int parc,
       ClrFlag(sptr, FLAG_TLS);
     else if (FlagHas(&setflags, FLAG_TLS) && !IsTLS(sptr))
       SetFlag(sptr, FLAG_TLS);
+    if (!FlagHas(&setflags, FLAG_WEBIRC) && IsWebirc(sptr))
+      ClrFlag(sptr, FLAG_WEBIRC);
+    else if (FlagHas(&setflags, FLAG_WEBIRC) && !IsWebirc(sptr))
+      SetFlag(sptr, FLAG_WEBIRC);
     /*
      * new umode; servers can set it, local users cannot;
      * prevents users from /kick'ing or /mode -o'ing
