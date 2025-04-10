@@ -1068,7 +1068,7 @@ static Numeric replyTable[] = {
 /* 517 */
   { ERR_DISABLED, "%s :Command disabled.", "517" },
 /* 518 */
-  { ERR_LONGMASK, ":Mask is too long", "518" },
+  { ERR_LONGMASK, " :Mask is too long", "518" },
 /* 519 */
   { ERR_TOOMANYUSERS, "%d :Too many users affected by mask", "519" },
 /* 520 */
@@ -1092,9 +1092,9 @@ static Numeric replyTable[] = {
 /* 529 */
   { 0 },
 /* 530 */
-  { 0 },
+  { ERR_BADHOSTMASK, "%s :Invalid username/hostmask", "530" },
 /* 531 */
-  { 0 },
+  { ERR_HOSTUNAVAIL, "%s :sethost not found", "531" },
 /* 532 */
   { 0 },
 /* 533 */
