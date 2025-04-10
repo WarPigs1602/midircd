@@ -112,5 +112,6 @@ extern int send_supported(struct Client *cptr);
 #define NAMES_DEL 8 /**< Show delayed joined users only */
 
 void do_names(struct Client* sptr, struct Channel* chptr, int filter);
+extern int register_sasl(struct Client* cptr, struct Client* sptr, int parc, char* parv[]);
 
 #endif /* INCLUDED_s_user_h */

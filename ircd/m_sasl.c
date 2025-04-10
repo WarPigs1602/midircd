@@ -1,6 +1,6 @@
 /*
- * IRC - Internet Relay Chat, ircd/m_wallvoices.c
- * Copyright (c) 2002 hikari
+ * IRC - Internet Relay Chat, ircd/m_sasl.c
+ * Copyright (C) 2002 Alex Badea <vampire@p16.pub.ro>
  *
  * See file AUTHORS in IRC package for additional names of
  * the programmers.
@@ -19,7 +19,7 @@
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
  *
- * $Id: m_wallvoices.c,v 1.6 2004/12/11 05:14:03 klmitch Exp $
+ * $Id: m_sasl.c,v 1.3.2.1 2025/04/01 04:04:32 entrope Exp $
  */
 
 /*
@@ -80,94 +80,38 @@
  */
 #include "config.h"
 
-#include "channel.h"
 #include "client.h"
 #include "hash.h"
 #include "ircd.h"
+#include "ircd_alloc.h"
+#include "ircd_features.h"
 #include "ircd_log.h"
+#include "ircd_relay.h"
 #include "ircd_reply.h"
 #include "ircd_string.h"
+#include "ircd_snprintf.h"
+#include "list.h"
 #include "msg.h"
 #include "numeric.h"
 #include "numnicks.h"
-#include "s_user.h"
 #include "send.h"
+#include "s_auth.h"
+#include "s_conf.h"
+#include "s_misc.h"
+#include "s_user.h"
 
 /* #include <assert.h> -- Now using assert in ircd_log.h */
+#include <stdlib.h>
+#include <stdio.h>
+#include <stddef.h>
 
 /*
- * m_wallvoices - local generic message handler
+ * m_sasl - client message handler
  */
-int m_wallvoices(struct Client* cptr, struct Client* sptr, int parc, char* parv[])
-{
-  struct Channel *chptr;
-  const char *ch;
-
-  assert(0 != cptr);
-  assert(cptr == sptr);
-
-  ClrFlag(sptr, FLAG_TS8);
-
-  if (parc < 2 || EmptyString(parv[1]))
-    return send_reply(sptr, ERR_NORECIPIENT, "WALLVOICES");
-
-  if (parc < 3 || EmptyString(parv[parc - 1]))
-    return send_reply(sptr, ERR_NOTEXTTOSEND);
-
-  if (IsChannelName(parv[1]) && (chptr = FindChannel(parv[1]))) {
-    if (client_can_send_to_channel(sptr, chptr, 0) && !(chptr->mode.mode & MODE_NONOTICE)) {
-      if ((chptr->mode.mode & MODE_NOPRIVMSGS) &&
-          check_target_limit(sptr, chptr, chptr->chname, 0))
-        return 0;
-
-      /* +cC checks */
-      if (chptr->mode.mode & MODE_NOCOLOUR)
-        for (ch=parv[parc - 1];*ch;ch++)
-          if (*ch==2 || *ch==3 || *ch==22 || *ch==27 || *ch==31) {
-            return 0;
-          }
-
-      if ((chptr->mode.mode & MODE_NOCTCP) && ircd_strncmp(parv[parc - 1],"\001ACTION ",8))
-        for (ch=parv[parc - 1];*ch;)
-          if (*ch++==1) {
-            return 0;
-          }
-
-      sendcmdto_channel_butone(sptr, CMD_WALLVOICES, chptr, cptr,
-			       SKIP_DEAF | SKIP_BURST | SKIP_NONVOICES, 
-			       "%H :+ %s", chptr, parv[parc - 1]);
-      if (CapHas(cli_active(sptr), CAP_ECHOMESSAGE))
-        sendcmdto_one(sptr, CMD_NOTICE, cli_from(sptr), // Sending CMD_NOTICE since CMD_WALLVOICES is translated into CMD_NOTICE in sendcmdto_channel_butone()
-                "@%H :+ %s", chptr, parv[parc - 1]);
-    }
-    else
-      send_reply(sptr, ERR_CANNOTSENDTOCHAN, parv[1]);
-  }
-  else
-    send_reply(sptr, ERR_NOSUCHCHANNEL, parv[1]);
-
-  return 0;
-}
-
-/*
- * ms_wallvoices - server message handler
- */
-int ms_wallvoices(struct Client* cptr, struct Client* sptr, int parc, char* parv[])
-{
-  struct Channel *chptr;
-  assert(0 != cptr);
-  assert(0 != sptr);
-
-  if (parc < 3 || !IsUser(sptr))
-    return 0;
-
-  if (!IsLocalChannel(parv[1]) && (chptr = FindChannel(parv[1]))) {
-    if (client_can_send_to_channel(sptr, chptr, 0) && !(chptr->mode.mode & MODE_NONOTICE)) {
-      sendcmdto_channel_butone(sptr, CMD_WALLVOICES, chptr, cptr,
-			       SKIP_DEAF | SKIP_BURST | SKIP_NONVOICES, 
-			       "%H :%s", chptr, parv[parc - 1]);
-    } else
-      send_reply(sptr, ERR_CANNOTSENDTOCHAN, parv[1]);
-  }
+int m_sasl(struct Client* cptr, struct Client* sptr, int parc, char* parv[])
+{		
+  if (parc < 2 || *parv[1] == '\0')
+    return need_more_params(sptr, "AUTHENTICATE");	
+  register_sasl(cptr, sptr, parc, parv);
   return 0;
 }

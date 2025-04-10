@@ -49,6 +49,7 @@ extern void auth_mark_closing(void);
 extern void auth_close_unused(void);
 extern void report_iauth_conf(struct Client *cptr, const struct StatDesc *sd, char *param);
 extern void report_iauth_stats(struct Client *cptr, const struct StatDesc *sd, char *param);
+extern int auth_set_sasl(struct AuthRequest *auth, const char *crypt);
 
 #endif /* INCLUDED_s_auth_h */
 

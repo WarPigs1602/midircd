@@ -131,6 +131,9 @@ void relay_channel_message(struct Client* sptr, const char* name, const char* te
   
   sendcmdto_channel_butone(sptr, CMD_PRIVATE, chptr, cli_from(sptr),
 			   SKIP_DEAF | SKIP_BURST, "%H :%s", chptr, text);
+
+  if (CapHas(cli_active(sptr), CAP_ECHOMESSAGE))
+    sendcmdto_one(sptr, CMD_PRIVATE, cli_from(sptr), "%H :%s", chptr, text);
 }
 
 /** Relay a local user's notice to a channel.
@@ -180,6 +183,9 @@ void relay_channel_notice(struct Client* sptr, const char* name, const char* tex
 
   sendcmdto_channel_butone(sptr, CMD_NOTICE, chptr, cli_from(sptr),
 			   SKIP_DEAF | SKIP_BURST, "%H :%s", chptr, text);
+
+  if (CapHas(cli_active(sptr), CAP_ECHOMESSAGE))
+    sendcmdto_one(sptr, CMD_NOTICE, cli_from(sptr), "%H :%s", chptr, text);			   
 }
 
 /** Relay a message to a channel.
@@ -268,6 +274,9 @@ void relay_directed_message(struct Client* sptr, char* name, char* server, const
   if (!IsMe(acptr))
   {
     sendcmdto_one(sptr, CMD_PRIVATE, acptr, "%s :%s", name, text);
+	
+    if (CapHas(cli_active(sptr), CAP_ECHOMESSAGE))
+      sendcmdto_one(sptr, CMD_PRIVATE, cli_from(sptr), "%s :%s", name, text);	
     return;
   }
   /*
@@ -305,7 +314,12 @@ void relay_directed_message(struct Client* sptr, char* name, char* server, const
     *--host = '%';
 
   if (!(is_silenced(sptr, acptr)))
+  {
     sendcmdto_one(sptr, CMD_PRIVATE, acptr, "%s :%s", name, text);
+
+    if (CapHas(cli_active(sptr), CAP_ECHOMESSAGE))
+      sendcmdto_one(sptr, CMD_PRIVATE, cli_from(sptr), "%s :%s", name, text);
+  }
 }
 
 /** Relay a directed notice.
@@ -334,6 +348,9 @@ void relay_directed_notice(struct Client* sptr, char* name, char* server, const 
    */
   if (!IsMe(acptr)) {
     sendcmdto_one(sptr, CMD_NOTICE, acptr, "%s :%s", name, text);
+
+    if (CapHas(cli_active(sptr), CAP_ECHOMESSAGE))
+      sendcmdto_one(sptr, CMD_NOTICE, cli_from(sptr), "%s :%s", name, text);	
     return;
   }
   /*
@@ -354,7 +371,12 @@ void relay_directed_notice(struct Client* sptr, char* name, char* server, const 
     *--host = '%';
 
   if (!(is_silenced(sptr, acptr)))
+  {
     sendcmdto_one(sptr, CMD_NOTICE, acptr, "%s :%s", name, text);
+
+    if (CapHas(cli_active(sptr), CAP_ECHOMESSAGE))
+      sendcmdto_one(sptr, CMD_NOTICE, cli_from(sptr), "%s :%s", name, text);
+  }
 }
 
 /** Relay a private message from a local user.
@@ -404,6 +426,9 @@ void relay_private_message(struct Client* sptr, const char* name, const char* te
     add_target(acptr, sptr);
 
   sendcmdto_one(sptr, CMD_PRIVATE, acptr, "%C :%s", acptr, text);
+
+  if (CapHas(cli_active(sptr), CAP_ECHOMESSAGE))
+    sendcmdto_one(sptr, CMD_PRIVATE, cli_from(sptr), "%C :%s", acptr, text);  
 }
 
 /** Relay a private notice from a local user.
@@ -443,6 +468,9 @@ void relay_private_notice(struct Client* sptr, const char* name, const char* tex
     add_target(acptr, sptr);
 
   sendcmdto_one(sptr, CMD_NOTICE, acptr, "%C :%s", acptr, text);
+
+  if (CapHas(cli_active(sptr), CAP_ECHOMESSAGE))
+    sendcmdto_one(sptr, CMD_NOTICE, cli_from(sptr), "%C :%s", acptr, text);
 }
 
 /** Relay a private message that arrived from a server.
@@ -543,6 +571,9 @@ void relay_masked_message(struct Client* sptr, const char* mask, const char* tex
 			 IsServer(cli_from(sptr)) ? cli_from(sptr) : 0,
 			 host_mask ? MATCH_HOST : MATCH_SERVER,
 			 "%s :%s", mask, text);
+
+  if (CapHas(cli_active(sptr), CAP_ECHOMESSAGE))
+    sendcmdto_one(sptr, CMD_PRIVATE, cli_from(sptr), "%s :%s", mask, text);
 }
 
 /** Relay a masked notice from a local user.
@@ -585,6 +616,9 @@ void relay_masked_notice(struct Client* sptr, const char* mask, const char* text
 			 IsServer(cli_from(sptr)) ? cli_from(sptr) : 0,
 			 host_mask ? MATCH_HOST : MATCH_SERVER,
 			 "%s :%s", mask, text);
+
+  if (CapHas(cli_active(sptr), CAP_ECHOMESSAGE))
+    sendcmdto_one(sptr, CMD_NOTICE, cli_from(sptr), "%s :%s", mask, text);
 }
 
 /** Relay a masked message that arrived from a server.

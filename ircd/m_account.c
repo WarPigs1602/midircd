@@ -159,6 +159,8 @@ int ms_account(struct Client* cptr, struct Client* sptr, int parc,
   }
 
   ircd_strncpy(cli_user(acptr)->account, parv[2], ACCOUNTLEN);
+    sendcmdto_capflag_common_channels_butone(acptr, CMD_ACCOUNT, NULL, CAP_ACCOUNTNOTIFY,
+                          0, "%s", cli_user(acptr)->account);
   hide_hostmask(acptr, FLAG_ACCOUNT);
 
    if (cli_user(acptr)->acc_id) {

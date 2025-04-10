@@ -137,6 +137,9 @@ int m_wallchops(struct Client* cptr, struct Client* sptr, int parc, char* parv[]
       sendcmdto_channel_butone(sptr, CMD_WALLCHOPS, chptr, cptr,
 			       SKIP_DEAF | SKIP_BURST | SKIP_NONOPS,
 			       "%H :@ %s", chptr, parv[parc - 1]);
+      if (CapHas(cli_active(sptr), CAP_ECHOMESSAGE))
+        sendcmdto_one(sptr, CMD_NOTICE, cli_from(sptr), // Sending CMD_NOTICE since CMD_WALLCHOPS is translated into CMD_NOTICE in sendcmdto_channel_butone()
+                "@%H :@ %s", chptr, parv[parc - 1]);
     }
     else
       send_reply(sptr, ERR_CANNOTSENDTOCHAN, parv[1]);

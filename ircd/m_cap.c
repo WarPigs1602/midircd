@@ -45,14 +45,15 @@
 typedef int (*bqcmp)(const void *, const void *);
 
 static struct capabilities {
-  enum Capab cap;
+  enum CapabBits cap;
   char *capstr;
+  unsigned int config;
   unsigned long flags;
   char *name;
   int namelen;
 } capab_list[] = {
-#define _CAP(cap, flags, name)						      \
-	{ CAP_ ## cap, #cap, (flags), (name), sizeof(name) - 1 }
+#define _CAP(cap, config, flags, name)      \
+	{ CAP_ ## cap, #cap, (config), (flags), (name), sizeof(name) - 1 }
   CAPLIST
 #undef _CAP
 };
@@ -137,18 +138,27 @@ find_cap(const char **caplist_p, int *neg_p)
  * @param[in] subcmd Name of capability subcommand.
  */
 static int
-send_caplist(struct Client *sptr, const struct CapSet *set,
-             const struct CapSet *rem, const char *subcmd)
+send_caplist(struct Client *sptr, capset_t set,
+             capset_t rem, const char *subcmd)
 {
   char capbuf[BUFSIZE] = "", pfx[16];
   struct MsgBuf *mb;
   int i, loc, len, flags, pfx_len;
 
   /* set up the buffer for the final LS message... */
-  mb = msgq_make(sptr, "%:#C " MSG_CAP " %s :", &me, subcmd);
+  mb = msgq_make(sptr, "%:#C " MSG_CAP " %C %s :", &me, sptr, subcmd);
 
   for (i = 0, loc = 0; i < CAPAB_LIST_LEN; i++) {
     flags = capab_list[i].flags;
+
+    /* If the client has no capabilities set, and this is the LIST subcmd, break. */
+    if (!set && !strcmp(subcmd, "LIST"))
+      break;
+
+    /* Check if the capability is enabled in features() */
+    if (!feature_bool(capab_list[i].config))
+      continue;
+
     /* This is a little bit subtle, but just involves applying de
      * Morgan's laws to the obvious check: We must display the
      * capability if (and only if) it is set in \a rem or \a set, or
@@ -175,7 +185,7 @@ send_caplist(struct Client *sptr, const struct CapSet *set,
 
     len = capab_list[i].namelen + pfx_len; /* how much we'd add... */
     if (msgq_bufleft(mb) < loc + len + 2) { /* would add too much; must flush */
-      sendcmdto_one(&me, CMD_CAP, sptr, "%s * :%s", subcmd, capbuf);
+      sendcmdto_one(&me, CMD_CAP, sptr, "%C %s * :%s", sptr, subcmd, capbuf);
       capbuf[(loc = 0)] = '\0'; /* re-terminate the buffer... */
     }
 
@@ -193,7 +203,7 @@ send_caplist(struct Client *sptr, const struct CapSet *set,
 static int
 cap_ls(struct Client *sptr, const char *caplist)
 {
-  if (IsUnknown(sptr)) /* registration hasn't completed; suspend it... */
+  if (IsUserPort(sptr)) /* registration hasn't completed; suspend it... */
     auth_cap_start(cli_auth(sptr));
   return send_caplist(sptr, 0, 0, "LS"); /* send list of capabilities */
 }
@@ -203,43 +213,42 @@ cap_req(struct Client *sptr, const char *caplist)
 {
   const char *cl = caplist;
   struct capabilities *cap;
-  struct CapSet set, rem;
-  struct CapSet cs = *cli_capab(sptr); /* capability set */
-  struct CapSet as = *cli_active(sptr); /* active set */
+  capset_t set = 0, rem = 0;
+  capset_t cs = cli_capab(sptr); /* capability set */
+  capset_t as = cli_active(sptr); /* active set */
   int neg;
 
-  if (IsUnknown(sptr)) /* registration hasn't completed; suspend it... */
+  if (IsUserPort(sptr)) /* registration hasn't completed; suspend it... */
     auth_cap_start(cli_auth(sptr));
 
-  memset(&set, 0, sizeof(set));
-  memset(&rem, 0, sizeof(rem));
   while (cl) { /* walk through the capabilities list... */
     if (!(cap = find_cap(&cl, &neg)) /* look up capability... */
-	|| (!neg && (cap->flags & CAPFL_PROHIBIT)) /* is it prohibited? */
+        || !feature_bool(cap->config) /* is it deactivated in config? */
+        || (!neg && (cap->flags & CAPFL_PROHIBIT)) /* is it prohibited? */
         || (neg && (cap->flags & CAPFL_STICKY))) { /* is it sticky? */
-      sendcmdto_one(&me, CMD_CAP, sptr, "NAK :%s", caplist);
+      sendcmdto_one(&me, CMD_CAP, sptr, "%C NAK :%s", sptr, caplist);
       return 0; /* can't complete requested op... */
     }
 
     if (neg) { /* set or clear the capability... */
-      CapSet(&rem, cap->cap);
-      CapClr(&set, cap->cap);
-      CapClr(&cs, cap->cap);
+      CapSet(rem, cap->cap);
+      CapClr(set, cap->cap);
+      CapClr(cs, cap->cap);
       if (!(cap->flags & CAPFL_PROTO))
-	CapClr(&as, cap->cap);
+	CapClr(as, cap->cap);
     } else {
-      CapClr(&rem, cap->cap);
-      CapSet(&set, cap->cap);
-      CapSet(&cs, cap->cap);
+      CapClr(rem, cap->cap);
+      CapSet(set, cap->cap);
+      CapSet(cs, cap->cap);
       if (!(cap->flags & CAPFL_PROTO))
-	CapSet(&as, cap->cap);
+	CapSet(as, cap->cap);
     }
   }
 
   /* Notify client of accepted changes and copy over results. */
-  send_caplist(sptr, &set, &rem, "ACK");
-  *cli_capab(sptr) = cs;
-  *cli_active(sptr) = as;
+  send_caplist(sptr, set, rem, "ACK");
+  cli_capab(sptr) = cs;
+  cli_active(sptr) = as;
 
   return 0;
 }
@@ -260,10 +269,15 @@ cap_ack(struct Client *sptr, const char *caplist)
 	(neg ? HasCap(sptr, cap->cap) : !HasCap(sptr, cap->cap))) /* uh... */
       continue;
 
-    if (neg) /* set or clear the active capability... */
+    if (neg) { /* set or clear the active capability... */
+      if (cap->flags & CAPFL_STICKY)
+        continue; /* but don't clear sticky capabilities */
       CapClr(cli_active(sptr), cap->cap);
-    else
+    } else {
+      if (cap->flags & CAPFL_PROHIBIT)
+        continue; /* and don't set prohibited ones */
       CapSet(cli_active(sptr), cap->cap);
+    }
   }
 
   return 0;
@@ -272,24 +286,23 @@ cap_ack(struct Client *sptr, const char *caplist)
 static int
 cap_clear(struct Client *sptr, const char *caplist)
 {
-  struct CapSet cleared;
+  capset_t cleared = 0;
   struct capabilities *cap;
   unsigned int ii;
 
   /* XXX: If we ever add a capab list sorted by capab value, it would
    * be good cache-wise to use it here. */
-  memset(&cleared, 0, sizeof(cleared));
   for (ii = 0; ii < CAPAB_LIST_LEN; ++ii) {
     cap = &capab_list[ii];
     /* Only clear active non-sticky capabilities. */
     if (!HasCap(sptr, cap->cap) || (cap->flags & CAPFL_STICKY))
       continue;
-    CapSet(&cleared, cap->cap);
+    CapSet(cleared, cap->cap);
     CapClr(cli_capab(sptr), cap->cap);
     if (!(cap->flags & CAPFL_PROTO))
       CapClr(cli_active(sptr), cap->cap);
   }
-  send_caplist(sptr, 0, &cleared, "ACK");
+  send_caplist(sptr, 0, cleared, "ACK");
 
   return 0;
 }
@@ -297,7 +310,7 @@ cap_clear(struct Client *sptr, const char *caplist)
 static int
 cap_end(struct Client *sptr, const char *caplist)
 {
-  if (!IsUnknown(sptr)) /* registration has completed... */
+  if (!IsUserPort(sptr)) /* registration has completed... */
     return 0; /* so just ignore the message... */
 
   return auth_cap_done(cli_auth(sptr));
