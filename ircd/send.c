@@ -878,6 +878,54 @@ void sendto_opmask_butone_ratelimited(struct Client *one, unsigned int mask,
   va_end(vl);
 }
 
+/** Send tagmsg to all users matching or not matching a capability flag..
+ * @param[in] from Client originating the command.
+ * @param[in] to Destination channel.
+ * @param[in] one Client direction to skip (or NULL).
+ * @param[in] pattern Format string for command arguments.
+ */
+void sendcmdto_capflag_tagmsg_butone(struct Client *from, struct Channel *to,
+					      struct Client *one, const char *pattern, ...)
+{
+  struct Membership *member;
+  struct VarData vd;
+  struct MsgBuf *user_mb;
+  struct MsgBuf *serv_mb;
+
+  vd.vd_format = pattern;
+
+  /* Build buffer to send to users */
+  va_start(vd.vd_args, pattern);
+  user_mb = msgq_make(0, "%v %:#C TAGMSG %H", &vd, from, to);
+  va_end(vd.vd_args);
+
+  /* Build buffer to send to servers */
+  va_start(vd.vd_args, pattern);
+  serv_mb = msgq_make(&me, "%:#C TAGMSG %v %H", from, &vd, to);
+  va_end(vd.vd_args);
+
+  /* send buffer along! */
+  bump_sentalong(one);
+  if(to) {
+	  for (member = to->members; member; member = member->next_member) {
+		/* skip one, zombies, and deaf users... */
+		if (IsZombie(member) ||
+			cli_fd(cli_from(member->user)) < 0 ||
+			cli_sentalong(member->user) == sentalong_marker)
+		  continue;
+		cli_sentalong(member->user) = sentalong_marker;
+
+		if (MyConnect(member->user)) {/* pick right buffer to send */
+		  if (CapHas(cli_active(member->user), CAP_MESSAGETAGS))
+			send_buffer(member->user, user_mb, 0);
+		} else
+		  send_buffer(member->user, serv_mb, 0);
+	  }
+  }
+  msgq_clean(user_mb);
+  msgq_clean(serv_mb);
+
+}
 
 /** Send a server notice to all users subscribing to the indicated \a
  * mask except for \a one.

@@ -631,7 +631,55 @@ struct Message msgtab[] = {
     /* UNREG, CLIENT, SERVER, OPER, SERVICE */
     { m_cap, m_cap, m_ignore, m_cap, m_ignore }
   },
-
+{
+    MSG_TAGMSG,
+    TOK_TAGMSG,
+    0, MAXPARA, MFLG_SLOW, 0, NULL,
+    /* UNREG, CLIENT, SERVER, OPER, SERVICE */
+    { m_tagmsg, m_tagmsg, ms_tagmsg, m_tagmsg, m_ignore }
+  },
+  {
+    MSG_TAGMSG_TYPING,
+    TOK_TAGMSG_TYPING,
+    0, MAXPARA, MFLG_SLOW, 0, NULL,
+    /* UNREG, CLIENT, SERVER, OPER, SERVICE */
+    { m_tagmsg_typing, m_tagmsg_typing, ms_tagmsg, m_tagmsg_typing, m_ignore }
+  },
+  {
+    MSG_TAGMSG_PAUSED,
+    TOK_TAGMSG_PAUSED,
+    0, MAXPARA, MFLG_SLOW, 0, NULL,
+    /* UNREG, CLIENT, SERVER, OPER, SERVICE */
+    { m_tagmsg_paused, m_tagmsg_paused, ms_tagmsg, m_tagmsg_paused, m_ignore }
+  },
+  {
+    MSG_TAGMSG_DONE,
+    TOK_TAGMSG_DONE,
+    0, MAXPARA, MFLG_SLOW, 0, NULL,
+    /* UNREG, CLIENT, SERVER, OPER, SERVICE */
+    { m_tagmsg_done, m_tagmsg_done, ms_tagmsg, m_tagmsg_done, m_ignore }
+  },  
+  {
+    MSG_TAGMSG_DRAFT_TYPING,
+    TOK_TAGMSG_DRAFT_TYPING,
+    0, MAXPARA, MFLG_SLOW, 0, NULL,
+    /* UNREG, CLIENT, SERVER, OPER, SERVICE */
+    { m_tagmsg_typing, m_tagmsg_typing, ms_tagmsg, m_tagmsg_typing, m_ignore }
+  },
+  {
+    MSG_TAGMSG_DRAFT_PAUSED,
+    TOK_TAGMSG_DRAFT_PAUSED,
+    0, MAXPARA, MFLG_SLOW, 0, NULL,
+    /* UNREG, CLIENT, SERVER, OPER, SERVICE */
+    { m_tagmsg_paused, m_tagmsg_paused, ms_tagmsg, m_tagmsg_paused, m_ignore }
+  },
+  {
+    MSG_TAGMSG_DRAFT_DONE,
+    TOK_TAGMSG_DRAFT_DONE,
+    0, MAXPARA, MFLG_SLOW, 0, NULL,
+    /* UNREG, CLIENT, SERVER, OPER, SERVICE */
+    { m_tagmsg_done, m_tagmsg_done, ms_tagmsg, m_tagmsg_done, m_ignore }
+  },  
   /*
    * - ASUKA ---------------------------------------------------------------------
    * Add the command for CHECK.
@@ -760,7 +808,7 @@ msg_tree_parse(char *cmd, struct MessageTree *root)
   for (mtree = root; mtree; mtree = mtree->pointers[(*cmd++) & (MAXPTRLEN-1)]) {
       if (*cmd == '\0' && mtree->msg)
           return mtree->msg;
-      else if (!IsAlpha(*cmd))
+      else if (!IsCommand(*cmd))
           return NULL;
   }
   return NULL;

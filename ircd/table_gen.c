@@ -79,6 +79,12 @@ static void makeTables(void)
   markRange(NTL_UPPER, 'A', 'Z');
   markString(NTL_UPPER, "[\\]^");
 
+  markRange(NTL_CMD_LOWER, 'a', 'z');
+  markString(NTL_CMD_LOWER, "{|}~@+=/");
+
+  markRange(NTL_CMD_UPPER, 'A', 'Z');
+  markString(NTL_CMD_UPPER, "[\\]^@+=/");
+  
   markRange(NTL_DIGIT, '0', '9');
 
   markRange(NTL_CNTRL, '\000', '\037');
@@ -92,6 +98,7 @@ static void makeTables(void)
    * the results of the previous ones ! */
 
   moveMacro(NTL_LOWER | NTL_UPPER, NTL_ALPHA);
+  moveMacro(NTL_CMD_LOWER | NTL_CMD_UPPER, NTL_CMD);
   moveMacro(NTL_ALPHA | NTL_DIGIT, NTL_ALNUM);
   moveMacro(NTL_ALNUM | NTL_PUNCT, NTL_GRAPH);
 

@@ -43,7 +43,8 @@
 	_CAP(ECHOMESSAGE, FEAT_CAP_ECHOMESSAGE, 0, "echo-message"), \
 	_CAP(EXTJOIN, FEAT_CAP_EXTJOIN, 0, "extended-join"), \
 	_CAP(INVITENOTIFY, FEAT_CAP_INVITENOTIFY, 0, "invite-notify"), \
-	_CAP(SASL, FEAT_CAP_SASL, 0, "sasl")
+	_CAP(SASL, FEAT_CAP_SASL, 0, "sasl"), \
+	_CAP(MESSAGETAGS, FEAT_CAP_MESSAGETAGS, 0, "message-tags")
 
 /** Client capabilities, counting by index. */
 enum Capab {
