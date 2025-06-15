@@ -59,6 +59,9 @@
 #define NTL_KTIME  0x20000  /**< Valid character for a k:line time   */
 #define NTL_CHPFX  0x40000  /**< channel prefix char # & +           */
 #define NTL_IRCIP6 0x80000  /**< Numeric IPv6 character (hex or colon) */
+#define NTL_CMD   0x100000  /**< Commands */
+#define NTL_CMD_LOWER   0x200000  /**< Commands lower */
+#define NTL_CMD_UPPER   0x400000  /**< Commands upper */
 
 /*
  * Tables used for translation and classification macros
@@ -123,6 +126,7 @@ extern const unsigned int  IRCD_CharAttrTab[];
 #define IsIP6Char(c)       (IRCD_CharAttrTab[(c) - CHAR_MIN] & NTL_IRCIP6)
 /** Test whether a character is an end-of-line character. */
 #define IsEol(c)           (IRCD_CharAttrTab[(c) - CHAR_MIN] & NTL_EOL)
+#define IsCommand(c)       (IRCD_CharAttrTab[(c) - CHAR_MIN] & NTL_CMD)
 /** Test whether a character is valid in a K: line expiration string. */
 #define IsKTimeChar(c)     (IRCD_CharAttrTab[(c) - CHAR_MIN] & NTL_KTIME)
 

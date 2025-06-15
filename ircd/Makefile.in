@@ -182,6 +182,7 @@ IRCD_SRC = \
 	m_squit.c \
 	m_starttls.c \
 	m_stats.c \
+	m_tagmsg.c \
 	m_time.c \
 	m_topic.c \
 	m_trace.c \
@@ -1093,6 +1094,14 @@ m_stats.o: m_stats.c ../config.h ../include/client.h \
   ../include/ircd_chattr.h ../include/msg.h ../include/numeric.h \
   ../include/s_stats.h ../include/s_user.h ../include/send.h \
   ../include/struct.h
+m_tagmsg.o: m_tagmsg.c ../config.h ../include/client.h ../include/ircd_defs.h \
+ ../include/dbuf.h ../include/msgq.h ../include/ircd_events.h \
+ ../include/ircd_handler.h ../include/res.h ../include/capab.h \
+ ../include/ircd.h ../include/struct.h ../include/ircd_features.h \
+ ../include/ircd_log.h ../include/ircd_reply.h ../include/ircd_string.h \
+ ../include/ircd_chattr.h ../include/msg.h ../include/numeric.h \
+ ../include/numnicks.h ../include/s_misc.h ../include/s_user.h \
+ ../include/send.h
 m_time.o: m_time.c ../config.h ../include/client.h ../include/ircd_defs.h \
   ../include/dbuf.h ../include/msgq.h ../include/ircd_events.h \
   ../config.h ../include/ircd_handler.h ../include/res.h \
