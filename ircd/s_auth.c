@@ -1977,13 +1977,29 @@ static int iauth_cmd_sasl(struct IAuth *iauth, struct Client *cli,
 		send_reply(cli, RPL_LOGGEDIN, cli, cli_name(cli), account);
 		send_reply(cli, RPL_SASLSUCCESS);
 	} else if(!ircd_strcmp(cmd, "N")) {
-		send_reply(cli, ERR_NICKLOCKED); 
-		send_reply(cli, ERR_SASLFAIL);
+		send_reply(cli, ERR_NICKLOCKED);
+		  if (MyConnect(cli))
+			sendcmdto_one(&his, CMD_KILL,
+				  cli, "%C :%s %s", cli, feature_str(FEAT_HIS_SERVERNAME), "SASL auth failed, nick not registered");
+		  return exit_client_msg(cli, cli, &me, "Killed (%s %s)",
+					 feature_str(FEAT_HIS_SERVERNAME),
+					 "SASL auth failed, nick not registered...");		
 	} else if(!ircd_strcmp(cmd, "A")) {
 		send_reply(cli, ERR_SASLALREADY);
-		send_reply(cli, ERR_SASLFAIL); 
+		  if (MyConnect(cli))
+			sendcmdto_one(&his, CMD_KILL,
+				  cli, "%C :%s %s", cli, feature_str(FEAT_HIS_SERVERNAME), "SASL auth failed, you are already authed...");
+		  return exit_client_msg(cli, cli, &me, "Killed (%s %s)",
+					 feature_str(FEAT_HIS_SERVERNAME),
+					 "SASL auth failed, you are already authed...");	
 	} else if(!ircd_strcmp(cmd, "F")) {
-		send_reply(cli, ERR_SASLFAIL);	
+		send_reply(cli, ERR_SASLFAIL);
+		  if (MyConnect(cli))
+			sendcmdto_one(&his, CMD_KILL,
+				  cli, "%C :%s %s", cli, feature_str(FEAT_HIS_SERVERNAME), "SASL auth failed, wrong password...");
+		  return exit_client_msg(cli, cli, &me, "Killed (%s %s)",
+					 feature_str(FEAT_HIS_SERVERNAME),
+					 "SASL auth failed, wrong password...");		
 	}
   return 0;
 }
