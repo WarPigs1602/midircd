@@ -150,6 +150,10 @@ void sendcmdto_capflag_channel_butserv_butone(struct Client *from, const char *c
 /* Send tagmsg to all users matching or not matching a capability flag */
 void sendcmdto_capflag_tagmsg_butone(struct Client *from, struct Channel *to,
 					      struct Client *one, const char *pattern, ...);
+
+/* Send tagmsg to all users matching or not matching a capability flag */
+void sendcmdto_capflag_tagmsg_priv_butone(struct Client *from, struct Client *to,
+					      struct Client *one, const char *pattern, ...);
 						  
 /* Send JOIN to all local channel users matching or not matching capability flags */
 extern void sendjointo_channel_butserv(struct Client *from,

@@ -1030,6 +1030,31 @@ void sendcmdto_capflag_tagmsg_butone(struct Client *from, struct Channel *to,
 
 }
 
+/** Send tagmsg to all users matching or not matching a capability flag..
+ * @param[in] from Client originating the command.
+ * @param[in] to Destination channel.
+ * @param[in] one Client direction to skip (or NULL).
+ * @param[in] pattern Format string for command arguments.
+ */
+void sendcmdto_capflag_tagmsg_priv_butone(struct Client *from, struct Client *to,
+					      struct Client *one, const char *pattern, ...)
+{
+  /* Build buffer to send to users */
+  struct VarData vd;
+  vd.vd_format = pattern;
+  if(MyConnect(to)) {
+    if (CapHas(cli_active(to), CAP_MESSAGETAGS)) {
+      va_start(vd.vd_args, pattern);
+	  sendrawto_one(to, "%v %:#C TAGMSG %s", &vd, from, cli_name(to));
+	  va_end(vd.vd_args);
+	}
+  } else {
+	va_start(vd.vd_args, pattern);
+	sendcmdto_serv_butone(from, CMD_TAGMSG, NULL, "%v %s", &vd, cli_name(to));
+	va_end(vd.vd_args);
+  }
+}
+
 /** Send a (prefixed) command to all local users on a channel matching or not matching a capability flag..
  * @param[in] from Client originating the command.
  * @param[in] cmd Long name of command.
