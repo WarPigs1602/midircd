@@ -1979,6 +1979,9 @@ static int iauth_cmd_sasl(struct IAuth *iauth, struct Client *cli,
 	} else if(!ircd_strcmp(cmd, "N")) {
 		send_reply(cli, ERR_NICKLOCKED);
 		send_reply(cli, ERR_SASLFAIL);	
+	} else if(!ircd_strcmp(cmd, "L")) {
+		send_reply(cli, ERR_SASLTOOLONG);
+		send_reply(cli, ERR_SASLFAIL);
 	} else if(!ircd_strcmp(cmd, "A")) {
 		send_reply(cli, ERR_SASLALREADY);
 		send_reply(cli, ERR_SASLFAIL);
