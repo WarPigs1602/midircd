@@ -1954,6 +1954,9 @@ static int iauth_cmd_sasl(struct IAuth *iauth, struct Client *cli,
 		sendcmdto_one(&me, CMD_AUTHENTICATE, cli, params[1]); 
 	} else if(!ircd_strcmp(cmd, "O")) {
 		send_reply(cli, ERR_SASLABORTED);
+	} else if(!ircd_strcmp(cmd, "M")) {
+		send_reply(cli, RPL_SASLMECHS, params[parc - 1]);
+		send_reply(cli, ERR_SASLFAIL);
 	} else if(!ircd_strcmp(cmd, "S")) {
 		if (EmptyString(params[3]) || EmptyString(params[4])) {
 			return 0;
