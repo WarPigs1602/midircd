@@ -114,4 +114,6 @@ extern int register_sasl(struct Client* cptr, struct Client* sptr, int parc, cha
 
 void do_names(struct Client* sptr, struct Channel* chptr, int filter);
 
+extern int set_cloakhost(struct Client *cptr, char *hostmask);
+
 #endif /* INCLUDED_s_user_h */

@@ -73,6 +73,8 @@
 #include <string.h>
 #include <sys/stat.h>
 
+#include "cloak.h"
+
 static char *IsVhost(char *hostmask, int oper);
 static char *IsVhostPass(char *hostmask);
 
@@ -528,6 +530,10 @@ int register_user(struct Client *cptr, struct Client *sptr)
     send_umode(cptr, sptr, &flags, ALL_UMODES, 0);
     if ((cli_snomask(sptr) != SNO_DEFAULT) && HasFlag(sptr, FLAG_SERVNOTICE))
       send_reply(sptr, RPL_SNOMASK, cli_snomask(sptr), cli_snomask(sptr));
+  }
+  // WebIRC Cloak setting
+  if (MyUser(sptr) && IsWebirc(sptr) && cli_user(sptr) && cli_user(sptr)->host) {
+      set_cloakhost(sptr, cli_user(sptr)->host);
   }
   return 0;
 }
@@ -2062,5 +2068,56 @@ send_supported(struct Client *cptr)
 int
 register_sasl(struct Client* cptr, struct Client* sptr, int parc, char* parv[])
 {
-	auth_set_sasl(cli_auth(sptr), parv[1]);
+  int res = auth_set_sasl(cli_auth(sptr), parv[1]);
+  if (res != 0) {
+    send_reply(sptr, ERR_SASLFAIL);
+    return -1;
+  }
+  return 0;
+}
+
+int set_cloakhost(struct Client *cptr, char *hostmask)
+{
+    if(!feature_bool(FEAT_WEBIRC_CLOAKING))
+		return 0;   
+    if (!cptr || !hostmask)
+        return 0;
+
+    char *cloaked = cloak_host(hostmask);
+    if (!cloaked)
+        return 0;
+
+
+    ircd_strncpy(cli_user(cptr)->realhost, hostmask, HOSTLEN);
+    ircd_strncpy(cli_user(cptr)->host, cloaked, HOSTLEN);
+	SetSetHost(cptr);
+	SetCloak(cptr);
+    send_reply(cptr, RPL_HOSTHIDDEN, cli_user(cptr)->host);
+
+    sendcmdto_common_channels_butone(cptr, CMD_QUIT, cptr, ":Host cloaked");
+	struct Membership *chan;
+    for (chan = cli_user(cptr)->channel; chan; chan = chan->next_channel) {
+        if (IsZombie(chan))
+            continue;
+        /* If this channel has delayed joins and the user has no modes, just set
+         * the delayed join flag rather than showing the join, even if the user
+         * was visible before */
+        if (!IsChanOp(chan) && !HasVoice(chan)
+            && (chan->channel->mode.mode & MODE_DELJOINS)) {
+            SetDelayedJoin(chan);
+        }
+        else {
+            sendcmdto_channel_butserv_butone(cptr, CMD_JOIN, chan->channel, cptr, 0,
+                "%H", chan->channel);
+        }
+        if (IsChanOp(chan) && HasVoice(chan)) {
+            sendcmdto_channel_butserv_butone(&his, CMD_MODE, chan->channel, cptr, 0,
+                "%H +ov %C %C", chan->channel, cptr, cptr);
+        }
+        else if (IsChanOp(chan) || HasVoice(chan)) {
+            sendcmdto_channel_butserv_butone(&his, CMD_MODE, chan->channel, cptr, 0,
+                "%H +%c %C", chan->channel, IsChanOp(chan) ? 'o' : 'v', cptr);
+        }
+    }
+    return 1;
 }

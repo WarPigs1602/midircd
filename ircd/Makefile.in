@@ -225,7 +225,9 @@ IRCD_SRC = \
 	userload.c \
 	whocmds.c \
 	whowas.c \
-	y.tab.c
+	y.tab.c \
+	md5.c \
+	cloak.c
 
 SRC = ${IRCD_SRC} ${ENGINE_C} ${TLS_C} ${CRYPTO_SRC}
 
@@ -1557,3 +1559,5 @@ ircd_crypt_native.o: ircd_crypt_native.c ../config.h \
   ../include/ircd_crypt.h ../include/ircd_crypt_native.h \
   ../include/ircd_log.h ../include/s_debug.h ../config.h \
   ../include/ircd_defs.h ../include/ircd_alloc.h
+cloak.o: cloak.c ../include/cloak.h
+md5.o: md5.c ../include/md5.h

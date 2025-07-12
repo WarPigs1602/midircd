@@ -112,81 +112,43 @@ int m_tagmsg(struct Client* cptr, struct Client* sptr, int parc, char* parv[])
   return 0;
 }
 
-/*
- * m_tagmsg - typing message handler
- */
+static int handle_tagmsg_status(struct Client* cptr, struct Client* sptr, int parc, char* parv[], const char* status)
+{
+  if (parc < 3)
+    return need_more_params(sptr, "TAGMSG");
+  if (!feature_bool(FEAT_CAP_MESSAGETAGS))
+    return 0;
+
+  struct Channel *chan = FindChannel(parv[2]);
+  struct Client *user = FindUser(parv[2]);
+  char tag_draft[32], tag[32];
+  snprintf(tag_draft, sizeof(tag_draft), "@+draft/typing=%s", status);
+  snprintf(tag, sizeof(tag), "@+typing=%s", status);
+
+  if (chan) {
+    sendcmdto_capflag_tagmsg_butone(sptr, chan, sptr, tag_draft);
+    sendcmdto_capflag_tagmsg_butone(sptr, chan, sptr, tag);
+  }
+  if (user) {
+    sendcmdto_capflag_tagmsg_priv_butone(sptr, user, sptr, tag_draft);
+    sendcmdto_capflag_tagmsg_priv_butone(sptr, user, sptr, tag);
+  }
+  return 0;
+}
+
 int m_tagmsg_typing(struct Client* cptr, struct Client* sptr, int parc, char* parv[])
 {
-  if (parc < 3)
-    return need_more_params(sptr, "TAGMSG");
-  if(feature_bool(FEAT_CAP_MESSAGETAGS)) {
-	struct Channel *chan = FindChannel(parv[2]);
-	struct Client *user = FindUser(parv[2]);
-	if(chan) {
-		sendcmdto_capflag_tagmsg_butone(sptr, chan,
-			  sptr, "@+draft/typing=active");
-		sendcmdto_capflag_tagmsg_butone(sptr, chan,
-			  sptr, "@+typing=active");	
-    }
-	if (user) {
-		sendcmdto_capflag_tagmsg_priv_butone(sptr, user,
-			  sptr, "@+draft/typing=active");
-		sendcmdto_capflag_tagmsg_priv_butone(sptr, user,
-			  sptr, "@+typing=active");	
-    }		
-  }
-  return 0;
+  return handle_tagmsg_status(cptr, sptr, parc, parv, "active");
 }
 
-/*
- * m_tagmsg - typing message handler
- */
 int m_tagmsg_paused(struct Client* cptr, struct Client* sptr, int parc, char* parv[])
 {
-  if (parc < 3)
-    return need_more_params(sptr, "TAGMSG");
-  if(feature_bool(FEAT_CAP_MESSAGETAGS)) {
-	struct Channel *chan = FindChannel(parv[2]);
-	struct Client *user = FindUser(parv[2]);
-	if(chan) {
-		sendcmdto_capflag_tagmsg_butone(sptr, chan,
-			  sptr, "@+draft/typing=paused");
-		sendcmdto_capflag_tagmsg_butone(sptr, chan,
-			  sptr, "@+typing=paused");	
-    } 
-	if (user) {
-		sendcmdto_capflag_tagmsg_priv_butone(sptr, user,
-			  sptr, "@+draft/typing=paused");
-		sendcmdto_capflag_tagmsg_priv_butone(sptr, user,
-			  sptr, "@+typing=paused");	
-    }		
-  }
+  return handle_tagmsg_status(cptr, sptr, parc, parv, "paused");
 }
 
-/*
- * m_tagmsg - typing message handler
- */
 int m_tagmsg_done(struct Client* cptr, struct Client* sptr, int parc, char* parv[])
 {
-  if (parc < 3)
-    return need_more_params(sptr, "TAGMSG");
-  if(feature_bool(FEAT_CAP_MESSAGETAGS)) {
-	struct Channel *chan = FindChannel(parv[2]);
-	struct Client *user = FindUser(parv[2]);
-	if(chan) {
-		sendcmdto_capflag_tagmsg_butone(sptr, chan,
-			  sptr, "@+draft/typing=done");
-		sendcmdto_capflag_tagmsg_butone(sptr, chan,
-			  sptr, "@+typing=done");	
-    } 
-	if (user) {
-		sendcmdto_capflag_tagmsg_priv_butone(sptr, user,
-			  sptr, "@+draft/typing=done");
-		sendcmdto_capflag_tagmsg_priv_butone(sptr, user,
-			  sptr, "@+typing=done");	
-    }		
-  }
-  return 0;
+  return handle_tagmsg_status(cptr, sptr, parc, parv, "done");
 }
 
 /*
