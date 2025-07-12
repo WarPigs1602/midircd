@@ -1452,8 +1452,7 @@ int set_user_mode(struct Client *cptr, struct Client *sptr, int parc,
               do_set_host = 1;
               password = NULL;
 			  set_cloakhost(sptr, cli_user(sptr)->realhost);
-              ircd_snprintf(0, hostmask, HOSTLEN + USERLEN + 2, "%s@%s",
-                  cli_user(sptr)->username, cli_user(sptr)->host);
+              hostmask = cli_user(sptr)->host;
           }
           /* There is no -C */
           break;
