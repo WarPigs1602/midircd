@@ -81,6 +81,33 @@ static char *IsVhostPass(char *hostmask);
 /** Count of allocated User structures. */
 static int userCount = 0;
 
+static void rejoin_and_set_modes(struct Client* cptr) {
+    struct Membership* chan;
+    for (chan = cli_user(cptr)->channel; chan; chan = chan->next_channel) {
+        if (IsZombie(chan))
+            continue;
+        /* If this channel has delayed joins and the user has no modes, just set
+         * the delayed join flag rather than showing the join, even if the user
+         * was visible before */
+        if (!IsChanOp(chan) && !HasVoice(chan)
+            && (chan->channel->mode.mode & MODE_DELJOINS)) {
+            SetDelayedJoin(chan);
+        }
+        else {
+            sendcmdto_channel_butserv_butone(cptr, CMD_JOIN, chan->channel, cptr, 0,
+                "%H", chan->channel);
+        }
+        if (IsChanOp(chan) && HasVoice(chan)) {
+            sendcmdto_channel_butserv_butone(&his, CMD_MODE, chan->channel, cptr, 0,
+                "%H +ov %C %C", chan->channel, cptr, cptr);
+        }
+        else if (IsChanOp(chan) || HasVoice(chan)) {
+            sendcmdto_channel_butserv_butone(&his, CMD_MODE, chan->channel, cptr, 0,
+                "%H +%c %C", chan->channel, IsChanOp(chan) ? 'o' : 'v', cptr);
+        }
+    }
+}
+
 /** Makes sure that \a cptr has a User information block.
  * If cli_user(cptr) != NULL, does nothing.
  * @param[in] cptr Client to attach User struct to.
@@ -530,10 +557,9 @@ int register_user(struct Client *cptr, struct Client *sptr)
     send_umode(cptr, sptr, &flags, ALL_UMODES, 0);
     if ((cli_snomask(sptr) != SNO_DEFAULT) && HasFlag(sptr, FLAG_SERVNOTICE))
       send_reply(sptr, RPL_SNOMASK, cli_snomask(sptr), cli_snomask(sptr));
-  }
-  // WebIRC Cloak setting
-  if (MyUser(sptr) && IsWebirc(sptr) && cli_user(sptr) && cli_user(sptr)->host) {
-      set_cloakhost(sptr, cli_user(sptr)->host);
+    if(HasFlag(sptr, FLAG_CLOAK) && IsWebirc(sptr)) {
+		set_cloakhost(sptr, cli_user(sptr)->realhost);
+	}
   }
   return 0;
 }
@@ -560,7 +586,8 @@ static const struct UserMode {
   { FLAG_SETHOST,     'h' },
   { FLAG_PARANOID,    'P' },
   { FLAG_TLS,         'z' },
-  { FLAG_WEBIRC,      'W' }
+  { FLAG_WEBIRC,      'W' },
+  { FLAG_CLOAK,       'C' }
 };
 
 /** Length of #userModeList. */
@@ -597,7 +624,7 @@ int set_nick_name(struct Client* cptr, struct Client* sptr,
     /*
      * Set new nick name.
      */
-    strcpy(cli_name(new_client), nick);
+    ircd_strncpy(cli_name(new_client), nick, NICKLEN);
     cli_user(new_client) = make_user(new_client);
     cli_user(new_client)->server = sptr;
     SetRemoteNumNick(new_client, parv[parc - 2]);
@@ -816,8 +843,7 @@ int check_target_limit(struct Client *sptr, void *target, const char *name,
  * @param[in] channel Name of channel being sent to.
  * @param[in] text Message to send.
  * @param[in] is_notice If non-zero, use CNOTICE instead of CPRIVMSG.
- */
-/* Added 971023 by Run. */
+ *//* Added 971023 by Run. */
 int whisper(struct Client* source, const char* nick, const char* channel,
             const char* text, int is_notice)
 {
@@ -996,26 +1022,7 @@ hide_hostmask(struct Client *cptr, unsigned int flag)
    * Go through all channels the client was on, rejoin him
    * and set the modes, if any
    */
-  for (chan = cli_user(cptr)->channel; chan; chan = chan->next_channel)
-  {
-    if (IsZombie(chan))
-      continue;
-    /* Send a JOIN unless the user's join has been delayed. */
-    if (!IsDelayedJoin(chan))
-    {
-      sendjointo_channel_butserv(cptr, chan->channel, 0, CAP_CHGHOST);
-      if (cli_user(cptr)->away)
-        sendcmdto_capflag_channel_butserv_butone(cptr, CMD_AWAY, chan->channel,
-          NULL, 0, CAP_AWAYNOTIFY, CAP_CHGHOST, ":%s", cli_user(cptr)->away);
-    }
-    if (IsChanOp(chan) && HasVoice(chan))
-      sendcmdto_capflag_channel_butserv_butone(&his, CMD_MODE, chan->channel, cptr, 0,
-                                       0, CAP_CHGHOST, "%H +ov %C %C", chan->channel, cptr,
-                                       cptr);
-    else if (IsChanOp(chan) || HasVoice(chan))
-      sendcmdto_capflag_channel_butserv_butone(&his, CMD_MODE, chan->channel, cptr, 0,
-        0, CAP_CHGHOST, "%H +%c %C", chan->channel, IsChanOp(chan) ? 'o' : 'v', cptr);
-  }
+  rejoin_and_set_modes(cptr);
   return 0;
 }
 
@@ -1192,27 +1199,7 @@ int set_hostmask(struct Client *cptr, char *hostmask, char *password)
    * Go through all channels the client was on, rejoin him
    * and set the modes, if any
    */
-  for (chan = cli_user(cptr)->channel; chan; chan = chan->next_channel) {
-    if (IsZombie(chan))
-      continue;
-    /* If this channel has delayed joins and the user has no modes, just set
-     * the delayed join flag rather than showing the join, even if the user
-     * was visible before */
-    if (!IsChanOp(chan) && !HasVoice(chan)
-        && (chan->channel->mode.mode & MODE_DELJOINS)) {
-      SetDelayedJoin(chan);
-    } else {
-      sendcmdto_channel_butserv_butone(cptr, CMD_JOIN, chan->channel, cptr, 0,
-        "%H", chan->channel);
-    }
-    if (IsChanOp(chan) && HasVoice(chan)) {
-      sendcmdto_channel_butserv_butone(&his, CMD_MODE, chan->channel, cptr, 0,
-        "%H +ov %C %C", chan->channel, cptr, cptr);
-    } else if (IsChanOp(chan) || HasVoice(chan)) {
-      sendcmdto_channel_butserv_butone(&his, CMD_MODE, chan->channel, cptr, 0,
-        "%H +%c %C", chan->channel, IsChanOp(chan) ? 'o' : 'v', cptr);
-    }
-  }
+  rejoin_and_set_modes(cptr);
   return 1;
 }
 
@@ -1459,6 +1446,17 @@ int set_user_mode(struct Client *cptr, struct Client *sptr, int parc,
           SetWebirc(sptr);
         /* There is no -W */
         break;
+      case 'C':
+          if (what == MODE_ADD) {
+              SetCloak(sptr);
+              do_set_host = 1;
+              password = NULL;
+			  set_cloakhost(sptr, cli_user(sptr)->realhost);
+              ircd_snprintf(0, hostmask, HOSTLEN + USERLEN + 2, "%s@%s",
+                  cli_user(sptr)->username, cli_user(sptr)->host);
+          }
+          /* There is no -C */
+          break;
       default:
         send_reply(sptr, ERR_UMODEUNKNOWNFLAG, *m);
         break;
@@ -1483,8 +1481,10 @@ int set_user_mode(struct Client *cptr, struct Client *sptr, int parc,
       SetFlag(sptr, FLAG_TLS);
     if (!FlagHas(&setflags, FLAG_WEBIRC) && IsWebirc(sptr))
       ClrFlag(sptr, FLAG_WEBIRC);
-    else if (FlagHas(&setflags, FLAG_WEBIRC) && !IsWebirc(sptr))
-      SetFlag(sptr, FLAG_WEBIRC);
+    else if (FlagHas(&setflags, FLAG_CLOAK) && !IsCloaked(sptr))
+      SetFlag(sptr, FLAG_CLOAK);
+    else if (FlagHas(&setflags, FLAG_CLOAK) && IsCloaked(sptr))
+        SetFlag(sptr, FLAG_CLOAK);
     /*
      * new umode; servers can set it, local users cannot;
      * prevents users from /kick'ing or /mode -o'ing
@@ -2090,34 +2090,7 @@ int set_cloakhost(struct Client *cptr, char *hostmask)
 
     ircd_strncpy(cli_user(cptr)->realhost, hostmask, HOSTLEN);
     ircd_strncpy(cli_user(cptr)->host, cloaked, HOSTLEN);
-	SetSetHost(cptr);
 	SetCloak(cptr);
-    send_reply(cptr, RPL_HOSTHIDDEN, cli_user(cptr)->host);
-
-    sendcmdto_common_channels_butone(cptr, CMD_QUIT, cptr, ":Host cloaked");
-	struct Membership *chan;
-    for (chan = cli_user(cptr)->channel; chan; chan = chan->next_channel) {
-        if (IsZombie(chan))
-            continue;
-        /* If this channel has delayed joins and the user has no modes, just set
-         * the delayed join flag rather than showing the join, even if the user
-         * was visible before */
-        if (!IsChanOp(chan) && !HasVoice(chan)
-            && (chan->channel->mode.mode & MODE_DELJOINS)) {
-            SetDelayedJoin(chan);
-        }
-        else {
-            sendcmdto_channel_butserv_butone(cptr, CMD_JOIN, chan->channel, cptr, 0,
-                "%H", chan->channel);
-        }
-        if (IsChanOp(chan) && HasVoice(chan)) {
-            sendcmdto_channel_butserv_butone(&his, CMD_MODE, chan->channel, cptr, 0,
-                "%H +ov %C %C", chan->channel, cptr, cptr);
-        }
-        else if (IsChanOp(chan) || HasVoice(chan)) {
-            sendcmdto_channel_butserv_butone(&his, CMD_MODE, chan->channel, cptr, 0,
-                "%H +%c %C", chan->channel, IsChanOp(chan) ? 'o' : 'v', cptr);
-        }
-    }
+	SetSetHost(cptr);
     return 1;
 }
