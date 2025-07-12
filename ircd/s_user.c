@@ -392,6 +392,9 @@ int register_user(struct Client *cptr, struct Client *sptr)
     if (MyConnect(sptr) && feature_bool(FEAT_AUTOINVISIBLE))
       SetInvisible(sptr);
     
+    if (MyConnect(sptr) && feature_bool(FEAT_WEBIRC_CLOAKING) && IsWebirc(sptr)) {
+        set_cloakhost(sptr, cli_user(sptr)->realhost);
+    }
     if(MyConnect(sptr) && feature_bool(FEAT_SETHOST_AUTO)) {
       if (conf_check_slines(sptr)) {
         send_reply(sptr, RPL_USINGSLINE);
@@ -557,9 +560,6 @@ int register_user(struct Client *cptr, struct Client *sptr)
     send_umode(cptr, sptr, &flags, ALL_UMODES, 0);
     if ((cli_snomask(sptr) != SNO_DEFAULT) && HasFlag(sptr, FLAG_SERVNOTICE))
       send_reply(sptr, RPL_SNOMASK, cli_snomask(sptr), cli_snomask(sptr));
-    if(HasFlag(sptr, FLAG_CLOAK) && IsWebirc(sptr)) {
-		set_cloakhost(sptr, cli_user(sptr)->realhost);
-	}
   }
   return 0;
 }
@@ -586,8 +586,7 @@ static const struct UserMode {
   { FLAG_SETHOST,     'h' },
   { FLAG_PARANOID,    'P' },
   { FLAG_TLS,         'z' },
-  { FLAG_WEBIRC,      'W' },
-  { FLAG_CLOAK,       'C' }
+  { FLAG_WEBIRC,      'W' }
 };
 
 /** Length of #userModeList. */
@@ -1446,16 +1445,6 @@ int set_user_mode(struct Client *cptr, struct Client *sptr, int parc,
           SetWebirc(sptr);
         /* There is no -W */
         break;
-      case 'C':
-          if (what == MODE_ADD) {
-              SetCloak(sptr);
-              do_set_host = 1;
-              password = NULL;
-			  set_cloakhost(sptr, cli_user(sptr)->realhost);
-              hostmask = cli_user(sptr)->host;
-          }
-          /* There is no -C */
-          break;
       default:
         send_reply(sptr, ERR_UMODEUNKNOWNFLAG, *m);
         break;
@@ -1480,10 +1469,7 @@ int set_user_mode(struct Client *cptr, struct Client *sptr, int parc,
       SetFlag(sptr, FLAG_TLS);
     if (!FlagHas(&setflags, FLAG_WEBIRC) && IsWebirc(sptr))
       ClrFlag(sptr, FLAG_WEBIRC);
-    else if (FlagHas(&setflags, FLAG_CLOAK) && !IsCloaked(sptr))
-      SetFlag(sptr, FLAG_CLOAK);
-    else if (FlagHas(&setflags, FLAG_CLOAK) && IsCloaked(sptr))
-        SetFlag(sptr, FLAG_CLOAK);
+
     /*
      * new umode; servers can set it, local users cannot;
      * prevents users from /kick'ing or /mode -o'ing
