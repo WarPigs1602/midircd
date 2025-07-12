@@ -133,7 +133,7 @@ static char *hidehost_ipv4(const char *host)
     to_base36(alpha, alpha36, sizeof(alpha36));
     to_base36(beta, beta36, sizeof(beta36));
     to_base36(gamma, gamma36, sizeof(gamma36));
-    ircd_snprintf(0, result, RESULT_BUF_SIZE, "%s.%s.%s.IP", alpha36, beta36, gamma36);
+    ircd_snprintf(0, result, RESULT_BUF_SIZE, "%s.%s.%s.ip", alpha36, beta36, gamma36);
 
     return result;
 }
@@ -235,7 +235,7 @@ static char *hidehost_ipv6(const char *host)
     to_base36(beta, beta36, sizeof(beta36));
     to_base36(gamma, gamma36, sizeof(gamma36));
     to_base36(delta, delta36, sizeof(delta36));
-    ircd_snprintf(0, result, 128, "%s.%s.%s.%s.IPv6", alpha36, beta36, gamma36, delta36);
+    ircd_snprintf(0, result, 128, "%s.%s.%s.%s.ip", alpha36, beta36, gamma36, delta36);
 
     return result;
 }
