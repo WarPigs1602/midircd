@@ -180,8 +180,16 @@ static void do_whois(struct Client* sptr, struct Client *acptr, int parc)
          *(buf + len++) = '*';
        if (IsDelayedJoin(chan) && (sptr != acptr))
          *(buf + len++) = '<';
+       else if (IsChanService(chan))
+         *(buf + len++) = '~';
+       else if (IsOwner(chan))
+         *(buf + len++) = '&';
+       else if (IsAdmin(chan))
+         *(buf + len++) = '%';
        else if (IsChanOp(chan))
          *(buf + len++) = '@';
+       else if (IsHalfOp(chan))
+         *(buf + len++) = '%';
        else if (HasVoice(chan))
          *(buf + len++) = '+';
        else if (IsZombie(chan))
