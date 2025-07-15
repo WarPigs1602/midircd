@@ -1701,13 +1701,20 @@ modebuf_flush_int(struct ModeBuf *mbuf, int all)
       bufptr_i = &rembuf_i;
     }
 
-    if (MB_TYPE(mbuf, i) & (MODE_CHANOP | MODE_VOICE)) {
+    if (MB_TYPE(mbuf, i) & (MODE_CHANOP | MODE_VOICE | MODE_HALFOP | MODE_ADMIN | MODE_OWNER | MODE_CHANSERVICE)) {
       tmp = strlen(cli_name(MB_CLIENT(mbuf, i)));
 
       if ((totalbuflen - IRCD_MAX(9, tmp)) <= 0) /* don't overflow buffer */
 	MB_TYPE(mbuf, i) |= MODE_SAVE; /* save for later */
       else {
-	bufptr[(*bufptr_i)++] = MB_TYPE(mbuf, i) & MODE_CHANOP ? 'o' : 'v';
+        char mode_char;
+        if (MB_TYPE(mbuf, i) & MODE_CHANSERVICE) mode_char = 'S';
+        else if (MB_TYPE(mbuf, i) & MODE_OWNER) mode_char = 'q';
+        else if (MB_TYPE(mbuf, i) & MODE_ADMIN) mode_char = 'a';
+        else if (MB_TYPE(mbuf, i) & MODE_CHANOP) mode_char = 'o';
+        else if (MB_TYPE(mbuf, i) & MODE_HALFOP) mode_char = 'h';
+        else mode_char = 'v'; /* MODE_VOICE */
+	bufptr[(*bufptr_i)++] = mode_char;
 	totalbuflen -= IRCD_MAX(9, tmp) + 1;
       }
     } else if (MB_TYPE(mbuf, i) & (MODE_BAN | MODE_APASS | MODE_UPASS)) {
@@ -3108,6 +3115,17 @@ mode_parse_client(struct ParseState *state, int *flag_p)
   if (!acptr)
     return; /* find_chasing() already reported an error to the user */
 
+  /* Check privilege hierarchy for user modes */
+  if (MyUser(state->sptr) && !(state->flags & MODE_PARSE_FORCE)) {
+    struct Membership *target_member = find_member_link(state->chptr, acptr);
+    if (target_member && state->member) {
+      if (!can_modify_user_mode(state->member, target_member, flag_p[0])) {
+        send_reply(state->sptr, ERR_CHANOPRIVSNEEDED, state->chptr->chname);
+        return;
+      }
+    }
+  }
+
   for (i = 0; i < MAXPARA; i++) /* find an element to stick them in */
     if (!state->cli_change[i].flag || (state->cli_change[i].client == acptr &&
 				       state->cli_change[i].flag & flag_p[0]))
@@ -3312,6 +3330,10 @@ mode_parse(struct ModeBuf *mbuf, struct Client *cptr, struct Client *sptr,
   static int chan_flags[] = {
     MODE_CHANOP,	'o',
     MODE_VOICE,		'v',
+    MODE_HALFOP,	'h',
+    MODE_ADMIN,		'a',
+    MODE_OWNER,		'q',
+    MODE_CHANSERVICE,	'S',
     MODE_PRIVATE,	'p',
     MODE_SECRET,	's',
     MODE_MODERATED,	'm',
@@ -3423,8 +3445,12 @@ mode_parse(struct ModeBuf *mbuf, struct Client *cptr, struct Client *sptr,
   send_reply(state.sptr, ERR_TLSMODE, state.chptr->chname);		
 	break;
 
-      case 'o': /* deal with ops/voice */
+      case 'o': /* deal with ops/voice/halfop/admin/owner/chanservice */
       case 'v':
+      case 'h':
+      case 'a':
+      case 'q':
+      case 'S':
 	mode_parse_client(&state, flag_p);
 	break;
 
@@ -3767,4 +3793,59 @@ void RevealDelayedJoinIfNeeded(struct Client *sptr, struct Channel *chptr)
   struct Membership *member = find_member_link(chptr, sptr);
   if (member && IsDelayedJoin(member))
     RevealDelayedJoin(member);
+}
+
+/** Get the privilege level of a user mode for hierarchy checking.
+ * Higher number = higher privilege.
+ * @param member The membership to check.
+ * @returns The privilege level.
+ */
+int get_user_mode_level(struct Membership *member)
+{
+  if (!member) return 0;
+  if (IsChanService(member)) return 6;  /* +S: ChanService */
+  if (IsOwner(member)) return 5;        /* +q: Owner */
+  if (IsAdmin(member)) return 4;        /* +a: Admin */
+  if (IsChanOp(member)) return 3;       /* +o: Chanop */
+  if (IsHalfOp(member)) return 2;       /* +h: Halfop */
+  if (HasVoice(member)) return 1;       /* +v: Voice */
+  return 0;                             /* No privileges */
+}
+
+/** Check if a user can modify another user's mode.
+ * @param source The user attempting the change.
+ * @param target The user being changed.
+ * @param mode The mode being changed.
+ * @returns Non-zero if allowed, zero if not.
+ */
+int can_modify_user_mode(struct Membership *source, struct Membership *target, unsigned int mode)
+{
+  int source_level, target_level, mode_level;
+  
+  if (!source || !target) return 0;
+  
+  source_level = get_user_mode_level(source);
+  target_level = get_user_mode_level(target);
+  
+  /* Get the level required for the mode being changed */
+  if (mode & MODE_CHANSERVICE) mode_level = 6;
+  else if (mode & MODE_OWNER) mode_level = 5;
+  else if (mode & MODE_ADMIN) mode_level = 4;
+  else if (mode & MODE_CHANOP) mode_level = 3;
+  else if (mode & MODE_HALFOP) mode_level = 2;
+  else if (mode & MODE_VOICE) mode_level = 1;
+  else return 0;
+  
+  /* ChanService (+S) can only be set by services */
+  if (mode & MODE_CHANSERVICE) {
+    return IsServer(source->user) || IsService(source->user) || IsChannelService(source->user);
+  }
+  
+  /* Source must have higher privilege than target */
+  if (source_level <= target_level) return 0;
+  
+  /* Source must have privilege level equal or higher than the mode being changed */
+  if (source_level < mode_level) return 0;
+  
+  return 1;
 }

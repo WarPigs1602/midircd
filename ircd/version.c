@@ -26,7 +26,7 @@
 #include "patchlist.h"
 
 const char *generation = "1";
-const char *creation = "Tue Jul 15 2025 at 16:35:21 UTC";
+const char *creation = "Tue Jul 15 2025 at 16:46:05 UTC";
 const char *version = BASE_VERSION RELEASE PATCHLEVEL PATCHLIST;
 
 const char *infotext[] = {
@@ -59,7 +59,7 @@ const char *infotext[] = {
     "",
     "Sources:",
     "[ IPcheck.c: b0ac7eb4a7d3a576eab22d31fa419e26  ]",
-    "[ channel.c: 9e985cec820649a3e6ac08b887654ed9  ]",
+    "[ channel.c: 001effe5ff26cfbde2c7d0fa4648f2b3  ]",
     "[ chattr.tab.c: 942c199d183e8a2e695c991347c13a9a  ]",
     "[ class.c: d23d2e4b2c6e746e27c11167d001cb36  ]",
     "[ client.c: c1b53b3767f073857a3381e5a0e1272e  ]",
@@ -102,7 +102,7 @@ const char *infotext[] = {
     "[ m_admin.c: b4d63d78cf199ddee0a0bca0944e0cce  ]",
     "[ m_asll.c: 25278acf2d2acd26c89a698217700b9b  ]",
     "[ m_away.c: bb7df1b3d68b0a08ecb8db817c07e767  ]",
-    "[ m_burst.c: b30ab4fb1df86bbfea04a0821e3aeaee  ]",
+    "[ m_burst.c: 53e21bfb52e1120a47ddaeb2e5661e82  ]",
     "[ m_cap.c: dddd34aee4b9459fe987e96bf774a18a  ]",
     "[ m_check.c: 3a4742f67620732ad2e3181bff581d1a  ]",
     "[ m_clearmode.c: 6987e15e5ac112e3a43331c6ff3e570a  ]",
@@ -122,7 +122,7 @@ const char *infotext[] = {
     "[ m_info.c: 5aa31081e851e701b8c783a196bd101f  ]",
     "[ m_invite.c: 1856cf02891163c83c31f82f6ed25d4a  ]",
     "[ m_ison.c: aae2e89006e4c80fc45f6e87886e759e  ]",
-    "[ m_join.c: 62736edce303957ff2a7eed32d996290  ]",
+    "[ m_join.c: 46243d293c43ba140d86c265eff23c66  ]",
     "[ m_jupe.c: 0f4dee67f814d6c1472621f8f650ebe2  ]",
     "[ m_kick.c: c3ad3088fbba83060c73002a9349cc3a  ]",
     "[ m_kill.c: d5baa145973b2899803c8900212891fc  ]",
@@ -132,7 +132,7 @@ const char *infotext[] = {
     "[ m_map.c: d3be18b4d2d67e53b82d67056fcc620a  ]",
     "[ m_mode.c: 40e614c8da6fea29fd9f1848a05f2e5c  ]",
     "[ m_motd.c: 412cc95f42113775b5ce50de619a3f24  ]",
-    "[ m_names.c: d2303df8db3016ed5f86a46e82651c07  ]",
+    "[ m_names.c: 46e66aa30749847f97258a2933c4fb16  ]",
     "[ m_nick.c: 81d883ef6f62696ab7e4ed9c3ce7b4a1  ]",
     "[ m_notice.c: f151e33fbb13a0571b133dfaac34a0dc  ]",
     "[ m_oper.c: 8c8faf2a90ddf0bc824cab52dc9fba65  ]",
@@ -216,7 +216,7 @@ const char *infotext[] = {
     "Headers:",
     "[ IPcheck.h: 7574e99c3e920b9101deb15c0cf414cb  ]",
     "[ capab.h: 85b3f5805d3ee6a2d3e6ed06d7bd2521  ]",
-    "[ channel.h: 8485b386c0682d5858bd3dd50936b35d  ]",
+    "[ channel.h: 03edb8a60d373e52df5ac18392ffdd47  ]",
     "[ check.h: de0492bfe97bc87689f355dc167e3077  ]",
     "[ class.h: 8ec71d47c864fcb30bb3584f736de41d  ]",
     "[ client.h: 3b41f050eb61de9e8700b9e9ca11279f  ]",

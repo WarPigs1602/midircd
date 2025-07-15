@@ -1,1 +1,25 @@
+# Build artifacts
+*.o
+ircd/ircd
+ircd/umkpasswd
+ircd/convert-conf
+ircd/table_gen
+ircd/test/ircd_chattr_t
+ircd/test/ircd_in_addr_t
+ircd/test/ircd_match_t
+ircd/test/ircd_string_t
+ircd/lex.yy.c
+ircd/y.tab.c
+ircd/y.tab.h
+ircd/chattr.tab.c
+ircd/version.c
+Makefile
+ircd/Makefile
+ircd/test/Makefile
+config.h
+config.log
+config.status
+stamp-h
+
+# Editor files
 .vs

@@ -168,8 +168,16 @@ void do_names(struct Client* sptr, struct Channel* chptr, int filter)
     needs_space=1;
     if (IsZombie(member))
       buf[idx++] = '!';
+    else if (IsChanService(member))
+      buf[idx++] = '!';
+    else if (IsOwner(member))
+      buf[idx++] = '~';
+    else if (IsAdmin(member))
+      buf[idx++] = '&';
     else if (IsChanOp(member))
       buf[idx++] = '@';
+    else if (IsHalfOp(member))
+      buf[idx++] = '%';
     else if (HasVoice(member))
       buf[idx++] = '+';
     strcpy(buf + idx, cli_name(c2ptr));

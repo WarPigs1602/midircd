@@ -173,7 +173,7 @@ int m_join(struct Client *cptr, struct Client *sptr, int parc, char *parv[])
         continue;
       }
 
-      joinbuf_join(&create, chptr, CHFL_CHANOP | CHFL_CHANNEL_MANAGER);
+      joinbuf_join(&create, chptr, CHFL_CHANOP | CHFL_OWNER);
       if (feature_bool(FEAT_AUTOCHANMODES) && feature_str(FEAT_AUTOCHANMODES_LIST) && strlen(feature_str(FEAT_AUTOCHANMODES_LIST)) > 0)
         SetAutoChanModes(chptr);
     } else if (find_member_link(chptr, sptr)) {
@@ -187,12 +187,12 @@ int m_join(struct Client *cptr, struct Client *sptr, int parc, char *parv[])
       /* Check Apass/Upass -- since we only ever look at a single
        * "key" per channel now, this hampers brute force attacks. */
       if (key && !strcmp(key, chptr->mode.apass))
-        flags = CHFL_CHANOP | CHFL_CHANNEL_MANAGER;
+        flags = CHFL_CHANOP | CHFL_OWNER;
       else if (key && !strcmp(key, chptr->mode.upass))
         flags = CHFL_CHANOP;
       else if (chptr->users == 0 && !chptr->mode.apass[0]) {
-        /* Joining a zombie channel (zannel): give ops and increment TS. */
-        flags = CHFL_CHANOP;
+        /* Joining a zombie channel (zannel): give owner and increment TS. */
+        flags = CHFL_CHANOP | CHFL_OWNER;
         chptr->creationtime++;
       } else if (IsInvited(sptr, chptr)) {
         /* Invites bypass these other checks. */
@@ -277,7 +277,7 @@ int m_join(struct Client *cptr, struct Client *sptr, int parc, char *parv[])
         */
 	modebuf_init(&mbuf, &me, cptr, chptr, MODEBUF_DEST_SERVER);
 	modebuf_mode_client(&mbuf, MODE_ADD | MODE_CHANOP, sptr,
-                            chptr->mode.apass[0] ? ((flags & CHFL_CHANNEL_MANAGER) ? 0 : 1) : MAXOPLEVEL);
+                            chptr->mode.apass[0] ? ((flags & CHFL_OWNER) ? 0 : 1) : MAXOPLEVEL);
 	modebuf_flush(&mbuf);
       }
     }
