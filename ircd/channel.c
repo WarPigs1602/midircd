@@ -474,6 +474,11 @@ void add_user_to_channel(struct Channel* chptr, struct Client* who,
     member->status       = flags;
     SetOpLevel(member, oplevel);
 
+    /* Auto-assign +S mode to channel services */
+    if ((IsChannelService(who) && IsService(cli_user(who)->server)) || IsService(who)) {
+      member->status |= CHFL_SERVICE;
+    }
+
     member->next_member  = chptr->members;
     if (member->next_member)
       member->next_member->prev_member = member;
@@ -3048,6 +3053,68 @@ mode_process_bans(struct ParseState *state)
 }
 
 /*
+ * Helper function to get mode hierarchy level
+ * Returns: 6=Service, 5=Owner, 4=Admin, 3=Chanop, 2=Halfop, 1=Voice, 0=None
+ */
+static int
+get_mode_level(unsigned int status)
+{
+  if (status & CHFL_SERVICE) return 6;
+  if (status & CHFL_OWNER) return 5;
+  if (status & CHFL_ADMIN) return 4;
+  if (status & CHFL_CHANOP) return 3;
+  if (status & CHFL_HALFOP) return 2;
+  if (status & CHFL_VOICE) return 1;
+  return 0;
+}
+
+/*
+ * Helper function to check if mode change is allowed by hierarchy
+ * Returns 1 if allowed, 0 if not
+ */
+static int
+check_mode_hierarchy(struct ParseState *state, struct Membership *target_member, 
+                     int mode_flag, int mode_dir)
+{
+  int source_level, target_level, mode_level;
+  
+  if (!state->member)
+    return 1; /* Server or no source member - always allowed */
+  
+  /* Get hierarchy levels */
+  source_level = get_mode_level(state->member->status);
+  target_level = get_mode_level(target_member->status);
+  
+  /* Determine what level the mode represents */
+  if (mode_flag & MODE_SERVICE) mode_level = 6;
+  else if (mode_flag & MODE_OWNER) mode_level = 5;
+  else if (mode_flag & MODE_ADMIN) mode_level = 4;
+  else if (mode_flag & MODE_CHANOP) mode_level = 3;
+  else if (mode_flag & MODE_HALFOP) mode_level = 2;
+  else if (mode_flag & MODE_VOICE) mode_level = 1;
+  else mode_level = 0;
+  
+  /* Service bots and servers can do anything */
+  if ((IsChannelService(state->sptr) && IsService(cli_user(state->sptr)->server)) || 
+      IsService(state->sptr) || IsServer(state->sptr))
+    return 1;
+  
+  /* Self-devoicing is always allowed */
+  if (state->sptr == target_member->user && mode_dir == MODE_DEL && mode_level <= source_level)
+    return 1;
+    
+  /* Can't set modes equal or higher than your own level */
+  if (mode_level >= source_level)
+    return 0;
+    
+  /* Can't affect users at or above your level */
+  if (target_level >= source_level && state->sptr != target_member->user)
+    return 0;
+    
+  return 1;
+}
+
+/*
  * Helper function to process client changes
  */
 static void
@@ -3154,6 +3221,15 @@ mode_process_clients(struct ParseState *state)
 	(state->cli_change[i].flag & MODE_DEL &&
 	 !(state->cli_change[i].flag & member->status)))
       continue; /* no change made, don't do anything */
+
+    /* Check mode hierarchy for new modes */
+    if (!check_mode_hierarchy(state, member, state->cli_change[i].flag & ~(MODE_ADD|MODE_DEL),
+                             state->cli_change[i].flag & (MODE_ADD|MODE_DEL))) {
+      if (MyUser(state->sptr)) {
+        send_reply(state->sptr, ERR_CHANOPRIVSNEEDED, state->chptr->chname);
+      }
+      continue;
+    }
 
     /* see if the deop is allowed */
     if ((state->cli_change[i].flag & (MODE_DEL | MODE_CHANOP)) ==
@@ -3312,6 +3388,10 @@ mode_parse(struct ModeBuf *mbuf, struct Client *cptr, struct Client *sptr,
   static int chan_flags[] = {
     MODE_CHANOP,	'o',
     MODE_VOICE,		'v',
+    MODE_HALFOP,	'h',
+    MODE_ADMIN,		'a',
+    MODE_OWNER,		'q',
+    MODE_SERVICE,	'S',
     MODE_PRIVATE,	'p',
     MODE_SECRET,	's',
     MODE_MODERATED,	'm',
@@ -3423,8 +3503,12 @@ mode_parse(struct ModeBuf *mbuf, struct Client *cptr, struct Client *sptr,
   send_reply(state.sptr, ERR_TLSMODE, state.chptr->chname);		
 	break;
 
-      case 'o': /* deal with ops/voice */
+      case 'o': /* deal with ops/voice/halfop/admin/owner/service */
       case 'v':
+      case 'h':
+      case 'a':
+      case 'q':
+      case 'S':
 	mode_parse_client(&state, flag_p);
 	break;
 

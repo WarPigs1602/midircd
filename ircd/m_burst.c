@@ -498,6 +498,38 @@ int ms_burst(struct Client *cptr, struct Client *sptr, int parc, char *parv[])
 		  current_mode = (current_mode & ~CHFL_DELAYED) | CHFL_VOICE;
 		  oplevel = -1;	/* subsequent digits are an absolute op-level value. */
                 }
+		else if (*ptr == 'h') { /* has halfop status */
+		  if (current_mode_needs_reset) {
+                    current_mode = base_mode;
+		    current_mode_needs_reset = 0;
+		  }
+		  current_mode = (current_mode & ~CHFL_DELAYED) | CHFL_HALFOP;
+		  oplevel = -1;
+                }
+		else if (*ptr == 'a') { /* has admin status */
+		  if (current_mode_needs_reset) {
+                    current_mode = base_mode;
+		    current_mode_needs_reset = 0;
+		  }
+		  current_mode = (current_mode & ~CHFL_DELAYED) | CHFL_ADMIN;
+		  oplevel = -1;
+                }
+		else if (*ptr == 'q') { /* has owner status */
+		  if (current_mode_needs_reset) {
+                    current_mode = base_mode;
+		    current_mode_needs_reset = 0;
+		  }
+		  current_mode = (current_mode & ~CHFL_DELAYED) | CHFL_OWNER;
+		  oplevel = -1;
+                }
+		else if (*ptr == 'S') { /* has service status */
+		  if (current_mode_needs_reset) {
+                    current_mode = base_mode;
+		    current_mode_needs_reset = 0;
+		  }
+		  current_mode = (current_mode & ~CHFL_DELAYED) | CHFL_SERVICE;
+		  oplevel = -1;
+                }
 		else if (IsDigit(*ptr)) {
 		  int level_increment = 0;
 		  if (oplevel == -1) { /* op-level is absolute value? */
@@ -537,8 +569,12 @@ int ms_burst(struct Client *cptr, struct Client *sptr, int parc, char *parv[])
 	    last_oplevel = oplevel;
 
 	    nickstr[nickpos++] = ':'; /* add a specifier */
-	    if (current_mode & CHFL_VOICE)
-	      nickstr[nickpos++] = 'v';
+	    if (current_mode & CHFL_SERVICE)
+	      nickstr[nickpos++] = 'S';
+	    if (current_mode & CHFL_OWNER)
+	      nickstr[nickpos++] = 'q';
+	    if (current_mode & CHFL_ADMIN)
+	      nickstr[nickpos++] = 'a';
 	    if (current_mode & CHFL_CHANOP)
             {
               if (chptr->mode.apass[0])
@@ -546,6 +582,10 @@ int ms_burst(struct Client *cptr, struct Client *sptr, int parc, char *parv[])
               else
                 nickstr[nickpos++] = 'o';
             }
+	    if (current_mode & CHFL_HALFOP)
+	      nickstr[nickpos++] = 'h';
+	    if (current_mode & CHFL_VOICE)
+	      nickstr[nickpos++] = 'v';
 	  } else if (current_mode & CHFL_CHANOP && oplevel != last_oplevel) { /* if just op level changed... */
 	    nickstr[nickpos++] = ':'; /* add a specifier */
 	    nickpos += ircd_snprintf(0, nickstr + nickpos, sizeof(nickstr) - nickpos, "%u", oplevel - last_oplevel);
@@ -571,7 +611,7 @@ int ms_burst(struct Client *cptr, struct Client *sptr, int parc, char *parv[])
 	    if (member->status & CHFL_VOICE)
 	      member->status |= CHFL_BURST_ALREADY_VOICED;
 	    /* Synchronize with the burst. */
-	    member->status |= CHFL_BURST_JOINED | (current_mode & (CHFL_CHANOP|CHFL_VOICE));
+	    member->status |= CHFL_BURST_JOINED | (current_mode & (CHFL_CHANOP|CHFL_VOICE|CHFL_HALFOP|CHFL_ADMIN|CHFL_OWNER|CHFL_SERVICE));
 	    SetOpLevel(member, oplevel);
 	  }
 	}

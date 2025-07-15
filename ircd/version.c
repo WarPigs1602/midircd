@@ -25,8 +25,8 @@
 #include "patchlevel.h"
 #include "patchlist.h"
 
-const char *generation = "1";
-const char *creation = "Tue Jul 15 2025 at 15:18:08 UTC";
+const char *generation = "2";
+const char *creation = "Tue Jul 15 2025 at 15:31:50 UTC";
 const char *version = BASE_VERSION RELEASE PATCHLEVEL PATCHLIST;
 
 const char *infotext[] = {
@@ -59,7 +59,7 @@ const char *infotext[] = {
     "",
     "Sources:",
     "[ IPcheck.c: b0ac7eb4a7d3a576eab22d31fa419e26  ]",
-    "[ channel.c: 9e985cec820649a3e6ac08b887654ed9  ]",
+    "[ channel.c: 97496337ec17329a6b0a60cd16c1cdb9  ]",
     "[ chattr.tab.c: 942c199d183e8a2e695c991347c13a9a  ]",
     "[ class.c: d23d2e4b2c6e746e27c11167d001cb36  ]",
     "[ client.c: c1b53b3767f073857a3381e5a0e1272e  ]",
@@ -102,7 +102,7 @@ const char *infotext[] = {
     "[ m_admin.c: b4d63d78cf199ddee0a0bca0944e0cce  ]",
     "[ m_asll.c: 25278acf2d2acd26c89a698217700b9b  ]",
     "[ m_away.c: bb7df1b3d68b0a08ecb8db817c07e767  ]",
-    "[ m_burst.c: b30ab4fb1df86bbfea04a0821e3aeaee  ]",
+    "[ m_burst.c: 30fec3847068c94587d71140aae30d90  ]",
     "[ m_cap.c: dddd34aee4b9459fe987e96bf774a18a  ]",
     "[ m_check.c: 3a4742f67620732ad2e3181bff581d1a  ]",
     "[ m_clearmode.c: 6987e15e5ac112e3a43331c6ff3e570a  ]",
@@ -216,7 +216,7 @@ const char *infotext[] = {
     "Headers:",
     "[ IPcheck.h: 7574e99c3e920b9101deb15c0cf414cb  ]",
     "[ capab.h: 85b3f5805d3ee6a2d3e6ed06d7bd2521  ]",
-    "[ channel.h: 8485b386c0682d5858bd3dd50936b35d  ]",
+    "[ channel.h: b1b8008d56ce8848c5a07e57ec99d83f  ]",
     "[ check.h: de0492bfe97bc87689f355dc167e3077  ]",
     "[ class.h: 8ec71d47c864fcb30bb3584f736de41d  ]",
     "[ client.h: 3b41f050eb61de9e8700b9e9ca11279f  ]",
