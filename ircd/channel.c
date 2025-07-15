@@ -1031,12 +1031,17 @@ void send_channel_modes(struct Client *cptr, struct Channel *chptr)
 	     * In the two cases where the current mode includes ops,
 	     * we need to add the _absolute_ value of the oplevel to the mode.
 	     */
-	    char tbuf[3 + MAXOPLEVELDIGITS] = ":";
+	    char tbuf[10 + MAXOPLEVELDIGITS] = ":";
 	    int loc = 1;
 
-	    if (HasVoice(member))	/* flag_cnt == 1 or 3 */
-	      tbuf[loc++] = 'v';
-	    if (IsChanOp(member))	/* flag_cnt == 2 or 3 */
+	    /* Output modes in hierarchy order: S > q > a > o > h > v */
+	    if (IsChanService(member))
+	      tbuf[loc++] = 'S';
+	    if (IsOwner(member))
+	      tbuf[loc++] = 'q';
+	    if (IsAdmin(member))
+	      tbuf[loc++] = 'a';
+	    if (IsChanOp(member))
 	    {
               /* append the absolute value of the oplevel */
               if (send_oplevels)
@@ -1044,6 +1049,10 @@ void send_channel_modes(struct Client *cptr, struct Channel *chptr)
               else
                 tbuf[loc++] = 'o';
 	    }
+	    if (HasHalfOp(member))
+	      tbuf[loc++] = 'h';
+	    if (HasVoice(member))
+	      tbuf[loc++] = 'v';
 	    tbuf[loc] = '\0';
 	    msgq_append(&me, mb, tbuf);
 	    new_mode = 0;
