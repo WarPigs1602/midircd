@@ -62,7 +62,11 @@ struct Client;
 #define CHFL_DEOPPED            0x0004  /**< Is de-opped by a server */
 #define CHFL_SERVOPOK           0x0008  /**< Server op allowed */
 #define CHFL_ZOMBIE             0x0010  /**< Kicked from channel */
+#define CHFL_SERVICE            0x0020  /**< Service (+S) */
+#define CHFL_OWNER              0x0040  /**< Channel owner (+q) */
+#define CHFL_ADMIN              0x0080  /**< Channel admin (+a) */
 #define CHFL_BURST_JOINED       0x0100  /**< Just joined by net.junction */
+#define CHFL_HALFOP             0x0200  /**< Half operator (+h) */
 #define CHFL_BANVALID           0x0800  /**< CHFL_BANNED bit is valid */
 #define CHFL_BANNED             0x1000  /**< Channel member is banned */
 #define CHFL_SILENCE_IPMASK     0x2000  /**< silence mask is a CIDR */
@@ -82,14 +86,18 @@ struct Client;
 					 */
 #define CHFL_DELAYED            0x40000 /**< User's join message is delayed */
 
-#define CHFL_OVERLAP         (CHFL_CHANOP | CHFL_VOICE)
+#define CHFL_OVERLAP         (CHFL_CHANOP | CHFL_VOICE | CHFL_SERVICE | CHFL_OWNER | CHFL_ADMIN | CHFL_HALFOP)
 #define CHFL_BANVALIDMASK    (CHFL_BANVALID | CHFL_BANNED)
-#define CHFL_VOICED_OR_OPPED (CHFL_CHANOP | CHFL_VOICE)
+#define CHFL_VOICED_OR_OPPED (CHFL_CHANOP | CHFL_VOICE | CHFL_SERVICE | CHFL_OWNER | CHFL_ADMIN | CHFL_HALFOP)
 
 /* Channel Visibility macros */
 
 #define MODE_CHANOP     CHFL_CHANOP	/**< +o Chanop */
 #define MODE_VOICE      CHFL_VOICE	/**< +v Voice */
+#define MODE_SERVICE    CHFL_SERVICE	/**< +S Service */
+#define MODE_OWNER      CHFL_OWNER	/**< +q Owner */
+#define MODE_ADMIN      CHFL_ADMIN	/**< +a Admin */
+#define MODE_HALFOP     CHFL_HALFOP	/**< +h Half-op */
 #define MODE_PRIVATE    0x0004		/**< +p Private */
 #define MODE_SECRET     0x0008		/**< +s Secret */
 #define MODE_MODERATED  0x0010		/**< +m Moderated */
@@ -121,12 +129,12 @@ struct Client;
 
 /** mode flags which take another parameter (With PARAmeterS)
  */
-#define MODE_WPARAS     (MODE_CHANOP|MODE_VOICE|MODE_BAN|MODE_KEY|MODE_LIMIT|MODE_APASS|MODE_UPASS)
+#define MODE_WPARAS     (MODE_CHANOP|MODE_VOICE|MODE_SERVICE|MODE_OWNER|MODE_ADMIN|MODE_HALFOP|MODE_BAN|MODE_KEY|MODE_LIMIT|MODE_APASS|MODE_UPASS)
 
 /** Available Channel modes */
-#define infochanmodes feature_bool(FEAT_OPLEVELS) ? "AbiklmnopstUvrDcCNuMT" : "biklmnopstvrDcCNuMT"
+#define infochanmodes feature_bool(FEAT_OPLEVELS) ? "AbiklmnopstUvrDcCNuMTSqah" : "biklmnopstvrDcCNuMTSqah"
 /** Available Channel modes that take parameters */
-#define infochanmodeswithparams feature_bool(FEAT_OPLEVELS) ? "AbkloUv" : "bklov"
+#define infochanmodeswithparams feature_bool(FEAT_OPLEVELS) ? "AbkloUvSqah" : "bklovSqah"
 
 #define HoldChannel(x)          (!(x))
 /** name invisible */
@@ -214,6 +222,10 @@ struct Membership {
 #define IsChanOp(x)         ((x)->status & CHFL_CHANOP)
 #define OpLevel(x)          ((x)->oplevel)
 #define HasVoice(x)         ((x)->status & CHFL_VOICE)
+#define IsChanService(x)    ((x)->status & CHFL_SERVICE)
+#define IsOwner(x)          ((x)->status & CHFL_OWNER)
+#define IsAdmin(x)          ((x)->status & CHFL_ADMIN)
+#define IsHalfOp(x)         ((x)->status & CHFL_HALFOP)
 #define IsServOpOk(x)       ((x)->status & CHFL_SERVOPOK)
 #define IsBurstJoined(x)    ((x)->status & CHFL_BURST_JOINED)
 #define IsVoicedOrOpped(x)  ((x)->status & CHFL_VOICED_OR_OPPED)
@@ -231,6 +243,10 @@ struct Membership {
 #define SetOpLevel(x, v)    (void)((x)->oplevel = (v))
 #define SetUserParting(x)   ((x)->status |= CHFL_USER_PARTING)
 #define SetDelayedJoin(x)   ((x)->status |= CHFL_DELAYED)
+#define SetChanService(x)   ((x)->status |= CHFL_SERVICE)
+#define SetOwner(x)         ((x)->status |= CHFL_OWNER)
+#define SetAdmin(x)         ((x)->status |= CHFL_ADMIN)
+#define SetHalfOp(x)        ((x)->status |= CHFL_HALFOP)
 
 #define ClearBanned(x)      ((x)->status &= ~CHFL_BANNED)
 #define ClearBanValid(x)    ((x)->status &= ~CHFL_BANVALID)
@@ -238,6 +254,10 @@ struct Membership {
 #define ClearServOpOk(x)    ((x)->status &= ~CHFL_SERVOPOK)
 #define ClearBurstJoined(x) ((x)->status &= ~CHFL_BURST_JOINED)
 #define ClearDelayedJoin(x) ((x)->status &= ~CHFL_DELAYED)
+#define ClearChanService(x) ((x)->status &= ~CHFL_SERVICE)
+#define ClearOwner(x)       ((x)->status &= ~CHFL_OWNER)
+#define ClearAdmin(x)       ((x)->status &= ~CHFL_ADMIN)
+#define ClearHalfOp(x)      ((x)->status &= ~CHFL_HALFOP)
 
 /** Mode information for a channel */
 struct Mode {

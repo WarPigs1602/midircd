@@ -1,1 +1,21 @@
 .vs
+
+# Build artifacts
+*.o
+ircd/ircd
+ircd/umkpasswd
+ircd/convert-conf
+ircd/table_gen
+ircd/chattr.tab.c
+ircd/lex.yy.c
+ircd/y.tab.c
+ircd/y.tab.h
+ircd/version.c
+ircd/test/ircd_*_t
+config.log
+config.status
+config.h
+Makefile
+ircd/Makefile
+ircd/test/Makefile
+stamp-h

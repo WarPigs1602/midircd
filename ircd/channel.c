@@ -3312,6 +3312,10 @@ mode_parse(struct ModeBuf *mbuf, struct Client *cptr, struct Client *sptr,
   static int chan_flags[] = {
     MODE_CHANOP,	'o',
     MODE_VOICE,		'v',
+    MODE_SERVICE,	'S',
+    MODE_OWNER,		'q',
+    MODE_ADMIN,		'a',
+    MODE_HALFOP,	'h',
     MODE_PRIVATE,	'p',
     MODE_SECRET,	's',
     MODE_MODERATED,	'm',
@@ -3425,6 +3429,10 @@ mode_parse(struct ModeBuf *mbuf, struct Client *cptr, struct Client *sptr,
 
       case 'o': /* deal with ops/voice */
       case 'v':
+      case 'S': /* deal with service */
+      case 'q': /* deal with owner */
+      case 'a': /* deal with admin */
+      case 'h': /* deal with halfop */
 	mode_parse_client(&state, flag_p);
 	break;
 

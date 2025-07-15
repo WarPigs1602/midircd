@@ -26,7 +26,7 @@
 #include "patchlist.h"
 
 const char *generation = "1";
-const char *creation = "Tue Jul 15 2025 at 15:37:15 UTC";
+const char *creation = "Tue Jul 15 2025 at 15:48:16 UTC";
 const char *version = BASE_VERSION RELEASE PATCHLEVEL PATCHLIST;
 
 const char *infotext[] = {
@@ -59,7 +59,7 @@ const char *infotext[] = {
     "",
     "Sources:",
     "[ IPcheck.c: b0ac7eb4a7d3a576eab22d31fa419e26  ]",
-    "[ channel.c: 9e985cec820649a3e6ac08b887654ed9  ]",
+    "[ channel.c: a167458b6d530461f1d78cdeabe61a69  ]",
     "[ chattr.tab.c: 942c199d183e8a2e695c991347c13a9a  ]",
     "[ class.c: d23d2e4b2c6e746e27c11167d001cb36  ]",
     "[ client.c: c1b53b3767f073857a3381e5a0e1272e  ]",
@@ -122,7 +122,7 @@ const char *infotext[] = {
     "[ m_info.c: 5aa31081e851e701b8c783a196bd101f  ]",
     "[ m_invite.c: 1856cf02891163c83c31f82f6ed25d4a  ]",
     "[ m_ison.c: aae2e89006e4c80fc45f6e87886e759e  ]",
-    "[ m_join.c: 62736edce303957ff2a7eed32d996290  ]",
+    "[ m_join.c: fd7110580678ed176a6b262f2ed58445  ]",
     "[ m_jupe.c: 0f4dee67f814d6c1472621f8f650ebe2  ]",
     "[ m_kick.c: c3ad3088fbba83060c73002a9349cc3a  ]",
     "[ m_kill.c: d5baa145973b2899803c8900212891fc  ]",
@@ -132,7 +132,7 @@ const char *infotext[] = {
     "[ m_map.c: d3be18b4d2d67e53b82d67056fcc620a  ]",
     "[ m_mode.c: 40e614c8da6fea29fd9f1848a05f2e5c  ]",
     "[ m_motd.c: 412cc95f42113775b5ce50de619a3f24  ]",
-    "[ m_names.c: d2303df8db3016ed5f86a46e82651c07  ]",
+    "[ m_names.c: 7bb02673a62afa6752de8195fb27d79e  ]",
     "[ m_nick.c: 81d883ef6f62696ab7e4ed9c3ce7b4a1  ]",
     "[ m_notice.c: f151e33fbb13a0571b133dfaac34a0dc  ]",
     "[ m_oper.c: 8c8faf2a90ddf0bc824cab52dc9fba65  ]",
@@ -209,14 +209,14 @@ const char *infotext[] = {
     "[ umkpasswd.c: 5e7de2e5e05dbd21ea11a83efab3614b  ]",
     "[ uping.c: 8eaeadbc8f482a9cb1d0b4f1269a6bd7  ]",
     "[ userload.c: 9b5124157fc2b98a83ee15ba428bd7a7  ]",
-    "[ whocmds.c: fa1f6a89b0965eddb36013018565a3cd  ]",
+    "[ whocmds.c: de55a201f39ac3fd7f092123855cdf5f  ]",
     "[ whowas.c: 469d4363e62d7b53c8098181be22374a  ]",
     "[ y.tab.c: efcd7012ed5a4b4e55952c91bbd7aefa  ]",
     "",
     "Headers:",
     "[ IPcheck.h: 7574e99c3e920b9101deb15c0cf414cb  ]",
     "[ capab.h: 85b3f5805d3ee6a2d3e6ed06d7bd2521  ]",
-    "[ channel.h: 8485b386c0682d5858bd3dd50936b35d  ]",
+    "[ channel.h: 8b783eeeaa323e88f3727198b8e8c147  ]",
     "[ check.h: de0492bfe97bc87689f355dc167e3077  ]",
     "[ class.h: 8ec71d47c864fcb30bb3584f736de41d  ]",
     "[ client.h: 3b41f050eb61de9e8700b9e9ca11279f  ]",
@@ -280,7 +280,7 @@ const char *infotext[] = {
     "[ s_user.h: cb824dffae303931229285f48ca69b3c  ]",
     "[ send.h: 39a566475ba4b90ef71670d7aad1fdec  ]",
     "[ struct.h: f91acc4324149088b97e9598642b1c18  ]",
-    "[ supported.h: 1f4d1f763115872cfe4ba32607dba008  ]",
+    "[ supported.h: 67f069c9446c6ad42e5f4e744ab5228f  ]",
     "[ sys.h: f1653ed3bebb38e2047e0f10565b1457  ]",
     "[ umkpasswd.h: 9a631653540e947925f27c1c8439caf8  ]",
     "[ uping.h: 69dd8107fc31c4d11796de451c990894  ]",

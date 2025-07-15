@@ -173,7 +173,7 @@ int m_join(struct Client *cptr, struct Client *sptr, int parc, char *parv[])
         continue;
       }
 
-      joinbuf_join(&create, chptr, CHFL_CHANOP | CHFL_CHANNEL_MANAGER);
+      joinbuf_join(&create, chptr, CHFL_OWNER | CHFL_CHANOP | CHFL_CHANNEL_MANAGER);
       if (feature_bool(FEAT_AUTOCHANMODES) && feature_str(FEAT_AUTOCHANMODES_LIST) && strlen(feature_str(FEAT_AUTOCHANMODES_LIST)) > 0)
         SetAutoChanModes(chptr);
     } else if (find_member_link(chptr, sptr)) {
