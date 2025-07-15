@@ -25,8 +25,8 @@
 #include "patchlevel.h"
 #include "patchlist.h"
 
-const char *generation = "2";
-const char *creation = "Tue Jul 15 2025 at 15:49:42 UTC";
+const char *generation = "3";
+const char *creation = "Tue Jul 15 2025 at 15:52:16 UTC";
 const char *version = BASE_VERSION RELEASE PATCHLEVEL PATCHLIST;
 
 const char *infotext[] = {
@@ -59,7 +59,7 @@ const char *infotext[] = {
     "",
     "Sources:",
     "[ IPcheck.c: b0ac7eb4a7d3a576eab22d31fa419e26  ]",
-    "[ channel.c: a167458b6d530461f1d78cdeabe61a69  ]",
+    "[ channel.c: 50b57488a3ed0d4244bb7887d5414060  ]",
     "[ chattr.tab.c: 942c199d183e8a2e695c991347c13a9a  ]",
     "[ class.c: d23d2e4b2c6e746e27c11167d001cb36  ]",
     "[ client.c: c1b53b3767f073857a3381e5a0e1272e  ]",

@@ -3127,6 +3127,37 @@ mode_parse_client(struct ParseState *state, int *flag_p)
 }
 
 /*
+ * Helper function to get the hierarchy level of a membership
+ */
+static int
+get_hierarchy_level(struct Membership *member)
+{
+  if (!member) return 0;
+  if (IsChanService(member)) return 6;
+  if (IsOwner(member)) return 5;
+  if (IsAdmin(member)) return 4;
+  if (IsChanOp(member)) return 3;
+  if (IsHalfOp(member)) return 2;
+  if (HasVoice(member)) return 1;
+  return 0;
+}
+
+/*
+ * Helper function to get the hierarchy level required for a mode
+ */
+static int
+get_mode_hierarchy_level(unsigned int mode)
+{
+  if (mode & MODE_SERVICE) return 6;
+  if (mode & MODE_OWNER) return 5;
+  if (mode & MODE_ADMIN) return 4;
+  if (mode & MODE_CHANOP) return 3;
+  if (mode & MODE_HALFOP) return 2;
+  if (mode & MODE_VOICE) return 1;
+  return 0;
+}
+
+/*
  * Helper function to process the changed client list
  */
 static void
@@ -3154,6 +3185,26 @@ mode_process_clients(struct ParseState *state)
 	(state->cli_change[i].flag & MODE_DEL &&
 	 !(state->cli_change[i].flag & member->status)))
       continue; /* no change made, don't do anything */
+
+    /* Check hierarchy permissions for new modes */
+    if (MyUser(state->sptr) && state->member && 
+        (state->cli_change[i].flag & (MODE_SERVICE|MODE_OWNER|MODE_ADMIN|MODE_HALFOP))) {
+      int source_level = get_hierarchy_level(state->member);
+      int target_level = get_hierarchy_level(member);
+      int mode_level = get_mode_hierarchy_level(state->cli_change[i].flag & ~(MODE_ADD|MODE_DEL));
+      
+      /* Only allow changes if source has higher or equal level than the mode being set */
+      if (source_level < mode_level && !IsService(state->sptr)) {
+        send_reply(state->sptr, ERR_CHANOPRIVSNEEDED, state->chptr->chname);
+        continue;
+      }
+      
+      /* Don't allow targeting users with higher level (except self) */
+      if (state->sptr != state->cli_change[i].client && target_level > source_level && !IsService(state->sptr)) {
+        send_reply(state->sptr, ERR_CHANOPRIVSNEEDED, state->chptr->chname);
+        continue;
+      }
+    }
 
     /* see if the deop is allowed */
     if ((state->cli_change[i].flag & (MODE_DEL | MODE_CHANOP)) ==
