@@ -1648,75 +1648,12 @@ modebuf_flush_int(struct ModeBuf* mbuf, int all)
 	if (mbuf->mb_dest & MODEBUF_DEST_DEOP)
 		totalbuflen -= 6; /* numeric nick == 5, plus one space */
 
-<<<<<<< Updated upstream
-  /* Calculate the simple flags */
-  for (flag_p = flags; flag_p[0]; flag_p += 2) {
-    if (*flag_p & mbuf->mb_add)
-      addbuf[addbuf_i++] = flag_p[1];
-    else if (*flag_p & mbuf->mb_rem)
-      rembuf[rembuf_i++] = flag_p[1];
-  }
-
-  /* Some flags may be for local display only. */
-  for (flag_p = local_flags; flag_p[0]; flag_p += 2) {
-    if (*flag_p & mbuf->mb_add)
-      addbuf_local[addbuf_local_i++] = flag_p[1];
-    else if (*flag_p & mbuf->mb_rem)
-      rembuf_local[rembuf_local_i++] = flag_p[1];
-  }
-
-  /* Now go through the modes with arguments... */
-  for (i = 0; i < mbuf->mb_count; i++) {
-    if (MB_TYPE(mbuf, i) & MODE_ADD) { /* adding or removing? */
-      bufptr = addbuf;
-      bufptr_i = &addbuf_i;
-    } else {
-      bufptr = rembuf;
-      bufptr_i = &rembuf_i;
-    }
-
-    if (MB_TYPE(mbuf, i) & (MODE_CHANOP | MODE_VOICE | MODE_HALFOP | MODE_ADMIN | MODE_OWNER | MODE_CHANSERVICE)) {
-      tmp = strlen(cli_name(MB_CLIENT(mbuf, i)));
-
-      if ((totalbuflen - IRCD_MAX(9, tmp)) <= 0) /* don't overflow buffer */
-	MB_TYPE(mbuf, i) |= MODE_SAVE; /* save for later */
-      else {
-        char mode_char;
-        if (MB_TYPE(mbuf, i) & MODE_CHANSERVICE) mode_char = 'S';
-        else if (MB_TYPE(mbuf, i) & MODE_OWNER) mode_char = 'q';
-        else if (MB_TYPE(mbuf, i) & MODE_ADMIN) mode_char = 'a';
-        else if (MB_TYPE(mbuf, i) & MODE_CHANOP) mode_char = 'o';
-        else if (MB_TYPE(mbuf, i) & MODE_HALFOP) mode_char = 'h';
-        else mode_char = 'v'; /* MODE_VOICE */
-	bufptr[(*bufptr_i)++] = mode_char;
-	totalbuflen -= IRCD_MAX(9, tmp) + 1;
-      }
-    } else if (MB_TYPE(mbuf, i) & (MODE_BAN | MODE_APASS | MODE_UPASS)) {
-      tmp = strlen(MB_STRING(mbuf, i));
-
-      if ((totalbuflen - tmp) <= 0) /* don't overflow buffer */
-	MB_TYPE(mbuf, i) |= MODE_SAVE; /* save for later */
-      else {
-	char mode_char;
-	switch(MB_TYPE(mbuf, i) & (MODE_BAN | MODE_APASS | MODE_UPASS))
-	{
-	  case MODE_APASS:
-	    mode_char = 'A';
-	    break;
-	  case MODE_UPASS:
-	    mode_char = 'U';
-	    break;
-	  default:
-	    mode_char = 'b';
-	    break;
-=======
 	/* Calculate the simple flags */
 	for (flag_p = flags; flag_p[0]; flag_p += 2) {
 		if (*flag_p & mbuf->mb_add)
 			addbuf[addbuf_i++] = flag_p[1];
 		else if (*flag_p & mbuf->mb_rem)
 			rembuf[rembuf_i++] = flag_p[1];
->>>>>>> Stashed changes
 	}
 
 	/* Some flags may be for local display only. */
@@ -3220,35 +3157,6 @@ mode_parse_client(struct ParseState* state, int* flag_p)
 	if (!acptr)
 		return;
 
-<<<<<<< Updated upstream
-  /* Check privilege hierarchy for user modes */
-  if (MyUser(state->sptr) && !(state->flags & MODE_PARSE_FORCE)) {
-    struct Membership *target_member = find_member_link(state->chptr, acptr);
-    if (target_member && state->member) {
-      if (!can_modify_user_mode(state->member, target_member, flag_p[0])) {
-        send_reply(state->sptr, ERR_CHANOPRIVSNEEDED, state->chptr->chname);
-        return;
-      }
-    }
-  }
-
-  for (i = 0; i < MAXPARA; i++) /* find an element to stick them in */
-    if (!state->cli_change[i].flag || (state->cli_change[i].client == acptr &&
-				       state->cli_change[i].flag & flag_p[0]))
-      break; /* found a slot */
-
-  /* If we are going to bounce this deop, mark the correct oplevel. */
-  if (state->flags & MODE_PARSE_BOUNCE
-      && state->dir == MODE_DEL
-      && flag_p[0] == MODE_CHANOP
-      && (member = find_member_link(state->chptr, acptr)))
-      oplevel = OpLevel(member);
-
-  /* Store what we're doing to them */
-  state->cli_change[i].flag = state->dir | flag_p[0];
-  state->cli_change[i].oplevel = oplevel;
-  state->cli_change[i].client = acptr;
-=======
 	// Für jeden User-Modus einzeln prüfen und setzen
 	for (i = 0; i < MAXPARA; i++) {
 		if (!state->cli_change[i].flag) {
@@ -3261,7 +3169,6 @@ mode_parse_client(struct ParseState* state, int* flag_p)
 		if (state->cli_change[i].client == acptr && (state->cli_change[i].flag & flag_p[0]))
 			break;
 	}
->>>>>>> Stashed changes
 }
 
 static void mode_process_clients(struct ParseState* state)
@@ -3442,44 +3349,6 @@ int mode_parse(struct ModeBuf* mbuf, struct Client* cptr, struct Client* sptr,
 	struct Channel* chptr, int parc, char* parv[], unsigned int flags,
 	struct Membership* member)
 {
-<<<<<<< Updated upstream
-  static int chan_flags[] = {
-    MODE_CHANOP,	'o',
-    MODE_VOICE,		'v',
-    MODE_HALFOP,	'h',
-    MODE_ADMIN,		'a',
-    MODE_OWNER,		'q',
-    MODE_CHANSERVICE,	'S',
-    MODE_PRIVATE,	'p',
-    MODE_SECRET,	's',
-    MODE_MODERATED,	'm',
-    MODE_TOPICLIMIT,	't',
-    MODE_INVITEONLY,	'i',
-    MODE_NOPRIVMSGS,	'n',
-    MODE_KEY,		'k',
-    MODE_APASS,		'A',
-    MODE_UPASS,		'U',
-    MODE_BAN,		'b',
-    MODE_LIMIT,		'l',
-    MODE_REGONLY,	'r',
-    MODE_DELJOINS,      'D',
-    MODE_NOQUITPARTS,   'u',
-    MODE_NOCOLOUR,      'c',
-    MODE_NOCTCP,        'C',
-    MODE_NONOTICE,      'N',
-    MODE_NOMULTITARGET, 'T',
-    MODE_MODERATENOREG, 'M',
-    MODE_TLSONLY,       'Z',
-    MODE_ADD,		'+',
-    MODE_DEL,		'-',
-    0x0, 0x0
-  };
-  int i;
-  int *flag_p;
-  unsigned int t_mode;
-  char *modestr;
-  struct ParseState state;
-=======
 	static int chan_flags[] = {
 		MODE_CHANOP,      'o', MODE_VOICE, 'v', MODE_OWNER, 'q', MODE_ADMIN, 'a', MODE_HALFOP, 'h', MODE_CHANSERVICE, 'S',
 		MODE_PRIVATE,     'p', MODE_SECRET, 's', MODE_MODERATED, 'm', MODE_TOPICLIMIT, 't', MODE_INVITEONLY, 'i',
@@ -3492,7 +3361,6 @@ int mode_parse(struct ModeBuf* mbuf, struct Client* cptr, struct Client* sptr,
 	unsigned int t_mode;
 	char* modestr;
 	struct ParseState state;
->>>>>>> Stashed changes
 
 	assert(cptr && sptr && chptr && parc && parv);
 
@@ -3598,169 +3466,7 @@ int mode_parse(struct ModeBuf* mbuf, struct Client* cptr, struct Client* sptr,
 	if (state.cli_change[0].flag)
 		mode_process_clients(&state);
 
-<<<<<<< Updated upstream
-      switch (*modestr) {
-      case '+': /* switch direction to MODE_ADD */
-      case '-': /* switch direction to MODE_DEL */
-	state.dir = flag_p[0];
-	break;
-
-      case 'l': /* deal with limits */
-	mode_parse_limit(&state, flag_p);
-	break;
-
-      case 'k': /* deal with keys */
-	mode_parse_key(&state, flag_p);
-	break;
-
-      case 'A': /* deal with Admin passes */
-        if (IsServer(cptr) || feature_bool(FEAT_OPLEVELS))
-	mode_parse_apass(&state, flag_p);
-	break;
-
-      case 'U': /* deal with user passes */
-        if (IsServer(cptr) || feature_bool(FEAT_OPLEVELS))
-	mode_parse_upass(&state, flag_p);
-	break;
-
-      case 'b': /* deal with bans */
-	mode_parse_ban(&state, flag_p);
-	break;
-
-      case 'Z': /* deal with TLS */
-		if(IsTLS(state.sptr))
-	mode_parse_mode(&state, flag_p);
-	else
-  send_reply(state.sptr, ERR_TLSMODE, state.chptr->chname);		
-	break;
-
-      case 'o': /* deal with ops/voice/halfop/admin/owner/chanservice */
-      case 'v':
-      case 'h':
-      case 'a':
-      case 'q':
-      case 'S':
-	mode_parse_client(&state, flag_p);
-	break;
-
-      default: /* deal with other modes */
-	mode_parse_mode(&state, flag_p);
-	break;
-      } /* switch (*modestr) */
-    } /* for (; *modestr; modestr++) */
-
-    if (state.flags & MODE_PARSE_BURST)
-      break; /* don't interpret any more arguments */
-
-    if (state.parc > 0) { /* process next argument in string */
-      modestr = state.parv[state.args_used++];
-      state.parc--;
-
-      /* is it a TS? */
-      if (IsServer(state.cptr) && !state.parc && IsDigit(*modestr)) {
-	time_t recv_ts;
-
-	if (!(state.flags & MODE_PARSE_SET))	  /* don't set earlier TS if */
-	  break;		     /* we're then going to bounce the mode! */
-
-	recv_ts = atoi(modestr);
-
-	if (recv_ts && recv_ts < state.chptr->creationtime)
-	  state.chptr->creationtime = recv_ts; /* respect earlier TS */
-        else if (recv_ts > state.chptr->creationtime) {
-          struct Client *sserv;
-
-          /* Check whether the originating server has fully processed
-           * the burst to it. */
-          sserv = state.cptr;
-          if (!IsServer(sserv))
-              sserv = cli_user(sserv)->server;
-          if (IsBurstOrBurstAck(sserv)) {
-            /* This is a legal but unusual case; the source server
-             * probably just has not processed the BURST for this
-             * channel.  It SHOULD wipe out all its modes soon, so
-             * silently ignore the mode change rather than send a
-             * bounce that could desync modes from our side (that
-             * have already been sent).
-             */
-            state.mbuf->mb_add = 0;
-            state.mbuf->mb_rem = 0;
-            state.mbuf->mb_count = 0;
-            return state.args_used;
-          } else {
-            /* Server is desynced; bounce the mode and deop the source
-             * to fix it. */
-            state.mbuf->mb_dest &= ~MODEBUF_DEST_CHANNEL;
-            state.mbuf->mb_dest |= MODEBUF_DEST_BOUNCE | MODEBUF_DEST_HACK2;
-            if (!IsServer(state.cptr))
-              state.mbuf->mb_dest |= MODEBUF_DEST_DEOP;
-          }
-        }
-
-	break; /* break out of while loop */
-      } else if (state.flags & MODE_PARSE_STRICT ||
-		 (MyUser(state.sptr) && state.max_args <= 0)) {
-	state.parc++; /* we didn't actually gobble the argument */
-	state.args_used--;
-	break; /* break out of while loop */
-      }
-    }
-  } /* while (*modestr) */
-
-  /*
-   * the rest of the function finishes building resultant MODEs; if the
-   * origin isn't a member or an oper, skip it.
-   */
-  if (!state.mbuf || state.flags & (MODE_PARSE_NOTOPER | MODE_PARSE_NOTMEMBER))
-    return state.args_used; /* tell our parent how many args we gobbled */
-
-  t_mode = state.chptr->mode.mode;
-
-  if (state.del & t_mode) { /* delete any modes to be deleted... */
-    modebuf_mode(state.mbuf, MODE_DEL | (state.del & t_mode));
-
-    t_mode &= ~state.del;
-  }
-  if (state.add & ~t_mode) { /* add any modes to be added... */
-    modebuf_mode(state.mbuf, MODE_ADD | (state.add & ~t_mode));
-
-    t_mode |= state.add;
-  }
-
-  if (state.flags & MODE_PARSE_SET) { /* set the channel modes */
-    if ((state.chptr->mode.mode & MODE_INVITEONLY) &&
-	!(t_mode & MODE_INVITEONLY))
-      mode_invite_clear(state.chptr);
-
-    state.chptr->mode.mode = t_mode;
-  }
-
-  if (state.flags & MODE_PARSE_WIPEOUT) {
-    if (state.chptr->mode.limit && !(state.done & DONE_LIMIT))
-      modebuf_mode_uint(state.mbuf, MODE_DEL | MODE_LIMIT,
-			state.chptr->mode.limit);
-    if (*state.chptr->mode.key && !(state.done & DONE_KEY_DEL))
-      modebuf_mode_string(state.mbuf, MODE_DEL | MODE_KEY,
-			  state.chptr->mode.key, 0);
-    if (*state.chptr->mode.upass && !(state.done & DONE_UPASS_DEL))
-      modebuf_mode_string(state.mbuf, MODE_DEL | MODE_UPASS,
-			  state.chptr->mode.upass, 0);
-    if (*state.chptr->mode.apass && !(state.done & DONE_APASS_DEL))
-      modebuf_mode_string(state.mbuf, MODE_DEL | MODE_APASS,
-			  state.chptr->mode.apass, 0);
-  }
-
-  if (state.done & DONE_BANCLEAN) /* process bans */
-    mode_process_bans(&state);
-
-  /* process client changes */
-  if (state.cli_change[0].flag)
-    mode_process_clients(&state);
-
-  return state.args_used; /* tell our parent how many args we gobbled */
-=======
 	return state.args_used;
->>>>>>> Stashed changes
 }
 
 /*
@@ -3987,59 +3693,4 @@ void RevealDelayedJoinIfNeeded(struct Client* sptr, struct Channel* chptr)
 	struct Membership* member = find_member_link(chptr, sptr);
 	if (member && IsDelayedJoin(member))
 		RevealDelayedJoin(member);
-}
-
-/** Get the privilege level of a user mode for hierarchy checking.
- * Higher number = higher privilege.
- * @param member The membership to check.
- * @returns The privilege level.
- */
-int get_user_mode_level(struct Membership *member)
-{
-  if (!member) return 0;
-  if (IsChanService(member)) return 6;  /* +S: ChanService */
-  if (IsOwner(member)) return 5;        /* +q: Owner */
-  if (IsAdmin(member)) return 4;        /* +a: Admin */
-  if (IsChanOp(member)) return 3;       /* +o: Chanop */
-  if (IsHalfOp(member)) return 2;       /* +h: Halfop */
-  if (HasVoice(member)) return 1;       /* +v: Voice */
-  return 0;                             /* No privileges */
-}
-
-/** Check if a user can modify another user's mode.
- * @param source The user attempting the change.
- * @param target The user being changed.
- * @param mode The mode being changed.
- * @returns Non-zero if allowed, zero if not.
- */
-int can_modify_user_mode(struct Membership *source, struct Membership *target, unsigned int mode)
-{
-  int source_level, target_level, mode_level;
-  
-  if (!source || !target) return 0;
-  
-  source_level = get_user_mode_level(source);
-  target_level = get_user_mode_level(target);
-  
-  /* Get the level required for the mode being changed */
-  if (mode & MODE_CHANSERVICE) mode_level = 6;
-  else if (mode & MODE_OWNER) mode_level = 5;
-  else if (mode & MODE_ADMIN) mode_level = 4;
-  else if (mode & MODE_CHANOP) mode_level = 3;
-  else if (mode & MODE_HALFOP) mode_level = 2;
-  else if (mode & MODE_VOICE) mode_level = 1;
-  else return 0;
-  
-  /* ChanService (+S) can only be set by services */
-  if (mode & MODE_CHANSERVICE) {
-    return IsServer(source->user) || IsService(source->user) || IsChannelService(source->user);
-  }
-  
-  /* Source must have higher privilege than target */
-  if (source_level <= target_level) return 0;
-  
-  /* Source must have privilege level equal or higher than the mode being changed */
-  if (source_level < mode_level) return 0;
-  
-  return 1;
 }

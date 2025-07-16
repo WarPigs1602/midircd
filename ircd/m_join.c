@@ -173,7 +173,7 @@ int m_join(struct Client *cptr, struct Client *sptr, int parc, char *parv[])
         continue;
       }
 
-      joinbuf_join(&create, chptr, CHFL_CHANOP | CHFL_OWNER);
+      joinbuf_join(&create, chptr, CHFL_CHANOP | CHFL_CHANNEL_MANAGER);
       if (feature_bool(FEAT_AUTOCHANMODES) && feature_str(FEAT_AUTOCHANMODES_LIST) && strlen(feature_str(FEAT_AUTOCHANMODES_LIST)) > 0)
         SetAutoChanModes(chptr);
     } else if (find_member_link(chptr, sptr)) {
@@ -190,12 +190,12 @@ int m_join(struct Client *cptr, struct Client *sptr, int parc, char *parv[])
       /* Check Apass/Upass -- since we only ever look at a single
        * "key" per channel now, this hampers brute force attacks. */
       if (key && !strcmp(key, chptr->mode.apass))
-        flags = CHFL_CHANOP | CHFL_OWNER;
+        flags = CHFL_CHANOP | CHFL_CHANNEL_MANAGER;
       else if (key && !strcmp(key, chptr->mode.upass))
         flags = CHFL_CHANOP;
       else if (chptr->users == 0 && !chptr->mode.apass[0]) {
-        /* Joining a zombie channel (zannel): give owner and increment TS. */
-        flags = CHFL_CHANOP | CHFL_OWNER;
+        /* Joining a zombie channel (zannel): give ops and increment TS. */
+        flags = CHFL_CHANOP;
         chptr->creationtime++;
       } else if (IsInvited(sptr, chptr)) {
         /* Invites bypass these other checks. */
@@ -270,27 +270,12 @@ int m_join(struct Client *cptr, struct Client *sptr, int parc, char *parv[])
       }
 
       joinbuf_join(&join, chptr, flags);
-<<<<<<< Updated upstream
-      if (flags & CHFL_CHANOP) {
-        struct ModeBuf mbuf;
-	/* Always let the server op him: this is needed on a net with older servers
-	   because they 'destruct' channels immediately when they become empty without
-	   sending out a DESTRUCT message. As a result, they would always bounce a mode
-	   (as HACK(2)) when the user ops himself.
-           (There is also no particularly good reason to have the user op himself.)
-        */
-	modebuf_init(&mbuf, &me, cptr, chptr, MODEBUF_DEST_SERVER);
-	modebuf_mode_client(&mbuf, MODE_ADD | MODE_CHANOP, sptr,
-                            chptr->mode.apass[0] ? ((flags & CHFL_OWNER) ? 0 : 1) : MAXOPLEVEL);
-	modebuf_flush(&mbuf);
-=======
       // Nur für Services: Mode setzen, aber keine doppelten Kommandos!
       if (IsChannelService(sptr) || IsService(sptr)) {
           struct ModeBuf mbuf;
           modebuf_init(&mbuf, &me, cptr, chptr, MODEBUF_DEST_SERVER);
           modebuf_mode_client(&mbuf, MODE_ADD | MODE_CHANSERVICE, sptr, 0);
           modebuf_flush(&mbuf);
->>>>>>> Stashed changes
       }
       // Nur für normale User: Chanop setzen
 else if (flags & (CHFL_CHANSERVICE | CHFL_OWNER | CHFL_ADMIN | CHFL_CHANOP | CHFL_HALFOP | CHFL_VOICE)) {
