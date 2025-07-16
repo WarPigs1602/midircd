@@ -159,9 +159,10 @@ int m_invite(struct Client* cptr, struct Client* sptr, int parc, char* parv[])
     return 0;
   }
 
-  if (!is_chan_op(sptr, chptr)) {
-    send_reply(sptr, ERR_CHANOPRIVSNEEDED, chptr->chname);
-    return 0;
+  struct Membership* member = find_member_link(chptr, sptr);
+  if (!has_channel_permission(member, NULL, CHFL_CHANOP)) {
+      send_reply(sptr, ERR_CHANOPRIVSNEEDED, chptr->chname);
+      return 0;
   }
 
   /* If we get here, it was a VALID and meaningful INVITE */

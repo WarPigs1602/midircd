@@ -167,6 +167,7 @@ void do_names(struct Client* sptr, struct Channel* chptr, int filter)
       buf[idx++] = ' ';
     needs_space=1;
     if (IsZombie(member))
+<<<<<<< Updated upstream
       buf[idx++] = '!';
     else if (IsChanService(member))
       buf[idx++] = '!';
@@ -180,6 +181,21 @@ void do_names(struct Client* sptr, struct Channel* chptr, int filter)
       buf[idx++] = '%';
     else if (HasVoice(member))
       buf[idx++] = '+';
+=======
+      buf[idx++] = '$';
+    else {
+      char prefix = 0;
+      if (IsChanService(member)) prefix = PREFIX_CHANSERVICE;
+      else if (IsOwner(member))  prefix = PREFIX_OWNER;
+      else if (IsAdmin(member)) prefix = PREFIX_ADMIN;
+      else if (IsChanOp(member)) prefix = PREFIX_CHANOP;
+      else if (IsHalfOp(member)) prefix = PREFIX_HALFOP;
+      else if (HasVoice(member)) prefix = PREFIX_VOICE;
+
+      if (prefix)
+        buf[idx++] = prefix;
+    }
+>>>>>>> Stashed changes
     strcpy(buf + idx, cli_name(c2ptr));
     idx += strlen(cli_name(c2ptr));
     flag = 1;

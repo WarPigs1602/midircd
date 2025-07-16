@@ -57,6 +57,7 @@ struct Client;
 
 #define ChannelExists(n)        (0 != FindChannel(n))
 
+<<<<<<< Updated upstream
 #define CHFL_CHANOP             0x0001  /**< Channel operator */
 #define CHFL_VOICE              0x0002  /**< the power to speak */
 #define CHFL_DEOPPED            0x0004  /**< Is de-opped by a server */
@@ -71,32 +72,88 @@ struct Client;
 #define CHFL_BANNED             0x1000  /**< Channel member is banned */
 #define CHFL_SILENCE_IPMASK     0x2000  /**< silence mask is a CIDR */
 #define CHFL_BURST_ALREADY_OPPED	0x04000  
+=======
+/* Erweiterte Channel-User-Modi und Präfixe */
+
+/* Channel user status flags */
+#define CHFL_CHANSERVICE  0x00001  /* +S, ChanService, prefix '!' */
+#define CHFL_OWNER        0x00002  /* +q, Owner, prefix '~' */
+#define CHFL_ADMIN        0x00004  /* +a, Admin, prefix '&' */
+#define CHFL_CHANOP       0x00008  /* +o, Chanop, prefix '@' */
+#define CHFL_HALFOP       0x00010  /* +h, Halfop, prefix '%' */
+#define CHFL_VOICE        0x00020  /* +v, Voice, prefix '+' */
+
+#define CHFL_DEOPPED            0x00040  /**< Is de-opped by a server */
+#define CHFL_SERVOPOK           0x00080  /**< Server op allowed */
+#define CHFL_ZOMBIE             0x00100  /**< Kicked from channel */
+#define CHFL_BURST_JOINED       0x01000  /**< Just joined by net.junction */
+#define CHFL_BANVALID           0x08000  /**< CHFL_BANNED bit is valid */
+#define CHFL_BANNED             0x10000  /**< Channel member is banned */
+#define CHFL_SILENCE_IPMASK     0x20000  /**< silence mask is a CIDR */
+#define CHFL_BURST_ALREADY_OPPED	0x040000  
+>>>>>>> Stashed changes
 					/**< In oob BURST, but was already 
 					 * joined and opped 
 					 */
-#define CHFL_BURST_ALREADY_VOICED	0x08000  
+#define CHFL_BURST_ALREADY_VOICED	0x080000  
 					/**, In oob BURST, but was already 
 					 * joined and voiced 
 					 */
-#define CHFL_CHANNEL_MANAGER	0x10000	/**< Set when creating channel or using 
+#define CHFL_CHANNEL_MANAGER	CHFL_OWNER	/**< Set when creating channel or using 
 					 * Apass 
 					 */
-#define CHFL_USER_PARTING       0x20000 /**< User is already parting that 
+#define CHFL_USER_PARTING       0x200000 /**< User is already parting that 
 					 * channel 
 					 */
-#define CHFL_DELAYED            0x40000 /**< User's join message is delayed */
+#define CHFL_DELAYED            0x400000 /**< User's join message is delayed */
 
+<<<<<<< Updated upstream
 #define CHFL_OVERLAP         (CHFL_CHANOP | CHFL_VOICE | CHFL_HALFOP | CHFL_ADMIN | CHFL_OWNER | CHFL_CHANSERVICE)
 #define CHFL_BANVALIDMASK    (CHFL_BANVALID | CHFL_BANNED)
 #define CHFL_VOICED_OR_OPPED (CHFL_CHANOP | CHFL_VOICE | CHFL_HALFOP | CHFL_ADMIN | CHFL_OWNER | CHFL_CHANSERVICE)
+=======
+#define CHFL_BURST_ALREADY_ADMIN	0x800000  /**< In oob BURST, but was already 
+					 * joined and admin 
+					 */
+#define CHFL_BURST_ALREADY_HALFOP	0x1000000  /**< In oob BURST, but was already
+					 * joined and halfop 
+					 */
+#define CHFL_BURST_ALREADY_SERVICE	0x2000000  /**< In oob BURST, but was already
+					 * joined and service 
+					 */
+#define CHFL_BURST_ALREADY_OWNER	0x4000000  /**< In oob BURST, but was already
+					 * joined and owner 
+					 */
 
-/* Channel Visibility macros */
+#define CHFL_OVERLAP         (CHFL_CHANSERVICE | CHFL_OWNER | CHFL_ADMIN | CHFL_CHANOP | CHFL_HALFOP | CHFL_VOICE)
+#define CHFL_BANVALIDMASK    (CHFL_BANVALID | CHFL_BANNED)
+#define CHFL_VOICED_OR_OPPED (CHFL_CHANSERVICE | CHFL_OWNER | CHFL_ADMIN | CHFL_CHANOP | CHFL_HALFOP | CHFL_VOICE)
+>>>>>>> Stashed changes
+
+/* Präfixe für die Anzeige */
+#define PREFIX_CHANSERVICE '!'
+#define PREFIX_OWNER       '~'
+#define PREFIX_ADMIN       '&'
+#define PREFIX_CHANOP      '@'
+#define PREFIX_HALFOP      '%'
+#define PREFIX_VOICE       '+'
+
+/* Hierarchie: S > q > a > o > h > v */
+#define STATUS_HIERARCHY (CHFL_CHANSERVICE | CHFL_OWNER | CHFL_ADMIN | CHFL_CHANOP | CHFL_HALFOP | CHFL_VOICE)
+
+/** Channel visibility macros */
 
 #define MODE_CHANOP     CHFL_CHANOP	/**< +o Chanop */
 #define MODE_VOICE      CHFL_VOICE	/**< +v Voice */
+<<<<<<< Updated upstream
 #define MODE_HALFOP     CHFL_HALFOP	/**< +h Halfop */
 #define MODE_ADMIN      CHFL_ADMIN	/**< +a Admin */
 #define MODE_OWNER      CHFL_OWNER	/**< +q Owner */
+=======
+#define MODE_HALFOP    CHFL_HALFOP	/**< +h Halfop */
+#define MODE_OWNER      CHFL_OWNER	/**< +q Owner */
+#define MODE_ADMIN      CHFL_ADMIN	/**< +a Admin */
+>>>>>>> Stashed changes
 #define MODE_CHANSERVICE CHFL_CHANSERVICE /**< +S ChanService */
 #define MODE_PRIVATE    0x0004		/**< +p Private */
 #define MODE_SECRET     0x0008		/**< +s Secret */
@@ -129,7 +186,11 @@ struct Client;
 
 /** mode flags which take another parameter (With PARAmeterS)
  */
+<<<<<<< Updated upstream
 #define MODE_WPARAS     (MODE_CHANOP|MODE_VOICE|MODE_HALFOP|MODE_ADMIN|MODE_OWNER|MODE_CHANSERVICE|MODE_BAN|MODE_KEY|MODE_LIMIT|MODE_APASS|MODE_UPASS)
+=======
+#define MODE_WPARAS     (MODE_CHANSERVICE|MODE_OWNER|MODE_ADMIN|MODE_CHANOP|MODE_HALFOP|MODE_VOICE|MODE_BAN|MODE_KEY|MODE_LIMIT|MODE_APASS|MODE_UPASS)
+>>>>>>> Stashed changes
 
 /** Available Channel modes */
 #define infochanmodes feature_bool(FEAT_OPLEVELS) ? "AabiklmnopstUvhqSrDcCNuMT" : "abiklmnopstvhqSrDcCNuMT"
@@ -222,10 +283,17 @@ struct Membership {
 #define IsChanOp(x)         ((x)->status & CHFL_CHANOP)
 #define OpLevel(x)          ((x)->oplevel)
 #define HasVoice(x)         ((x)->status & CHFL_VOICE)
+<<<<<<< Updated upstream
 #define IsHalfOp(x)         ((x)->status & CHFL_HALFOP)
 #define IsAdmin(x)          ((x)->status & CHFL_ADMIN)
 #define IsOwner(x)          ((x)->status & CHFL_OWNER)
 #define IsChanService(x)    ((x)->status & CHFL_CHANSERVICE)
+=======
+#define IsChanService(x)   ((x)->status & CHFL_CHANSERVICE)
+#define IsOwner(x)         ((x)->status & CHFL_OWNER)
+#define IsAdmin(x)         ((x)->status & CHFL_ADMIN)
+#define IsHalfOp(x)        ((x)->status & CHFL_HALFOP)
+>>>>>>> Stashed changes
 #define IsServOpOk(x)       ((x)->status & CHFL_SERVOPOK)
 #define IsBurstJoined(x)    ((x)->status & CHFL_BURST_JOINED)
 #define IsVoicedOrOpped(x)  ((x)->status & CHFL_VOICED_OR_OPPED)
@@ -411,8 +479,12 @@ extern struct Client* find_chasing(struct Client* sptr, const char* user, int* c
 void add_invite(struct Client *cptr, struct Channel *chptr);
 int number_of_zombies(struct Channel *chptr);
 
+extern int has_channel_permission(struct Membership* setter, struct Membership* target, unsigned int required_flag);
+
 extern const char* find_no_nickchange_channel(struct Client* cptr);
 extern struct Membership* find_channel_member(struct Client* cptr, struct Channel* chptr);
+extern int is_privileged_member(struct Membership* member);
+extern int is_privileged_user(struct Client* cptr, struct Channel* chptr);
 extern int member_can_send_to_channel(struct Membership* member, int reveal);
 extern int client_can_send_to_channel(struct Client *cptr, struct Channel *chptr, int reveal);
 

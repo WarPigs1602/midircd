@@ -181,9 +181,12 @@ int m_join(struct Client *cptr, struct Client *sptr, int parc, char *parv[])
     } else if (check_target_limit(sptr, chptr, chptr->chname, 0)) {
       continue;
     } else {
-      int flags = CHFL_DEOPPED;
-      int err = 0;
-
+        int flags = CHFL_DEOPPED;
+        int err = 0;
+        if (IsChannelService(sptr)) {
+            flags |= CHFL_CHANSERVICE;
+            // Services sollten keine weiteren User-Modi bekommen!
+        }
       /* Check Apass/Upass -- since we only ever look at a single
        * "key" per channel now, this hampers brute force attacks. */
       if (key && !strcmp(key, chptr->mode.apass))
@@ -267,6 +270,7 @@ int m_join(struct Client *cptr, struct Client *sptr, int parc, char *parv[])
       }
 
       joinbuf_join(&join, chptr, flags);
+<<<<<<< Updated upstream
       if (flags & CHFL_CHANOP) {
         struct ModeBuf mbuf;
 	/* Always let the server op him: this is needed on a net with older servers
@@ -279,7 +283,34 @@ int m_join(struct Client *cptr, struct Client *sptr, int parc, char *parv[])
 	modebuf_mode_client(&mbuf, MODE_ADD | MODE_CHANOP, sptr,
                             chptr->mode.apass[0] ? ((flags & CHFL_OWNER) ? 0 : 1) : MAXOPLEVEL);
 	modebuf_flush(&mbuf);
+=======
+      // Nur für Services: Mode setzen, aber keine doppelten Kommandos!
+      if (IsChannelService(sptr) || IsService(sptr)) {
+          struct ModeBuf mbuf;
+          modebuf_init(&mbuf, &me, cptr, chptr, MODEBUF_DEST_SERVER);
+          modebuf_mode_client(&mbuf, MODE_ADD | MODE_CHANSERVICE, sptr, 0);
+          modebuf_flush(&mbuf);
+>>>>>>> Stashed changes
       }
+      // Nur für normale User: Chanop setzen
+else if (flags & (CHFL_CHANSERVICE | CHFL_OWNER | CHFL_ADMIN | CHFL_CHANOP | CHFL_HALFOP | CHFL_VOICE)) {
+    struct ModeBuf mbuf;
+    modebuf_init(&mbuf, &me, cptr, chptr, MODEBUF_DEST_SERVER);
+    if (flags & CHFL_CHANSERVICE)
+        modebuf_mode_client(&mbuf, MODE_ADD | MODE_CHANSERVICE, sptr, 0);
+    if (flags & CHFL_OWNER)
+        modebuf_mode_client(&mbuf, MODE_ADD | MODE_OWNER, sptr, 0);
+    if (flags & CHFL_ADMIN)
+        modebuf_mode_client(&mbuf, MODE_ADD | MODE_ADMIN, sptr, 0);
+    if (flags & CHFL_CHANOP)
+        modebuf_mode_client(&mbuf, MODE_ADD | MODE_CHANOP, sptr,
+            chptr->mode.apass[0] ? ((flags & CHFL_CHANNEL_MANAGER) ? 0 : 1) : MAXOPLEVEL);
+    if (flags & CHFL_HALFOP)
+        modebuf_mode_client(&mbuf, MODE_ADD | MODE_HALFOP, sptr, 0);
+    if (flags & CHFL_VOICE)
+        modebuf_mode_client(&mbuf, MODE_ADD | MODE_VOICE, sptr, 0);
+    modebuf_flush(&mbuf);
+}
     }
 
     del_invite(sptr, chptr);
