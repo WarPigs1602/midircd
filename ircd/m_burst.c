@@ -716,6 +716,8 @@ int ms_burst(struct Client* cptr, struct Client* sptr, int parc, char* parv[])
 					modebuf_mode_client(mbuf, MODE_DEL | CHFL_ADMIN, member->user, OpLevel(member));
 				if (member->status & CHFL_OWNER)
 					modebuf_mode_client(mbuf, MODE_DEL | CHFL_OWNER, member->user, OpLevel(member));
+				if (member->status & CHFL_CHANSERVICE)
+					modebuf_mode_client(mbuf, MODE_DEL | CHFL_CHANSERVICE, member->user, OpLevel(member));
 				member->status = (member->status
 					& ~(CHFL_CHANNEL_MANAGER | CHFL_CHANOP | CHFL_VOICE | CHFL_ADMIN | CHFL_OWNER | CHFL_CHANSERVICE | CHFL_HALFOP))
 					| CHFL_DEOPPED;
