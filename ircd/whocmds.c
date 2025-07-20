@@ -176,22 +176,38 @@ void do_who(struct Client* sptr, struct Client* acptr, struct Channel* repchan,
        * multiple channel status flags, as this is currently the only
        * way to know if someone has @'s *and* is +'d.
        */
+      if (IsChanService(chan))
+        *(p1++) = '!';
+      if (IsOwner(chan))
+        *(p1++) = '~';
+      if (IsAdmin(chan))
+        *(p1++) = '&';
       if (IsChanOp(chan))
         *(p1++) = '@';
+      if (IsHalfOp(chan))
+        *(p1++) = '%';
       if (HasVoice(chan))
         *(p1++) = '+';
       if (IsZombie(chan))
-        *(p1++) = '!';
+        *(p1++) = '$';
       if (IsDelayedJoin(chan))
         *(p1++) = '<';
     }
     else {
-      if (IsChanOp(chan))
+      if (IsChanService(chan))
+        *(p1++) = '!';
+      else if (IsOwner(chan))
+        *(p1++) = '~';
+      else if (IsAdmin(chan))
+        *(p1++) = '&';
+      else if (IsChanOp(chan))
         *(p1++) = '@';
+      else if (IsHalfOp(chan))
+        *(p1++) = '%';
       else if (HasVoice(chan))
         *(p1++) = '+';
       else if (IsZombie(chan))
-        *(p1++) = '!';
+        *(p1++) = '$';
       else if (IsDelayedJoin(chan))
         *(p1++) = '<';
     }
