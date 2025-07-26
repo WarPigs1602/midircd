@@ -380,6 +380,8 @@ static struct FeatureDesc {
   F_B(CAP_INVITENOTIFY, 0, 1, 0), 
   F_B(CAP_SASL, 0, 1, 0), 
   F_B(CAP_MESSAGETAGS, 0, 1, 0),
+  F_B(CAP_STANDARDREPLIES, 0, 1, 0),
+  F_B(CAP_CHANNELRENAME, 0, 1, 0),
   
   /* Cloak */
   F_S(HOST_HIDING_PREFIX, 0, "cloak", 0),
@@ -387,6 +389,10 @@ static struct FeatureDesc {
   F_S(HOST_HIDING_KEY2, 0, "sdfjkLJKHlkjdkfjsdklfjlkjKLJ", 0),
   F_S(HOST_HIDING_KEY3, 0, "KJklJSDFLkjLKDFJSLKjlKJFlkjS", 0),
   F_B(WEBIRC_CLOAKING, 0, 1, 0),
+
+  F_B(SASL_SERVICE, 0, 1, 0), // Standard: aus (0)
+  F_S(SASL_SERVICE_NAMES, 0, "M", 0), // Standard: "NickServ"
+  F_S(SASL_SERVERNAME, 0, "services.midiandmore.net", 0),
 
   /* HEAD_IN_SAND Features */
   F_B(HIS_SNOTICES, 0, 1, 0),

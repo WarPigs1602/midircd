@@ -151,6 +151,10 @@ int ms_create(struct Client* cptr, struct Client* sptr, int parc, char* parv[])
   /* For each channel in the comma separated list: */
   for (name = ircd_strtok(&p, parv[1], ","); name;
        name = ircd_strtok(&p, 0, ",")) {
+      const char* redirect = get_renamed_channel(name);
+      if (redirect) {
+          name = (char*)redirect;
+      }
     badop = 0;
 
     if (IsLocalChannel(name))

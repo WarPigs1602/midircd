@@ -100,6 +100,7 @@
 #include "send.h"
 #include "struct.h"
 #include "ircd_snprintf.h"
+#include "s_user.h"
 
   /* #include <assert.h> -- Now using assert in ircd_log.h */
 #include <stdlib.h>
@@ -264,6 +265,7 @@ int ms_burst(struct Client* cptr, struct Client* sptr, int parc, char* parv[])
 		   side must do this: */
 			chptr->creationtime = timestamp;	/* Use the same TS on both sides. */
 		}
+	    // --- PATCH: Handle channel rename during burst ---
 		/* In more complex cases, we might still end up with a
 		   creationtime desync of a few seconds, but that should
 		   be synced automatically rather quickly (every JOIN

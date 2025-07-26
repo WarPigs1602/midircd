@@ -992,7 +992,7 @@ static Numeric replyTable[] = {
 /* 479 */
   { ERR_BADCHANNAME, "%s :Cannot join channel (G-lined: %s)", "479" },
 /* 480 */
-  { 0 },
+  { ERR_BADNETWORKCHAN, "%s :Invalid network channel name", "480" },
 /* 481 */
   { ERR_NOPRIVILEGES, ":Permission Denied: Insufficient privileges", "481" },
 /* 482 */
@@ -1452,9 +1452,9 @@ static Numeric replyTable[] = {
 /* 709 */
   { 0 },
 /* 710 */
-  { 0 },
+  { RPL_CHANNELRENAME, "%s %s :Channel has been renamed", "710" },
 /* 711 */
-  { 0 },
+  { ERR_CHANNELNAMEINUSE, "%s :Channel name is already in use", "711" },
 /* 712 */
   { 0 },
 /* 713 */

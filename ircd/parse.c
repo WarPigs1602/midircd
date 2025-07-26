@@ -723,6 +723,13 @@ struct Message msgtab[] = {
     /* UNREG, CLIENT, SERVER, OPER, SERVICE */
     { m_sasl, m_ignore, m_ignore, m_ignore, m_ignore }
   }, 
+  {
+  MSG_RENAME,
+  TOK_RENAME,
+  0, MAXPARA, MFLG_SLOW, 0, NULL,
+  /* UNREG, CLIENT, SERVER, OPER, SERVICE */
+  { m_rename, m_rename, ms_rename, m_rename, ms_rename }
+  },
   { 0 }
 };
 

@@ -57,8 +57,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
-/** Linked list containing the full list of all channels */
+  /** Linked list containing the full list of all channels */
 struct Channel* GlobalChannelList = 0;
 
 /** Number of struct Membership*'s allocated */
@@ -71,6 +72,67 @@ static struct Ban* free_bans;
 static size_t bans_alloc;
 /** Number of ban structures in use. */
 static size_t bans_inuse;
+
+struct ChannelRenameEntry* GlobalChannelRenameList = NULL;
+
+void add_channel_rename(const char* oldname, const char* newname) {
+	struct ChannelRenameEntry* entry = (struct ChannelRenameEntry*)MyMalloc(sizeof(struct ChannelRenameEntry));
+	ircd_strncpy(entry->oldname, oldname, CHANNELLEN);
+	ircd_strncpy(entry->newname, newname, CHANNELLEN);
+	entry->renametime = TStime();
+	entry->next = GlobalChannelRenameList;
+	GlobalChannelRenameList = entry;
+}
+
+void remove_reverse_rename(const char* newname) {
+	struct ChannelRenameEntry* entry = GlobalChannelRenameList;
+	struct ChannelRenameEntry* prev = NULL;
+	while (entry) {
+		if (!ircd_strcmp(entry->oldname, newname)) {
+			// Entferne diesen Eintrag
+			if (prev)
+				prev->next = entry->next;
+			else
+				GlobalChannelRenameList = entry->next;
+			struct ChannelRenameEntry* tmp = entry;
+			entry = entry->next;
+			MyFree(tmp);
+			continue;
+		}
+		prev = entry;
+		entry = entry->next;
+	}
+}
+
+const char* get_renamed_channel(const char* oldname) {
+    const char* current = oldname;
+    int max_depth = 16; // Schutz vor Endlosschleifen
+    while (max_depth-- > 0) {
+        struct ChannelRenameEntry* entry = GlobalChannelRenameList;
+        int found = 0;
+        while (entry) {
+            if (!ircd_strcmp(entry->oldname, current)) {
+                current = entry->newname;
+                found = 1;
+                break;
+            }
+            entry = entry->next;
+        }
+        if (!found) break;
+    }
+    // Nur zurückgeben, wenn tatsächlich ein Rename stattfand
+    return (ircd_strcmp(oldname, current) != 0) ? current : NULL;
+}
+
+const char* get_original_channel(const char* newname) {
+	struct ChannelRenameEntry* entry = GlobalChannelRenameList;
+	while (entry) {
+		if (!ircd_strcmp(entry->newname, newname))
+			return entry->oldname;
+		entry = entry->next;
+	}
+	return NULL;
+}
 
 #if !defined(NDEBUG)
 /** return the length (>=0) of a chain of links.
@@ -86,7 +148,6 @@ static int list_length(struct SLink* lp)
 	return count;
 }
 #endif
-
 
 /** Set the mask for a ban, checking for IP masks.
  * @param[in,out] ban Ban structure to modify.
@@ -104,6 +165,76 @@ set_ban_mask(struct Ban* ban, const char* banstr)
 		if (ipmask_parse(sep + 1, &ban->address, &ban->addrbits))
 			ban->flags |= BAN_IPMASK;
 	}
+}
+
+/**
+ * Returns the visible channel name (without the network ID).
+ * For example: "!abcdeTest" -> "Test"
+ */
+static const char* extract_network_channel_name(const char* chname) {
+	if (!chname)
+		return "";
+	if (chname[0] == '!')
+		return chname + 1 + NETWORK_ID_LEN; // skip '!' and 5 chars ID
+	return chname;
+}
+
+/**
+ * Generates a random network channel ID of length NETWORK_ID_LEN.
+ */
+static void generate_channel_id(char* buf, size_t len) {
+	const char charset[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+	for (size_t i = 0; i < len; i++)
+		buf[i] = charset[rand() % (sizeof(charset) - 1)];
+	buf[len] = '\0';
+}
+
+// Returns a comma-separated list of all network channels with the same visible name
+void get_network_channel_list(const char* visible_name, char* out_list, size_t out_size) {
+	struct Channel* chptr = GlobalChannelList;
+	size_t used = 0;
+	out_list[0] = '\0';
+	while (chptr) {
+		if (IsNetworkChannel(chptr->chname) &&
+			strcmp(chptr->chname + 1 + NETWORK_ID_LEN, visible_name) == 0) {
+			size_t len = strlen(chptr->chname);
+			if (used + len + 2 < out_size) { // +2 for comma and null terminator
+				if (used > 0) {
+					out_list[used++] = ',';
+				}
+				strcpy(out_list + used, chptr->chname);
+				used += len;
+			}
+		}
+		chptr = chptr->next;
+	}
+	out_list[used] = '\0';
+}
+
+/**
+ * Finds or creates a network channel with a unique ID.
+ * If a channel with the same visible name exists, returns its full name.
+ * Otherwise, creates a new name with a random ID and returns it.
+ *
+ * @param base_name The visible channel name (without '!' and ID)
+ * @param out_name Buffer to store the full channel name (!IDbase_name)
+ * @param out_size Size of the buffer
+ */
+void create_network_channel(const char* base_name, char* out_name, size_t out_size) {
+    struct Channel* chptr = GlobalChannelList;
+    while (chptr) {
+        if (IsNetworkChannel(chptr->chname) &&
+            strcmp(extract_network_channel_name(chptr->chname), base_name) == 0) {
+            // Channel exists, return its full name (with ID)
+            snprintf(out_name, out_size, "%s", chptr->chname);
+            return;
+        }
+        chptr = chptr->next;
+    }
+    // Channel does not exist, generate a new name with random ID
+    char id[NETWORK_ID_LEN + 1];
+    generate_channel_id(id, NETWORK_ID_LEN);
+    snprintf(out_name, out_size, "!%s%s", id, base_name);
 }
 
 /** Allocate a new Ban structure.
@@ -961,6 +1092,11 @@ void send_channel_modes(struct Client* cptr, struct Channel* chptr)
 
 	assert(cptr);
 	assert(chptr);
+	
+	const char* renamed = get_original_channel(chptr->chname);
+	if (renamed) {
+		sendcmdto_one(&me, CMD_RENAME, cptr, "%s %s", renamed, chptr->chname);
+	}
 
 	if (IsLocalChannel(chptr->chname))
 		return;

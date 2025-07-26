@@ -51,6 +51,8 @@ struct Client;
 #define STARTJOINLEN	10 	/**< fuzzy numbers */
 #define STARTCREATELEN	20
 
+#define NETWORK_ID_LEN 5
+
 /*
  * Macro's
  */
@@ -176,7 +178,8 @@ struct Client;
 
 #define IsGlobalChannel(name)   (*(name) == '#')
 #define IsLocalChannel(name)    (*(name) == '&')
-#define IsChannelName(name)     (IsGlobalChannel(name) || IsLocalChannel(name))
+#define IsNetworkChannel(name) (*(name) == '!')
+#define IsChannelName(name) (IsGlobalChannel(name) || IsLocalChannel(name) || IsNetworkChannel(name))
 
 typedef enum ChannelGetType {
   CGT_NO_CREATE,
@@ -404,6 +407,15 @@ struct JoinBuf {
 extern struct Channel* GlobalChannelList;
 extern int             LocalChanOperMode;
 
+struct ChannelRenameEntry {
+	char oldname[CHANNELLEN + 1];
+	char newname[CHANNELLEN + 1];
+	time_t renametime;
+	struct ChannelRenameEntry* next;
+};
+
+extern struct ChannelRenameEntry* GlobalChannelRenameList;
+
 /*
  * Proto types
  */
@@ -497,6 +509,12 @@ extern void joinbuf_init(struct JoinBuf *jbuf, struct Client *source,
 extern void joinbuf_join(struct JoinBuf *jbuf, struct Channel *chan,
 			 unsigned int flags);
 extern int joinbuf_flush(struct JoinBuf *jbuf);
+extern void create_network_channel(const char* base_name, char* out_name, size_t out_size);
+extern void add_channel_rename(const char* oldname, const char* newname);
+extern void remove_reverse_rename(const char* newname);
+extern const char* get_renamed_channel(const char* oldname);
+extern const char* get_original_channel(const char* newname);
+extern void get_network_channel_list(const char* visible_name, char* out_list, size_t out_size);
 extern struct Ban *make_ban(const char *banstr);
 extern struct Ban *find_ban(struct Client *cptr, struct Ban *banlist);
 extern int apply_ban(struct Ban **banlist, struct Ban *newban, int free);
