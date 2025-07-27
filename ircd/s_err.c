@@ -1452,15 +1452,15 @@ static Numeric replyTable[] = {
 /* 709 */
   { 0 },
 /* 710 */
-  { RPL_CHANNELRENAME, "%s %s :Channel has been renamed", "710" },
-/* 711 */
-  { ERR_CHANNELNAMEINUSE, "%s :Channel name is already in use", "711" },
-/* 712 */
-  { 0 },
-/* 713 */
-  { 0 },
-/* 714 */
-  { 0 },
+  { RPL_KNOCK, "%s :Your knock has been delivered", "710" },
+  /* 711 */
+  { RPL_KNOCKDLVR,     "%s %s :Knock delivered",                           "711" },
+  /* 712 */
+  { ERR_TOOMANYKNOCK,  "%s :Too many knock requests",                      "712" },
+  /* 713 */
+  { ERR_KNOCKNOTINVITE,"%s :Channel is not invite only",                   "713" },
+  /* 714 */
+  { ERR_KNOCKONCHAN,   "%s :You are already on that channel",              "714" },
 /* 715 */
   { 0 },
 /* 717 */
@@ -1475,13 +1475,13 @@ static Numeric replyTable[] = {
   { 0 },
 /* 721 */
   { 0 },
-/* 722 */
+  /* 722 */
   { 0 },
-/* 723 */
+  /* 723 */
   { 0 },
-/* 724 */
+  /* 724 */
   { 0 },
-/* 725 */
+  /* 725 */
   { 0 },
 /* 727 */
   { 0 },

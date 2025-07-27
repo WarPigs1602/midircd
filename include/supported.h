@@ -42,7 +42,8 @@
                 " MODES=%i" \
                 " MAXCHANNELS=%i" \
                 " MAXBANS=%i" \
-                " NICKLEN=%i"
+                " NICKLEN=%i" \
+                " EXCEPTS" 
                 
 
 #define FEATURES2 "MAXNICKLEN=%i" \

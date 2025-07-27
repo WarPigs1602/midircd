@@ -126,10 +126,6 @@ int m_join(struct Client *cptr, struct Client *sptr, int parc, char *parv[])
   for (name = ircd_strtok(&p, chanlist, ","); name;
        name = ircd_strtok(&p, 0, ",")) {
  
-      const char* redirect = get_renamed_channel(name);
-      if (redirect) {
-          name = (char *) redirect;
-      }
       if (IsNetworkChannel(name)) {
           char visible_name[CHANNELLEN + 1];
           char channel_list[1024];
@@ -142,21 +138,36 @@ int m_join(struct Client *cptr, struct Client *sptr, int parc, char *parv[])
 
           // Count how many channels exist
           int count = 0;
-          for (char* ptr = channel_list; *ptr; ) {
+          char* ptr = channel_list;
+          while (*ptr) {
               count++;
               ptr = strchr(ptr, ',');
               if (ptr) ptr++;
               else break;
           }
 
+          if (count == 0) {
+              // Create a new network channel name
+              char newname[CHANNELLEN + 1];
+              create_network_channel(name, newname, sizeof(newname));
+              ircd_strncpy(name, newname, CHANNELLEN);
+          } else
           if (count > 1) {
               // Inform the user about the available options
               send_reply(sptr, RPL_INFO, "Multiple network channels with name '%s' exist: %s", visible_name, channel_list);
               continue; // Skip joining until user selects a channel
           }
-          // If only one channel exists, use its full name
           if (count == 1) {
-              strncpy(name, channel_list, CHANNELLEN + 8);
+              // Use the first channel name from the list
+              char* comma = strchr(channel_list, ',');
+              if (comma) *comma = '\0';
+              ircd_strncpy(name, channel_list, CHANNELLEN);
+          }
+      }
+      else {
+          const char* redirect = get_renamed_channel(name);
+          if (redirect) {
+              name = (char*)redirect;
           }
       }
         // If no channel exists, proceed as usual (creation logic)
@@ -250,7 +261,7 @@ int m_join(struct Client *cptr, struct Client *sptr, int parc, char *parv[])
               err = ERR_CHANNELISFULL;
           else if ((chptr->mode.mode & MODE_REGONLY) && !IsAccount(sptr))
               err = ERR_NEEDREGGEDNICK;
-          else if (find_ban(sptr, chptr->banlist))
+          else if (find_ban(sptr, chptr->banlist, chptr->ban_exceptions))
               err = ERR_BANNEDFROMCHAN;
           else if (*chptr->mode.key && (!key || strcmp(key, chptr->mode.key)))
               err = ERR_BADCHANNELKEY;

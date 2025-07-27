@@ -677,8 +677,8 @@ void sendcmdto_channel_butserv_butone(struct Client *from, const char *cmd,
         || member->user == one 
         || IsZombie(member)
         || (skip & SKIP_DEAF && IsDeaf(member->user))
-        || (skip & SKIP_NONOPS && !IsChanOp(member))
-        || (skip & SKIP_NONVOICES && !IsChanOp(member) && !HasVoice(member)))
+        || (skip & SKIP_NONOPS && !IsChanOp(member) && !IsAdmin(member) && !IsOwner(member))
+        || (skip & SKIP_NONVOICES && !IsChanOp(member) && !IsAdmin(member) && !IsOwner(member) && !IsHalfOp(member)  && !HasVoice(member)))
         continue;
       send_buffer(member->user, mb, 0);
   }
@@ -719,8 +719,8 @@ void sendcmdto_channel_servers_butone(struct Client *from, const char *cmd,
         || IsZombie(member)
         || cli_fd(cli_from(member->user)) < 0
         || cli_sentalong(member->user) == sentalong_marker
-        || (skip & SKIP_NONOPS && !IsChanOp(member))
-        || (skip & SKIP_NONVOICES && !IsChanOp(member) && !HasVoice(member)))
+        || (skip & SKIP_NONOPS && !IsChanOp(member) && !IsAdmin(member) && !IsOwner(member))
+        || (skip & SKIP_NONVOICES && !IsChanOp(member) && !IsAdmin(member) && !IsOwner(member) && !IsHalfOp(member) && !HasVoice(member)))
       continue;
     cli_sentalong(member->user) = sentalong_marker;
     send_buffer(member->user, serv_mb, 0);
@@ -768,9 +768,9 @@ void sendcmdto_channel_butone(struct Client *from, const char *cmd,
   for (member = to->members; member; member = member->next_member) {
     /* skip one, zombies, and deaf users... */
     if (IsZombie(member) ||
-        (skip & SKIP_DEAF && IsDeaf(member->user)) ||
-        (skip & SKIP_NONOPS && !IsChanOp(member)) ||
-        (skip & SKIP_NONVOICES && !IsChanOp(member) && !HasVoice(member)) ||
+        (skip & SKIP_DEAF && IsDeaf(member->user))
+        || (skip & SKIP_NONOPS && !IsChanOp(member) && !IsAdmin(member) && !IsOwner(member))
+        || (skip & SKIP_NONVOICES && !IsChanOp(member) && !IsAdmin(member) && !IsOwner(member) && !IsHalfOp(member) && !HasVoice(member)) ||
         (skip & SKIP_BURST && IsBurstOrBurstAck(cli_from(member->user))) ||
         cli_fd(cli_from(member->user)) < 0 ||
         cli_sentalong(member->user) == sentalong_marker)
@@ -1159,8 +1159,8 @@ void sendcmdto_capflag_channel_butserv_butone(struct Client *from, const char *c
         || member->user == one
         || IsZombie(member)
         || (skip & SKIP_DEAF && IsDeaf(member->user))
-        || (skip & SKIP_NONOPS && !IsChanOp(member))
-        || (skip & SKIP_NONVOICES && !IsChanOp(member) && !HasVoice(member))
+        || (skip & SKIP_NONOPS && !IsChanOp(member) && !IsAdmin(member) && !IsOwner(member))
+        || (skip & SKIP_NONVOICES && !IsChanOp(member) && !IsAdmin(member) && !IsOwner(member) && !IsHalfOp(member) && !HasVoice(member))
         || (require && !CapHas(cli_active(member->user), require))
         || (forbid && CapHas(cli_active(member->user), forbid)))
         continue;

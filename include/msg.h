@@ -414,6 +414,10 @@ struct Client;
 #define TOK_RENAME "RN"
 #define CMD_RENAME MSG_RENAME, TOK_RENAME
 
+#define MSG_KNOCK "KNOCK"
+#define TOK_KNOCK "KNOCK"
+#define CMD_KNOCK MSG_KNOCK, TOK_KNOCK
+
 /*
  * Constants
  */

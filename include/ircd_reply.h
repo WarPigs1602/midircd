@@ -25,6 +25,9 @@
 #define INCLUDED_ircd_reply_h
 
 struct Client;
+struct Channel;
+
+extern void send_reply_to_channel_ops(struct Channel* chptr, int numeric, const char* channel, const char* nick, const char* text);
 
 extern int protocol_violation(struct Client* cptr, const char* pattern, ...);
 extern int need_more_params(struct Client* cptr, const char* cmd);

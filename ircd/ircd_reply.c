@@ -28,6 +28,7 @@
 
 #include "ircd_reply.h"
 #include "client.h"
+#include "channel.h"
 #include "ircd.h"
 #include "ircd_log.h"
 #include "ircd_snprintf.h"
@@ -40,6 +41,16 @@
 
 /* #include <assert.h> -- Now using assert in ircd_log.h */
 #include <string.h>
+
+void send_reply_to_channel_ops(struct Channel* chptr, int numeric, const char* channel, const char* nick, const char* text)
+{
+    struct Membership* member;
+    for (member = chptr->members; member; member = member->next_member) {
+        if ((IsChanOp(member) || IsAdmin(member) || IsOwner(member) || IsChanService(member)) && MyUser(member->user)) {
+            send_reply(member->user, numeric, channel, nick, text);
+        }
+    }
+}
 
 /** Report a protocol violation warning to anyone listening.  This can
  * be easily used to clean up the last couple of parts of the code.

@@ -208,24 +208,24 @@ netride_modes(int parc, char** parv, const char* curr_key)
  */
 int ms_burst(struct Client* cptr, struct Client* sptr, int parc, char* parv[])
 {
-	struct ModeBuf modebuf, * mbuf = 0;
-	struct Channel* chptr;
-	time_t timestamp;
-	struct Membership* member, * nmember;
-	struct Ban* lp, ** lp_p;
-	unsigned int parse_flags = (MODE_PARSE_FORCE | MODE_PARSE_BURST);
-	int param, nickpos = 0, banpos = 0;
-	char modestr[BUFSIZE], nickstr[BUFSIZE], banstr[BUFSIZE];
+    struct ModeBuf modebuf, *mbuf = 0;
+    struct Channel* chptr;
+    time_t timestamp;
+    struct Membership* member, *nmember;
+    struct Ban* lp, **lp_p;
+    unsigned int parse_flags = (MODE_PARSE_FORCE | MODE_PARSE_BURST);
+    int param, nickpos = 0, banpos = 0, exbanpos = 0;
+    char modestr[BUFSIZE], nickstr[BUFSIZE], banstr[BUFSIZE], exbanstr[BUFSIZE];
 
-	if (parc < 3)
-		return protocol_violation(sptr, "Too few parameters for BURST");
+    if (parc < 3)
+        return protocol_violation(sptr, "Too few parameters for BURST");
 
-	if (!(chptr = get_channel(sptr, parv[1], CGT_CREATE)))
-		return 0; /* can't create the channel? */
+    if (!(chptr = get_channel(sptr, parv[1], CGT_CREATE)))
+        return 0;
 
-	timestamp = atoi(parv[2]);
+    timestamp = atoi(parv[2]);
 
-	if (chptr->creationtime)	/* 0 for new (empty) channels,
+    if (chptr->creationtime)	/* 0 for new (empty) channels,
 									 i.e. when this server just restarted. */
 	{
 		if (parc == 3)		/* Zannel BURST? */
@@ -394,70 +394,92 @@ int ms_burst(struct Client* cptr, struct Client* sptr, int parc, char* parv[])
 
 		case '%': /* parameter contains bans */
 			if (parse_flags & MODE_PARSE_SET) {
-				char* banlist = parv[param] + 1, * p = 0, * ban, * ptr;
+				char* banlist = parv[param] + 1, *p = 0, *ban, *ptr;
 				struct Ban* newban;
 
 				for (ban = ircd_strtok(&p, banlist, " "); ban;
 					ban = ircd_strtok(&p, 0, " ")) {
 					ban = collapse(pretty_mask(ban));
-
-					/*
-					 * Yeah, we should probably do this elsewhere, and make it better
-					 * and more general; this will hold until we get there, though.
-					 * I dislike the current add_banid API... -Kev
-					 *
-					 * I wish there were a better algo. for this than the n^2 one
-					 * shown below *sigh*
-					 */
-					for (lp = chptr->banlist; lp; lp = lp->next) {
-						if (!ircd_strcmp(lp->banstr, ban)) {
-							ban = 0; /* don't add ban */
-							lp->flags &= ~BAN_BURST_WIPEOUT; /* not wiping out */
-							break; /* new ban already existed; don't even repropagate */
+					// Ban-Exception: begin with +e: (e.g. +e:mask)
+					if (ban[0] == '+' && ban[1] == 'e' && ban[2] == ':') {
+						char* exmask = ban + 3;
+						// Prüfe auf Duplikate in ban_exceptions
+						for (lp = chptr->ban_exceptions; lp; lp = lp->next) {
+							if (!ircd_strcmp(lp->banstr, exmask)) {
+								exmask = 0;
+								lp->flags &= ~BAN_BURST_WIPEOUT;
+								break;
+							}
 						}
-						else if (!(lp->flags & BAN_BURST_WIPEOUT) &&
-							!mmatch(lp->banstr, ban)) {
-							ban = 0; /* don't add ban unless wiping out bans */
-							break; /* new ban is encompassed by an existing one; drop */
+						if (exmask) {
+							if (!exbanpos) {
+								exbanstr[exbanpos++] = ' ';
+								exbanstr[exbanpos++] = ':';
+								exbanstr[exbanpos++] = '%';
+							} else
+								exbanstr[exbanpos++] = ' ';
+							for (ptr = exmask; *ptr; ptr++)
+								exbanstr[exbanpos++] = *ptr;
+
+							newban = make_ban(exmask);
+							strcpy(newban->who, "*");
+							newban->when = TStime();
+							newban->flags |= BAN_BURSTED | BAN_EXCEPTION;
+							newban->next = 0;
+							if (lp)
+								lp->next = newban;
+							else
+								chptr->ban_exceptions = newban;
 						}
-						else if (!mmatch(ban, lp->banstr))
-							lp->flags |= BAN_OVERLAPPED; /* remove overlapping ban */
+					} else {
+						// Normale Ban-Verarbeitung wie gehabt
+						for (lp = chptr->banlist; lp; lp = lp->next) {
+							if (!ircd_strcmp(lp->banstr, ban)) {
+								ban = 0;
+								lp->flags &= ~BAN_BURST_WIPEOUT;
+								break;
+							}
+							else if (!(lp->flags & BAN_BURST_WIPEOUT) &&
+								!mmatch(lp->banstr, ban)) {
+								ban = 0;
+								break;
+							}
+							else if (!mmatch(ban, lp->banstr))
+								lp->flags |= BAN_OVERLAPPED;
 
-						if (!lp->next)
-							break;
-					}
-
-					if (ban) { /* add the new ban to the end of the list */
-						/* Build ban buffer */
-						if (!banpos) {
-							banstr[banpos++] = ' ';
-							banstr[banpos++] = ':';
-							banstr[banpos++] = '%';
+							if (!lp->next)
+								break;
 						}
-						else
-							banstr[banpos++] = ' ';
-						for (ptr = ban; *ptr; ptr++) /* add ban to buffer */
-							banstr[banpos++] = *ptr;
+						if (ban) {
+							if (!banpos) {
+								banstr[banpos++] = ' ';
+								banstr[banpos++] = ':';
+								banstr[banpos++] = '%';
+							} else
+								banstr[banpos++] = ' ';
+							for (ptr = ban; *ptr; ptr++)
+								banstr[banpos++] = *ptr;
 
-						newban = make_ban(ban); /* create new ban */
-						strcpy(newban->who, "*");
-						newban->when = TStime();
-						newban->flags |= BAN_BURSTED;
-						newban->next = 0;
-						if (lp)
-							lp->next = newban; /* link it in */
-						else
-							chptr->banlist = newban;
+							newban = make_ban(ban);
+							strcpy(newban->who, "*");
+							newban->when = TStime();
+							newban->flags |= BAN_BURSTED;
+							newban->next = 0;
+							if (lp)
+								lp->next = newban;
+							else
+								chptr->banlist = newban;
+						}
 					}
 				}
 			}
-			param++; /* look at next param */
+			param++;
 			break;
 
-		default: /* parameter contains clients */
+		default:
 		{
 			struct Client* acptr;
-			char* nicklist = parv[param], * p = 0, * nick, * ptr;
+			char* nicklist = parv[param], *p = 0, *nick, *ptr;
 			int current_mode, last_mode, base_mode;
 			int oplevel = -1;	/* Mark first field with digits: means the same as 'o' (but with level). */
 			int last_oplevel = 0;
@@ -672,6 +694,7 @@ int ms_burst(struct Client* cptr, struct Client* sptr, int parc, char* parv[])
 
 	nickstr[nickpos] = '\0';
 	banstr[banpos] = '\0';
+	exbanstr[exbanpos] = '\0';
 
 	if (parse_flags & MODE_PARSE_SET) {
 		modebuf_extract(mbuf, modestr + 1); /* for sending BURST onward */
@@ -680,13 +703,14 @@ int ms_burst(struct Client* cptr, struct Client* sptr, int parc, char* parv[])
 	else
 		modestr[0] = '\0';
 
-	sendcmdto_serv_butone(sptr, CMD_BURST, cptr, "%H %Tu%s%s%s", chptr,
-		chptr->creationtime, modestr, nickstr, banstr);
+    // Sende Bans und Ban-Exceptions im BURST
+	sendcmdto_serv_butone(sptr, CMD_BURST, cptr, "%H %Tu%s%s%s%s", chptr,
+		chptr->creationtime, modestr, nickstr, banstr, exbanstr);
 
-	if (parse_flags & MODE_PARSE_WIPEOUT || banpos)
+	if (parse_flags & MODE_PARSE_WIPEOUT || banpos || exbanpos)
 		mode_ban_invalidate(chptr);
 
-	if (parse_flags & MODE_PARSE_SET) { /* any modes changed? */
+	if (parse_flags & MODE_PARSE_SET) {
 		/* first deal with channel members */
 		for (member = chptr->members; member; member = member->next_member) {
 			if (member->status & CHFL_BURST_JOINED) { /* joined during burst */
@@ -735,15 +759,35 @@ int ms_burst(struct Client* cptr, struct Client* sptr, int parc, char* parv[])
 			if (lp->flags & (BAN_OVERLAPPED | BAN_BURST_WIPEOUT)) {
 				char* bandup;
 				DupString(bandup, lp->banstr);
-				modebuf_mode_string(mbuf, MODE_DEL | MODE_BAN,
-					bandup, 1);
+				modebuf_mode_string(mbuf, MODE_DEL | MODE_BAN, bandup, 1);
 				*lp_p = lp->next; /* clip out of list */
 				free_ban(lp);
 				continue;
 			}
 			else if (lp->flags & BAN_BURSTED) /* add ban to channel */
-				modebuf_mode_string(mbuf, MODE_ADD | MODE_BAN,
-					lp->banstr, 0); /* don't free banstr */
+				modebuf_mode_string(mbuf, MODE_ADD | MODE_BAN, lp->banstr, 0); /* don't free banstr */
+
+			lp->flags &= BAN_IPMASK; /* reset the flag */
+			lp_p = &(*lp_p)->next;
+		}
+		/* Now deal with channel ban exceptions (+e) */
+		lp_p = &chptr->ban_exceptions;
+		while (*lp_p) {
+			lp = *lp_p;
+
+			/* remove exception from channel */
+			if (lp->flags & (BAN_OVERLAPPED | BAN_BURST_WIPEOUT)) {
+				char* bandup;
+				DupString(bandup, lp->banstr);
+				// Ban-Exception: MODE_DEL | MODE_BAN | BAN_EXCEPTION
+				modebuf_mode_string(mbuf, MODE_DEL | MODE_BANEXCEPTION | BAN_EXCEPTION, bandup, 1);
+				*lp_p = lp->next; /* clip out of list */
+				free_ban(lp);
+				continue;
+			}
+			else if (lp->flags & BAN_BURSTED) /* add exception to channel */
+				// Ban-Exception: MODE_ADD | MODE_BAN | BAN_EXCEPTION
+				modebuf_mode_string(mbuf, MODE_ADD | MODE_BANEXCEPTION | BAN_EXCEPTION, lp->banstr, 0); /* don't free banstr */
 
 			lp->flags &= BAN_IPMASK; /* reset the flag */
 			lp_p = &(*lp_p)->next;

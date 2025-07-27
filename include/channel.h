@@ -157,14 +157,17 @@ struct Client;
 #define MODE_MODERATENOREG 0x2000000    /**< +M Moderate unauthed users */
 #define MODE_TLSONLY       0x4000000    /**< +Z TLS users only */
 
+#define MODE_BANEXCEPTION 0x8000000 /**< +e Ban exception */
+
+
 /** mode flags which take another parameter (With PARAmeterS)
  */
-#define MODE_WPARAS     (MODE_CHANSERVICE|MODE_OWNER|MODE_ADMIN|MODE_CHANOP|MODE_HALFOP|MODE_VOICE|MODE_BAN|MODE_KEY|MODE_LIMIT|MODE_APASS|MODE_UPASS)
+#define MODE_WPARAS     (MODE_CHANSERVICE|MODE_OWNER|MODE_ADMIN|MODE_CHANOP|MODE_HALFOP|MODE_VOICE|MODE_BAN|MODE_BANEXCEPTION|MODE_KEY|MODE_LIMIT|MODE_APASS|MODE_UPASS)
 
 /** Available Channel modes */
-#define infochanmodes feature_bool(FEAT_OPLEVELS) ? "AbiklmnopstUvrDcCNuMT" : "biklmnopstvrDcCNuMT"
+#define infochanmodes feature_bool(FEAT_OPLEVELS) ? "AbeiklmnopstUvrDcCNuMTqSah" : "beiklmnopstvrDcCNuMTqSah"
 /** Available Channel modes that take parameters */
-#define infochanmodeswithparams feature_bool(FEAT_OPLEVELS) ? "AbkloUv" : "bklov"
+#define infochanmodeswithparams feature_bool(FEAT_OPLEVELS) ? "AbekloUvqSah" : "beklovqSah"
 
 #define HoldChannel(x)          (!(x))
 /** name invisible */
@@ -323,6 +326,7 @@ struct Channel {
   struct Membership* members;	   /**< Pointer to the clients on this channel*/
   struct SLink*      invites;	   /**< List of invites on this channel */
   struct Ban*        banlist;      /**< List of bans on this channel */
+  struct Ban* ban_exceptions; /**< List of exceptions on this channel */
   struct Mode        mode;	   /**< This channels mode */
   char               topic[TOPICLEN + 1]; /**< Channels topic */
   char               topic_nick[NICKLEN + 1]; /**< Nick of the person who set
@@ -449,6 +453,7 @@ extern const char* find_no_nickchange_channel(struct Client* cptr);
 extern struct Membership* find_channel_member(struct Client* cptr, struct Channel* chptr);
 extern int is_privileged_member(struct Membership* member);
 extern int is_privileged_user(struct Client* cptr, struct Channel* chptr);
+
 extern int member_can_send_to_channel(struct Membership* member, int reveal);
 extern int client_can_send_to_channel(struct Client *cptr, struct Channel *chptr, int reveal);
 
@@ -464,6 +469,7 @@ extern int has_voice(struct Client *cptr, struct Channel *chptr);
    this function can't make any assumptions that it has a channel
 */
 extern int IsInvited(struct Client* cptr, const void* chptr);
+extern int is_ban_exception(struct Channel* chptr, struct Client* sptr);
 extern void send_channel_modes(struct Client *cptr, struct Channel *chptr);
 extern char *pretty_mask(char *mask);
 extern void del_invite(struct Client *cptr, struct Channel *chptr);
@@ -516,7 +522,7 @@ extern const char* get_renamed_channel(const char* oldname);
 extern const char* get_original_channel(const char* newname);
 extern void get_network_channel_list(const char* visible_name, char* out_list, size_t out_size);
 extern struct Ban *make_ban(const char *banstr);
-extern struct Ban *find_ban(struct Client *cptr, struct Ban *banlist);
+extern struct Ban *find_ban(struct Client *cptr, struct Ban *banlist, struct Ban *exceptionlist);
 extern int apply_ban(struct Ban **banlist, struct Ban *newban, int free);
 extern void free_ban(struct Ban *ban);
 
