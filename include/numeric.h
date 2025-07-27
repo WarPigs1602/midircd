@@ -479,6 +479,7 @@ extern const struct Numeric* get_error_numeric(int err);
 #define ERR_UPASSNOTSET      564	/* Undernet extension */
 #define ERR_NOMANAGER        566	/* Undernet extension */
 #define ERR_UPASS_SAME_APASS 567        /* Undernet extension */
+#define ERR_JOINFLOOD        568        /* Undernet extension: Join flood protection (+j) */
 
 #define RPL_STARTTLS         670    /* Nefarious, Undernet */
 

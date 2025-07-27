@@ -158,16 +158,17 @@ struct Client;
 #define MODE_TLSONLY       0x4000000    /**< +Z TLS users only */
 
 #define MODE_BANEXCEPTION 0x8000000 /**< +e Ban exception */
+#define MODE_ANTIJOINFLOOD 0x10000000  /**< +j Anti-Join-Flood mode */
 
 
 /** mode flags which take another parameter (With PARAmeterS)
  */
-#define MODE_WPARAS     (MODE_CHANSERVICE|MODE_OWNER|MODE_ADMIN|MODE_CHANOP|MODE_HALFOP|MODE_VOICE|MODE_BAN|MODE_BANEXCEPTION|MODE_KEY|MODE_LIMIT|MODE_APASS|MODE_UPASS)
+#define MODE_WPARAS     (MODE_CHANSERVICE|MODE_OWNER|MODE_ADMIN|MODE_CHANOP|MODE_HALFOP|MODE_VOICE|MODE_BAN|MODE_BANEXCEPTION|MODE_ANTIJOINFLOOD|MODE_KEY|MODE_LIMIT|MODE_APASS|MODE_UPASS)
 
 /** Available Channel modes */
-#define infochanmodes feature_bool(FEAT_OPLEVELS) ? "AbeiklmnopstUvrDcCNuMTqSah" : "beiklmnopstvrDcCNuMTqSah"
+#define infochanmodes feature_bool(FEAT_OPLEVELS) ? "AbeijklmnopstUvrDcCNuMTqSah" : "beijklmnopstvrDcCNuMTqSah"
 /** Available Channel modes that take parameters */
-#define infochanmodeswithparams feature_bool(FEAT_OPLEVELS) ? "AbekloUvqSah" : "beklovqSah"
+#define infochanmodeswithparams feature_bool(FEAT_OPLEVELS) ? "AbejkloUvqSah" : "bekjlovqSah"
 
 #define HoldChannel(x)          (!(x))
 /** name invisible */
@@ -323,6 +324,10 @@ struct Channel {
   time_t             creationtime; /**< Creation time of this channel */
   time_t             topic_time;   /**< Modification time of the topic */
   unsigned int       users;	   /**< Number of clients on this channel */
+  int joinflood_count;      /**< Number of joins in the current time window */
+  time_t joinflood_time;    /**< Timestamp of the first join in the window */
+  int joinflood_limit;      /**< Maximum allowed joins in the window */
+  int joinflood_period;     /**< Time window in seconds for join flood */
   struct Membership* members;	   /**< Pointer to the clients on this channel*/
   struct SLink*      invites;	   /**< List of invites on this channel */
   struct Ban*        banlist;      /**< List of bans on this channel */

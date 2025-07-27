@@ -620,6 +620,25 @@ void add_user_to_channel(struct Channel* chptr, struct Client* who,
 	assert(0 != chptr);
 	assert(0 != who);
 
+	// --- Anti-Join-Flood check (Mode +j) ---
+	if (chptr->mode.mode & MODE_ANTIJOINFLOOD) {
+		time_t now = TStime();
+		if (chptr->joinflood_time == 0 || now - chptr->joinflood_time > chptr->joinflood_period) {
+			// Reset window
+			chptr->joinflood_time = now;
+			chptr->joinflood_count = 1;
+		}
+		else {
+			chptr->joinflood_count++;
+			if (chptr->joinflood_count > chptr->joinflood_limit) {
+				// Deny join due to flood
+				if (MyUser(who))
+					send_reply(who, ERR_JOINFLOOD, chptr->chname, "Channel join flood protection (+j) active");
+				return;
+			}
+		}
+	}
+
 	if (cli_user(who)) {
 		struct Membership* member = membershipFreeList;
 		if (member)
@@ -1059,6 +1078,18 @@ void channel_modes(struct Client* cptr, char* mbuf, char* pbuf, int buflen,
 		}
 		else
 			strcat(pbuf, "*");
+	}
+
+	if (chptr->mode.mode & MODE_ANTIJOINFLOOD) {
+		*mbuf++ = 'j';
+		if (chptr->joinflood_limit > 0 && chptr->joinflood_period > 0) {
+			if (previous_parameter)
+				strcat(pbuf, " ");
+			char tmp[32];
+			snprintf(tmp, sizeof(tmp), "%d:%d", chptr->joinflood_limit, chptr->joinflood_period);
+			strcat(pbuf, tmp);
+			previous_parameter = 1;
+		}
 	}
 	*mbuf = '\0';
 }
@@ -1749,6 +1780,7 @@ modebuf_flush_int(struct ModeBuf* mbuf, int all)
 					MODE_NOMULTITARGET, 'T',
 					MODE_MODERATENOREG, 'M',
 					MODE_TLSONLY,       'Z',
+					MODE_ANTIJOINFLOOD, 'j', // Added joinflood mode (+j)
 					0x0, 0x0
 	};
 	static int local_flags[] = {
@@ -1866,6 +1898,9 @@ modebuf_flush_int(struct ModeBuf* mbuf, int all)
 				case MODE_BANEXCEPTION:
 					mode_char = 'e'; // Ban-Exception (+e)
 					break;
+				case MODE_ANTIJOINFLOOD:
+					mode_char = 'j'; // Joinflood (+j)
+					break;
 				default:
 					mode_char = 'b';
 					break;
@@ -1887,6 +1922,14 @@ modebuf_flush_int(struct ModeBuf* mbuf, int all)
 				bufptr[(*bufptr_i)++] = 'l';
 				totalbuflen -= tmp + 1;
 			}
+		}
+		else if (MB_TYPE(mbuf, i) & MODE_ANTIJOINFLOOD) {
+			char joinfloodbuf[32];
+			snprintf(joinfloodbuf, sizeof(joinfloodbuf), "%d:%d",
+				mbuf->mb_channel->joinflood_limit,
+				mbuf->mb_channel->joinflood_period);
+			bufptr[(*bufptr_i)++] = 'j';
+			totalbuflen -= strlen(joinfloodbuf) + 1;
 		}
 	}
 
@@ -1942,6 +1985,13 @@ modebuf_flush_int(struct ModeBuf* mbuf, int all)
 			else if ((MB_TYPE(mbuf, i) & (MODE_ADD | MODE_LIMIT)) ==
 				(MODE_ADD | MODE_LIMIT))
 				build_string(strptr, strptr_i, limitbuf, 0, ' ');
+			else if ((MB_TYPE(mbuf, i) & (MODE_ADD | MODE_ANTIJOINFLOOD)) == (MODE_ADD | MODE_ANTIJOINFLOOD)) {
+				char joinfloodbuf[32];
+				snprintf(joinfloodbuf, sizeof(joinfloodbuf), "%d:%d",
+					mbuf->mb_channel->joinflood_limit,
+					mbuf->mb_channel->joinflood_period);
+				build_string(strptr, strptr_i, joinfloodbuf, 0, ' ');
+			}
 		}
 
 		/* send the messages off to their destination */
@@ -2040,6 +2090,13 @@ modebuf_flush_int(struct ModeBuf* mbuf, int all)
 			 */
 			else if ((MB_TYPE(mbuf, i) & limitdel) == limitdel)
 				build_string(strptr, strptr_i, limitbuf, 0, ' ');
+			else if ((MB_TYPE(mbuf, i) & (MODE_ADD | MODE_ANTIJOINFLOOD)) == (MODE_ADD | MODE_ANTIJOINFLOOD)) {
+				char joinfloodbuf[32];
+				snprintf(joinfloodbuf, sizeof(joinfloodbuf), "%d:%d",
+					mbuf->mb_channel->joinflood_limit,
+					mbuf->mb_channel->joinflood_period);
+				build_string(strptr, strptr_i, joinfloodbuf, 0, ' ');
+			}
 		}
 
 		/* we were told to deop the source */
@@ -2356,6 +2413,7 @@ modebuf_extract(struct ModeBuf* mbuf, char* buf)
 			MODE_UPASS,		'U',
 			/*  MODE_BAN,		'b', */
 				MODE_LIMIT,		'l',
+				MODE_ANTIJOINFLOOD, 'j', // +j: Joinflood mode
 				MODE_REGONLY,	'r',
 				MODE_DELJOINS,      'D',
 				MODE_NOQUITPARTS,   'u',
@@ -2372,6 +2430,7 @@ modebuf_extract(struct ModeBuf* mbuf, char* buf)
 	int* flag_p;
 	char* key = 0, limitbuf[20];
 	char* apass = 0, * upass = 0;
+	char joinfloodbuf[32] = { 0 }; // Buffer for +j parameter
 
 	assert(0 != mbuf);
 	assert(0 != buf);
@@ -2382,7 +2441,7 @@ modebuf_extract(struct ModeBuf* mbuf, char* buf)
 
 	for (i = 0; i < mbuf->mb_count; i++) { /* find keys and limits */
 		if (MB_TYPE(mbuf, i) & MODE_ADD) {
-			add |= MB_TYPE(mbuf, i) & (MODE_KEY | MODE_LIMIT | MODE_APASS | MODE_UPASS);
+			add |= MB_TYPE(mbuf, i) & (MODE_KEY | MODE_LIMIT | MODE_APASS | MODE_UPASS | MODE_ANTIJOINFLOOD);
 
 			if (MB_TYPE(mbuf, i) & MODE_KEY) /* keep strings */
 				key = MB_STRING(mbuf, i);
@@ -2392,6 +2451,10 @@ modebuf_extract(struct ModeBuf* mbuf, char* buf)
 				upass = MB_STRING(mbuf, i);
 			else if (MB_TYPE(mbuf, i) & MODE_APASS)
 				apass = MB_STRING(mbuf, i);
+			else if (MB_TYPE(mbuf, i) & MODE_ANTIJOINFLOOD)
+				ircd_snprintf(0, joinfloodbuf, sizeof(joinfloodbuf), "%d:%d",
+					mbuf->mb_channel->joinflood_limit,
+					mbuf->mb_channel->joinflood_period);
 		}
 	}
 
@@ -2413,6 +2476,8 @@ modebuf_extract(struct ModeBuf* mbuf, char* buf)
 			build_string(buf, &bufpos, upass, 0, ' ');
 		else if (buf[i] == 'A')
 			build_string(buf, &bufpos, apass, 0, ' ');
+		else if (buf[i] == 'j')
+			build_string(buf, &bufpos, joinfloodbuf, 0, ' ');
 	}
 
 	buf[bufpos] = '\0';
@@ -2461,6 +2526,12 @@ mode_invite_clear(struct Channel* chan)
 #define DONE_KEY_DEL    0x80    /**< We've removed the key */
 #define DONE_UPASS_DEL  0x100   /**< We've removed the user pass */
 #define DONE_APASS_DEL  0x200   /**< We've removed the admin pass */
+#define DONE_ANTIJOINFLOOD 0x400 /**< We've set the joinflood mode */
+#define DONE_BANEXCEPTION 0x800 /**< We've set a ban exception */
+#define DONE_BANEXCEPTION_DEL 0x1000 /**< We've removed a ban exception */
+#define DONE_BANEXCEPTION_ADD 0x2000 /**< We've added a ban exception */
+#define DONE_ANTIJOINFLOOD_DEL 0x4000 /**< We've removed the joinflood mode */
+#define DONE_ANTIJOINFLOOD_ADD 0x8000 /**< We've added the joinflood mode */
 
 struct ParseState {
 	struct ModeBuf* mbuf;
@@ -3483,16 +3554,18 @@ static void handle_simple_mode(struct ParseState* state, int* flag_p) {
 	mode_parse_mode(state, flag_p);
 }
 
-// Add handling for +e/-e (ban exception) in the mode parser
-
-// --- Add this to the mode_parse_param_mode switch ---
+/**
+ * Handles +e/-e (ban exception) mode changes.
+ * Ensures that each add/remove is only processed once per MODE command.
+ * Propagates changes via ModeBuf for visible channel updates.
+ */
 static void mode_parse_ban_exception(struct ParseState* state, int* flag_p)
 {
 	char* t_str;
 	struct Ban* newex;
 
+	// List all exceptions if no parameter is given
 	if (state->parc <= 0) {
-		// List all exceptions
 		struct Ban* ex;
 		for (ex = state->chptr->ban_exceptions; ex; ex = ex->next)
 			send_reply(state->sptr, RPL_EXCEPTLIST, state->chptr->chname, ex->banstr, ex->who, ex->when);
@@ -3504,6 +3577,7 @@ static void mode_parse_ban_exception(struct ParseState* state, int* flag_p)
 	state->parc--;
 	state->max_args--;
 
+	// Only privileged users may set/remove the mode
 	if (!(state->flags & (MODE_CHANSERVICE | MODE_OWNER | MODE_ADMIN | MODE_CHANOP | MODE_HALFOP))) {
 		send_notoper(state, flag_p[0]);
 		return;
@@ -3514,20 +3588,112 @@ static void mode_parse_ban_exception(struct ParseState* state, int* flag_p)
 		return;
 	}
 
-	// Create exception entry
-	newex = make_ban(collapse(pretty_mask(t_str)));
-	newex->flags = ((state->dir == MODE_ADD) ? BAN_ADD : BAN_DEL) | BAN_EXCEPTION;
-	ircd_strncpy(newex->who, IsUser(state->sptr) ? cli_name(state->sptr) : "*", NICKLEN);
-	newex->when = TStime();
+	// Normalize mask for consistent add/remove
+	char* mask = collapse(pretty_mask(t_str));
 
-	// Add/remove from exception list
-	apply_ban(&state->chptr->ban_exceptions, newex, 0);
-	if (state->mbuf) {
-		modebuf_mode_string(state->mbuf,
-			(state->dir == MODE_ADD ? MODE_ADD : MODE_DEL) | MODE_BANEXCEPTION,
-			newex->banstr, 0);
+	if (state->dir == MODE_ADD) {
+		if (state->done & DONE_BANEXCEPTION_ADD)
+			return; // Already set in this MODE command
+		struct Ban* ex;
+		for (ex = state->chptr->ban_exceptions; ex; ex = ex->next) {
+			if (strcmp(ex->banstr, mask) == 0)
+				return; // Already exists, do not add again
+		}
+		// Create exception entry
+		newex = make_ban(mask);
+		newex->flags = BAN_ADD | BAN_EXCEPTION;
+		ircd_strncpy(newex->who, IsUser(state->sptr) ? cli_name(state->sptr) : "*", NICKLEN);
+		newex->when = TStime();
+
+		// Add to exception list
+		apply_ban(&state->chptr->ban_exceptions, newex, 0);
+		if (state->mbuf) {
+			modebuf_mode_string(state->mbuf, MODE_ADD | MODE_BANEXCEPTION, newex->banstr, 0);
+		}
+		state->done |= DONE_BANEXCEPTION_ADD;
+	}
+	else {
+		if (state->done & DONE_BANEXCEPTION_DEL)
+			return; // Already removed in this MODE command
+
+		// Remove from exception list by mask
+		struct Ban** ex_ptr = &state->chptr->ban_exceptions;
+		while (*ex_ptr) {
+			if (strcmp((*ex_ptr)->banstr, mask) == 0) {
+				struct Ban* to_free = *ex_ptr;
+				*ex_ptr = (*ex_ptr)->next;
+				if (state->mbuf) {
+					modebuf_mode_string(state->mbuf, MODE_DEL | MODE_BANEXCEPTION, mask, 0);
+				}
+				MyFree(to_free);
+				break;
+			}
+			ex_ptr = &(*ex_ptr)->next;
+		}
+		state->done |= DONE_BANEXCEPTION_DEL;
 	}
 }
+
+static void mode_parse_joinflood(struct ParseState* state, int* flag_p)
+{
+	// Only privileged users may set/remove the mode
+	if (!(state->flags & (MODE_CHANSERVICE | MODE_OWNER | MODE_ADMIN | MODE_CHANOP | MODE_HALFOP))) {
+		send_notoper(state, MODE_ANTIJOINFLOOD);
+		return;
+	}
+
+	if (state->dir == MODE_ADD) {
+		if (state->done & DONE_ANTIJOINFLOOD_ADD)
+			return; // Already set in this MODE command
+		if (state->parc <= 0 || state->max_args <= 0) {
+			if (MyUser(state->sptr))
+				need_more_params(state->sptr, "MODE +j");
+			return;
+		}
+		char* param = state->parv[state->args_used++];
+		state->parc--;
+		state->max_args--;
+
+		int limit = 0, period = 0;
+		if (sscanf(param, "%d:%d", &limit, &period) < 2) {
+			period = limit;
+			limit = 0;
+		}
+		if (limit <= 0 || period <= 0)
+			return;
+
+		if (!(state->chptr->mode.mode & MODE_ANTIJOINFLOOD) ||
+			state->chptr->joinflood_limit != limit ||
+			state->chptr->joinflood_period != period)
+		{
+			state->chptr->mode.mode |= MODE_ANTIJOINFLOOD;
+			state->chptr->joinflood_limit = limit;
+			state->chptr->joinflood_period = period;
+			state->chptr->joinflood_count = 0;
+			state->chptr->joinflood_time = 0;
+
+			char buf[32];
+			snprintf(buf, sizeof(buf), "%d:%d", limit, period);
+			modebuf_mode_string(state->mbuf, MODE_ADD | MODE_ANTIJOINFLOOD, buf, 0);
+
+		}
+		state->done |= DONE_ANTIJOINFLOOD_ADD;
+	}
+	else {
+		if (state->done & DONE_ANTIJOINFLOOD_DEL)
+			return; // Already removed in this MODE command
+		if (state->chptr->mode.mode & MODE_ANTIJOINFLOOD) {
+			state->chptr->mode.mode &= ~MODE_ANTIJOINFLOOD;
+			state->chptr->joinflood_limit = 0;
+			state->chptr->joinflood_period = 0;
+			state->chptr->joinflood_count = 0;
+			state->chptr->joinflood_time = 0;
+
+			modebuf_mode_string(state->mbuf, MODE_DEL | MODE_ANTIJOINFLOOD, NULL, 0);
+		}
+		state->done |= DONE_ANTIJOINFLOOD_DEL;
+	}
+} 
 
 static void handle_param_mode(struct ParseState* state, int* flag_p, char modechar) {
 	switch (modechar) {
@@ -3537,8 +3703,10 @@ static void handle_param_mode(struct ParseState* state, int* flag_p, char modech
 	case 'U': if (IsServer(state->cptr) || feature_bool(FEAT_OPLEVELS)) mode_parse_upass(state, flag_p); break;
 	case 'b': mode_parse_ban(state, flag_p); break;
 	case 'e': mode_parse_ban_exception(state, flag_p); break;
+	case 'j': mode_parse_joinflood(state, flag_p); break;
 	default: break;
 	}
+
 }
 
 int mode_parse(struct ModeBuf* mbuf, struct Client* cptr, struct Client* sptr,
@@ -3551,6 +3719,7 @@ int mode_parse(struct ModeBuf* mbuf, struct Client* cptr, struct Client* sptr,
 		MODE_NOPRIVMSGS,  'n', MODE_KEY, 'k', MODE_APASS, 'A', MODE_UPASS, 'U', MODE_BAN, 'b', MODE_LIMIT, 'l',
 		MODE_REGONLY,     'r', MODE_DELJOINS, 'D', MODE_NOQUITPARTS, 'u', MODE_NOCOLOUR, 'c', MODE_NOCTCP, 'C',
 		MODE_NONOTICE,    'N', MODE_NOMULTITARGET, 'T', MODE_MODERATENOREG, 'M', MODE_TLSONLY, 'Z', MODE_BANEXCEPTION, 'e',
+		MODE_ANTIJOINFLOOD, 'j',
 		/* NOTE: BANEXCEPTION (+e) wird jetzt separat behandelt */
 		MODE_ADD, '+', MODE_DEL, '-', 0x0, 0x0
 	};
@@ -3589,7 +3758,7 @@ int mode_parse(struct ModeBuf* mbuf, struct Client* cptr, struct Client* sptr,
 			switch (*modestr) {
 			case '+': case '-': state.dir = flag_p[0]; break;
 			case 'l': case 'k': case 'A': case 'U': case 'b':
-			case 'e':
+			case 'e': case 'j':
 				handle_param_mode(&state, flag_p, *modestr); break;
 			case 'S': case 'q': case 'a': case 'h': case 'o': case 'v':
 				handle_user_mode(&state, flag_p, *modestr); break;
@@ -3658,6 +3827,8 @@ int mode_parse(struct ModeBuf* mbuf, struct Client* cptr, struct Client* sptr,
 			modebuf_mode_string(state.mbuf, MODE_DEL | MODE_UPASS, state.chptr->mode.upass, 0);
 		if (*state.chptr->mode.apass && !(state.done & DONE_APASS_DEL))
 			modebuf_mode_string(state.mbuf, MODE_DEL | MODE_APASS, state.chptr->mode.apass, 0);
+
+
 	}
 	if (state.done & DONE_BANCLEAN)
 		mode_process_bans(&state);

@@ -1168,7 +1168,7 @@ static Numeric replyTable[] = {
 /* 567 */
   { ERR_UPASS_SAME_APASS, "%s :Cannot use the same pass for both admin (+A) and user (+U) pass.", "567" },
 /* 568 */
-  { 0 },
+  { ERR_JOINFLOOD, "%s :Cannot join channel, join flood protection (+j) active", "568" },
 /* 569 */
   { 0 },
 /* 570 */
