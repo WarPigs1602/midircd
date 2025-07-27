@@ -159,16 +159,17 @@ struct Client;
 
 #define MODE_BANEXCEPTION 0x8000000 /**< +e Ban exception */
 #define MODE_ANTIJOINFLOOD 0x10000000  /**< +j Anti-Join-Flood mode */
+#define MODE_LINK      0x20000000  /**< +L LINK Mode */
 
 
 /** mode flags which take another parameter (With PARAmeterS)
  */
-#define MODE_WPARAS     (MODE_CHANSERVICE|MODE_OWNER|MODE_ADMIN|MODE_CHANOP|MODE_HALFOP|MODE_VOICE|MODE_BAN|MODE_BANEXCEPTION|MODE_ANTIJOINFLOOD|MODE_KEY|MODE_LIMIT|MODE_APASS|MODE_UPASS)
+#define MODE_WPARAS     (MODE_CHANSERVICE|MODE_OWNER|MODE_ADMIN|MODE_CHANOP|MODE_HALFOP|MODE_VOICE|MODE_BAN|MODE_BANEXCEPTION|MODE_ANTIJOINFLOOD|MODE_KEY|MODE_LIMIT|MODE_APASS|MODE_UPASS|MODE_LINK)
 
 /** Available Channel modes */
-#define infochanmodes feature_bool(FEAT_OPLEVELS) ? "AbeijklmnopstUvrDcCNuMTqSah" : "beijklmnopstvrDcCNuMTqSah"
+#define infochanmodes feature_bool(FEAT_OPLEVELS) ? "AbeijklmnopstUvrDcCNuMTqSahL" : "beijklmnopstvrDcCNuMTqSahL"
 /** Available Channel modes that take parameters */
-#define infochanmodeswithparams feature_bool(FEAT_OPLEVELS) ? "AbejkloUvqSah" : "bekjlovqSah"
+#define infochanmodeswithparams feature_bool(FEAT_OPLEVELS) ? "AbejkloUvqSahL" : "bekjlovqSahL"
 
 #define HoldChannel(x)          (!(x))
 /** name invisible */
@@ -293,6 +294,7 @@ struct Mode {
   char key[KEYLEN + 1];
   char upass[KEYLEN + 1];
   char apass[KEYLEN + 1];
+  char linktarget[CHANNELLEN + 1];
 };
 
 #define BAN_IPMASK         0x0001  /**< ban mask is an IP-number mask */
