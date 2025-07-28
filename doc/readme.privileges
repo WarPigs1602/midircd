@@ -1,0 +1,22 @@
+# Channel Privileges and Hierarchy in midircd
+
+midircd supports a fine-grained privilege system for channel users:
+
+| Mode | Prefix | Name         | Description                                                                |
+|------|--------|--------------|----------------------------------------------------------------------------|
+| +S   | !      | ChanService  | Channel service bot, highest privilege, can override all restrictions      |
+| +q   | ~      | Owner        | Channel owner, can set all lower modes and manage the channel              |
+| +a   | &      | Admin        | Channel admin, can set most lower modes and manage the channel             |
+| +o   | @      | Operator     | Channel operator, can manage users and moderate the channel                |
+| +h   | %      | Half-Op      | Half-operator, limited moderation rights (cannot set higher modes)         |
+| +v   | +      | Voice        | Voiced user, can speak in moderated (+m) channels                          |
+
+**Hierarchy:**  
+ChanService > Owner > Admin > Operator > Half-Op > Voice > normal user
+
+- Only users with a higher privilege can set or remove modes for users with lower privileges.
+- Half-ops cannot set or remove operator/admin/owner modes.
+- Channel service bots (+S) can override all restrictions.
+- The privilege system is enforced for all mode changes, kicks, and other moderation actions.
+
+See also: `doc/readme.features` and `README.md` for more details.

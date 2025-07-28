@@ -1,0 +1,248 @@
+﻿- MIDIRCD ----------------------------------------------------------------------
+
+Midircd is a collection of modifications to the Undernet IRC server known as
+ircu. This version is based on version 2.10.12 released by Undernet's
+Coder Committee. The original code can be obtained from their webpage,
+http://coder-com.undernet.org and the latest release of Midircd can be obtained
+from QuakeNet's Development Team webpage, http://development.quakenet.org.
+
+- version history ------------------------------------------------------------
+v2.0.0a,  Modernization, IRCv3 support, new channel/user/oper modes, SASL, 
+          advanced features, see below for details.
+v1.3.1,   HG,  bug fixes, warn user if input line is too long.
+          WWW, 10/11/2007
+v1.3.0,   SVN, upstream patches/migration to u2.10.12.10
+               Port of 'asuka' extensions for ircu 2.10.11 to 2.10.12
+               Development moved to SVN from CVS
+               chanmode +M, chanmode +T, ACcount token changes, Oper ID, 
+               /check updated, other fixes/updates
+[... older history omitted for brevity ...]
+
+- contributors ---------------------------------------------------------------
+
+Current Development Team:
+                    Chris Porter   <slug@quakenet.org>
+                         Cruicky   <cruicky@quakenet.org>
+                   Paul Richards   <paul@quakenet.org>
+                  Gunnar Beutner   <shroud@quakenet.org>
+                   David Mansell   <splidge@quakenet.org>
+               Fredrik S�derblom   <froo@quakenet.org>
+                           Wiebe   <wiebe@quakenet.org>
+Developers/Contributors:
+                        Joe Cise   <pilsner@quakenet.org>
+                     Rasmus Have   <bigfoot@quakenet.org>
+                 Gregory Bristol   <qoreq@quakenet.org>
+                    Darren Smith   <data@quakenet.org>
+                   Iain Sheppard   <magpie@quakenet.org>
+                 Mike Cartwright   <mike@quakenet.org>
+Thanks To:            Reed Loden   <reed@reedloden.com>
+                      Alex Badea   <vampire@p16.pub.ro>
+                    Perry Lorier   <isomer@coders.net>
+               Kevin L. Mitchell   <klmitch@mit.edu>
+Special Thanks To:  Tero Nybacka   <sivis@sivis.org>
+                  Darren Coleman   <durzel@quakenet.org>
+  For their contributions to Lain (http://dev-com.b2irc.net) and therefore
+  the basis for most of the ideas in Asuka. Thanks Guys.
+
+- features ------------------------------------------------------------------
+
+**New and Extended Features in midircd:**
+
+ * IRCv3 Capabilities:
+     - SASL authentication (PLAIN, EXTERNAL, SCRAM, etc.)
+     - account-notify, away-notify, chghost, echomessage, extjoin, invite-notify
+     - message-tags, standard-replies, channel-rename, and more
+
+ * Advanced Channel Modes:
+     - +c: Block mIRC/ANSI color codes
+     - +C: Block CTCPs
+     - +N: Block channel notices
+     - +M: Only authenticated users may speak
+     - +T: Block multi-target messages
+     - +D/+d: Delayed join (invisible until activity)
+     - +u: Hide quit/part messages
+     - +j: Anti-join-flood
+     - +L: Channel link
+     - +e: Ban exception
+     - +Z: TLS-only channels
+
+ * Extended User and Oper Modes:
+     - +X: Oper override for channel restrictions
+     - +k: Network service protection (no kicks/deops/kills)
+     - +n: Hide channels in /whois
+     - +I: Hide idle time
+     - +R: Only accept messages from authenticated users
+
+ * Channel Privilege Hierarchy:
+     - +S (!): ChanService (service bot, highest privilege)
+     - +q (~): Owner
+     - +a (&): Admin
+     - +o (@): Operator
+     - +h (%): Half-Op
+     - +v (+): Voice
+
+ * Channel Types:
+     - #: Global channel (network-wide)
+     - &: Local channel (server-local)
+     - !: Network channel (unique ID, advanced features)
+     - +: Modeless channel (no ops/modes)
+
+ * Configurable Features System:
+     - All features can be enabled/disabled at runtime or via configuration (see `include/ircd_features.h` and F-lines).
+
+ * Sethost:
+     - Opers and authorized users can change their hostname (spoofing), with fine-grained control via S: and F: lines.
+
+ * Automatic Channel Modes:
+     - New channels receive default modes (e.g., "ntCN"), configurable via AUTOCHANMODES and AUTOCHANMODES_LIST.
+
+ * Enhanced /check and /stats Commands:
+     - Detailed information about channels, users, and servers.
+
+ * MOTD Management:
+     - Multiple MOTDs supported, selected by hostmask, IP, or class. Caching and dynamic reload.
+
+ * Anti-Abuse Mechanisms:
+     - Nick/host/IP abuse protection
+     - G-lines (global bans) also on nick basis
+     - Automatic +i (invisible) for new users
+     - Channel join limits per user/IP
+
+ * HEAD_IN_SAND Features:
+     - Granular control over visibility and accessibility of server information and statistics.
+
+ * Service Forwarding:
+     - SASL and other authentication commands can be forwarded to a configurable service.
+
+ * Improved statistics and debugging:
+     - /stats commands show more details, including memory and feature reporting.
+
+ * Enhanced G-line and USERIP mechanisms, protection against channel and nick abuse.
+
+ * Multiple MOTDs, selection by hostmask/IP/class, caching.
+
+- configuration file options ------------------------------------------------
+
+S: Sethost Lines 
+ Syntax:  S:<spoof host>:<password>:<*.host.cc|a.b.c.*|CIDR>:<ident>
+ Example: S:moo.fish.moo:elitepassword:host.example.com:user
+
+ This adds the sethost 'moo.fish.moo' that can be activated by a user by using
+ the password 'elitepassword' and will automatically be applied to anyone
+ connecting from 'host.example.com' with the ident 'user'.
+
+ More Examples:
+   Oper sethost for 'moo.fish.moo'
+          S:moo.fish.moo:::
+   User & Oper sethost for 'moo.fish.moo'
+          S:moo.fish.moo:elitepassword::
+   Oper sethost for 'moo.fish.moo' with auto on 'ident@*.example.com"
+          S:moo.fish.moo::*.example.com:ident
+
+F:SETHOST
+ * Type: boolean
+ * Default: FALSE
+
+ This enables the /sethost command and user mode +h for opers activating Sethosts.
+
+F:SETHOST_USER
+ * Type: boolean
+ * Default: FALSE
+
+ This enabled the /sethost command and user mode +h for users activating Sethosts
+ with passwords.
+
+F:SETHOST_AUTO
+ * Type: boolean
+ * Default: FALSE
+
+ This enables the automatic application of Sethosts on matching idents and hosts.
+
+F:SETHOST_FREEFORM
+ * Type: boolean
+ * Default: FALSE
+
+ This enables opers to set new hostnames that do not have a corresponding S: line
+ in the configuration file, as long as the hostname supplied is reasonably valid.
+ The usage if this is logged via SNOTICE.
+
+F:HIS_STATS_s
+ * Type: boolean
+ * Default: TRUE
+
+ As per QuakeNet Security, this removes the /stats s from users.
+
+F:TOPIC_BURST
+ * Type: boolean
+ * Default: FALSE
+
+ This selects whether topics are *sent* to other servers during a burst.
+ Note that receiving topics from servers is always enabled.
+
+F:HIS_GLINE
+ * Type: boolean
+ * Default: TRUE
+
+ As per QuakeNet Security, this removes the reason for GLINE from quit messages.
+
+F:SOCKSENDBUF
+ * Type: integer
+ * Default: 61440
+
+ Sets the socket buffer for sending. Advanced feature, do not change unless you
+ known what you are doing.
+
+F:SOCKRECVBUF
+ * Type: integer
+ * Default: 61440
+
+ Sets the socket buffer for recieving. Advanced feature, do not change unless you
+ known what you are doing.
+
+F:USER_HIDECHANS
+ * Type: boolean
+ * Default: FALSE
+
+ This allows normal users to set the +n usermode (hide channels from whois/who),
+ this is only recommended in special circumstances.
+
+F:HIS_USERGLINE
+ * Type: boolean
+ * Default: TRUE
+
+ This enables / disables the ability for users to use the /GLINE command for
+ listing active glines. It's turned on by default, which is the opposite
+ behaviour of vanilla ircu.
+
+F:AUTOINVISIBLE
+ * Type: boolean
+ * Default: TRUE
+
+ As per QuakeNet Security, this option sets user mode +i on all connecting clients
+ automatically.
+
+F:HIS_USERIP
+ * Type: boolean
+ * Default: TRUE
+
+ As per QuakeNet Security, add the ability to disable the /USERIP command for users.
+
+F:AUTOCHANMODES
+ * Type: boolean
+ * Default: TRUE
+
+ Enable or disable auto (default) channel modes for new channels.
+
+F:AUTOCHANMODES_LIST
+ * Type: string
+ * Default: "ntCN"
+
+ AUTOCHANMODES_LIST should contain the default channelmodes (e.g. "ntCN") which will 
+ be set by default on new channels.
+
+- disclaimer ----------------------------------------------------------------
+
+This software is provided "as is" with absolutely no warranties, either express
+or implied. Its use is done so totally at the user's own risk.
+
+------------------------ 28.07.2025 -----------------------------------------

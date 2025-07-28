@@ -1,0 +1,17 @@
+# Channel Types in midircd
+
+midircd supports several channel types, each with specific characteristics:
+
+| Prefix | Example      | Description                                                                  |
+|--------|-------------|------------------------------------------------------------------------------|
+| #      | #channel    | **Global Channel:** Standard, network-wide channels visible to all users     |
+| &      | &local      | **Local Channel:** Only exists on the local server, not visible network-wide |
+| !      | !IDchannel  | **Network Channel:** Unique network ID for collision prevention, renaming, linking |
+| +      | +channel    | **Modeless Channel:** No channel modes or ops, open for all                  |
+
+- **Global Channels (`#`)**: Used for public or private group chats across the network.
+- **Local Channels (`&`)**: Useful for server-specific discussions or admin channels.
+- **Network Channels (`!`)**: Used for advanced features like channel renaming, linking, and takeover protection.
+- **Modeless Channels (`+`)**: No channel operators or modes; everyone can join and speak freely.
+
+For more details on channel types and their behavior, see the documentation and `include/channel.h`.
