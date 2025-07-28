@@ -51,45 +51,83 @@ struct Client;
 #define STARTJOINLEN	10 	/**< fuzzy numbers */
 #define STARTCREATELEN	20
 
+#define NETWORK_ID_LEN 5
+
 /*
  * Macro's
  */
 
 #define ChannelExists(n)        (0 != FindChannel(n))
 
-#define CHFL_CHANOP             0x0001  /**< Channel operator */
-#define CHFL_VOICE              0x0002  /**< the power to speak */
-#define CHFL_DEOPPED            0x0004  /**< Is de-opped by a server */
-#define CHFL_SERVOPOK           0x0008  /**< Server op allowed */
-#define CHFL_ZOMBIE             0x0010  /**< Kicked from channel */
-#define CHFL_BURST_JOINED       0x0100  /**< Just joined by net.junction */
-#define CHFL_BANVALID           0x0800  /**< CHFL_BANNED bit is valid */
-#define CHFL_BANNED             0x1000  /**< Channel member is banned */
-#define CHFL_SILENCE_IPMASK     0x2000  /**< silence mask is a CIDR */
-#define CHFL_BURST_ALREADY_OPPED	0x04000  
+/* Erweiterte Channel-User-Modi und Präfixe */
+
+/* Channel user status flags */
+#define CHFL_CHANSERVICE  0x00001  /* +S, ChanService, prefix '!' */
+#define CHFL_OWNER        0x00002  /* +q, Owner, prefix '~' */
+#define CHFL_ADMIN        0x00004  /* +a, Admin, prefix '&' */
+#define CHFL_CHANOP       0x00008  /* +o, Chanop, prefix '@' */
+#define CHFL_HALFOP       0x00010  /* +h, Halfop, prefix '%' */
+#define CHFL_VOICE        0x00020  /* +v, Voice, prefix '+' */
+
+#define CHFL_DEOPPED            0x00040  /**< Is de-opped by a server */
+#define CHFL_SERVOPOK           0x00080  /**< Server op allowed */
+#define CHFL_ZOMBIE             0x00100  /**< Kicked from channel */
+#define CHFL_BURST_JOINED       0x01000  /**< Just joined by net.junction */
+#define CHFL_BANVALID           0x08000  /**< CHFL_BANNED bit is valid */
+#define CHFL_BANNED             0x10000  /**< Channel member is banned */
+#define CHFL_SILENCE_IPMASK     0x20000  /**< silence mask is a CIDR */
+#define CHFL_BURST_ALREADY_OPPED	0x040000  
 					/**< In oob BURST, but was already 
 					 * joined and opped 
 					 */
-#define CHFL_BURST_ALREADY_VOICED	0x08000  
+#define CHFL_BURST_ALREADY_VOICED	0x080000  
 					/**, In oob BURST, but was already 
 					 * joined and voiced 
 					 */
-#define CHFL_CHANNEL_MANAGER	0x10000	/**< Set when creating channel or using 
+#define CHFL_CHANNEL_MANAGER	CHFL_OWNER	/**< Set when creating channel or using 
 					 * Apass 
 					 */
-#define CHFL_USER_PARTING       0x20000 /**< User is already parting that 
+#define CHFL_USER_PARTING       0x200000 /**< User is already parting that 
 					 * channel 
 					 */
-#define CHFL_DELAYED            0x40000 /**< User's join message is delayed */
+#define CHFL_DELAYED            0x400000 /**< User's join message is delayed */
 
-#define CHFL_OVERLAP         (CHFL_CHANOP | CHFL_VOICE)
+#define CHFL_BURST_ALREADY_ADMIN	0x800000  /**< In oob BURST, but was already 
+					 * joined and admin 
+					 */
+#define CHFL_BURST_ALREADY_HALFOP	0x1000000  /**< In oob BURST, but was already
+					 * joined and halfop 
+					 */
+#define CHFL_BURST_ALREADY_SERVICE	0x2000000  /**< In oob BURST, but was already
+					 * joined and service 
+					 */
+#define CHFL_BURST_ALREADY_OWNER	0x4000000  /**< In oob BURST, but was already
+					 * joined and owner 
+					 */
+
+#define CHFL_OVERLAP         (CHFL_CHANSERVICE | CHFL_OWNER | CHFL_ADMIN | CHFL_CHANOP | CHFL_HALFOP | CHFL_VOICE)
 #define CHFL_BANVALIDMASK    (CHFL_BANVALID | CHFL_BANNED)
-#define CHFL_VOICED_OR_OPPED (CHFL_CHANOP | CHFL_VOICE)
+#define CHFL_VOICED_OR_OPPED (CHFL_CHANSERVICE | CHFL_OWNER | CHFL_ADMIN | CHFL_CHANOP | CHFL_HALFOP | CHFL_VOICE)
 
-/* Channel Visibility macros */
+/* Präfixe für die Anzeige */
+#define PREFIX_CHANSERVICE '!'
+#define PREFIX_OWNER       '~'
+#define PREFIX_ADMIN       '&'
+#define PREFIX_CHANOP      '@'
+#define PREFIX_HALFOP      '%'
+#define PREFIX_VOICE       '+'
+
+/* Hierarchie: S > q > a > o > h > v */
+#define STATUS_HIERARCHY (CHFL_CHANSERVICE | CHFL_OWNER | CHFL_ADMIN | CHFL_CHANOP | CHFL_HALFOP | CHFL_VOICE)
+
+/** Channel visibility macros */
 
 #define MODE_CHANOP     CHFL_CHANOP	/**< +o Chanop */
 #define MODE_VOICE      CHFL_VOICE	/**< +v Voice */
+#define MODE_HALFOP    CHFL_HALFOP	/**< +h Halfop */
+#define MODE_OWNER      CHFL_OWNER	/**< +q Owner */
+#define MODE_ADMIN      CHFL_ADMIN	/**< +a Admin */
+#define MODE_CHANSERVICE CHFL_CHANSERVICE /**< +S ChanService */
 #define MODE_PRIVATE    0x0004		/**< +p Private */
 #define MODE_SECRET     0x0008		/**< +s Secret */
 #define MODE_MODERATED  0x0010		/**< +m Moderated */
@@ -119,14 +157,19 @@ struct Client;
 #define MODE_MODERATENOREG 0x2000000    /**< +M Moderate unauthed users */
 #define MODE_TLSONLY       0x4000000    /**< +Z TLS users only */
 
+#define MODE_BANEXCEPTION 0x8000000 /**< +e Ban exception */
+#define MODE_ANTIJOINFLOOD 0x10000000  /**< +j Anti-Join-Flood mode */
+#define MODE_LINK      0x20000000  /**< +L LINK Mode */
+
+
 /** mode flags which take another parameter (With PARAmeterS)
  */
-#define MODE_WPARAS     (MODE_CHANOP|MODE_VOICE|MODE_BAN|MODE_KEY|MODE_LIMIT|MODE_APASS|MODE_UPASS)
+#define MODE_WPARAS     (MODE_CHANSERVICE|MODE_OWNER|MODE_ADMIN|MODE_CHANOP|MODE_HALFOP|MODE_VOICE|MODE_BAN|MODE_BANEXCEPTION|MODE_ANTIJOINFLOOD|MODE_KEY|MODE_LIMIT|MODE_APASS|MODE_UPASS|MODE_LINK)
 
 /** Available Channel modes */
-#define infochanmodes feature_bool(FEAT_OPLEVELS) ? "AbiklmnopstUvrDcCNuMT" : "biklmnopstvrDcCNuMT"
+#define infochanmodes feature_bool(FEAT_OPLEVELS) ? "AbeijklmnopstUvrDcCNuMTqSahL" : "beijklmnopstvrDcCNuMTqSahL"
 /** Available Channel modes that take parameters */
-#define infochanmodeswithparams feature_bool(FEAT_OPLEVELS) ? "AbkloUv" : "bklov"
+#define infochanmodeswithparams feature_bool(FEAT_OPLEVELS) ? "AbejkloUvqSahL" : "bekjlovqSahL"
 
 #define HoldChannel(x)          (!(x))
 /** name invisible */
@@ -140,7 +183,8 @@ struct Client;
 
 #define IsGlobalChannel(name)   (*(name) == '#')
 #define IsLocalChannel(name)    (*(name) == '&')
-#define IsChannelName(name)     (IsGlobalChannel(name) || IsLocalChannel(name))
+#define IsNetworkChannel(name) (*(name) == '!')
+#define IsChannelName(name) (IsGlobalChannel(name) || IsLocalChannel(name) || IsNetworkChannel(name))
 
 typedef enum ChannelGetType {
   CGT_NO_CREATE,
@@ -214,6 +258,10 @@ struct Membership {
 #define IsChanOp(x)         ((x)->status & CHFL_CHANOP)
 #define OpLevel(x)          ((x)->oplevel)
 #define HasVoice(x)         ((x)->status & CHFL_VOICE)
+#define IsChanService(x)   ((x)->status & CHFL_CHANSERVICE)
+#define IsOwner(x)         ((x)->status & CHFL_OWNER)
+#define IsAdmin(x)         ((x)->status & CHFL_ADMIN)
+#define IsHalfOp(x)        ((x)->status & CHFL_HALFOP)
 #define IsServOpOk(x)       ((x)->status & CHFL_SERVOPOK)
 #define IsBurstJoined(x)    ((x)->status & CHFL_BURST_JOINED)
 #define IsVoicedOrOpped(x)  ((x)->status & CHFL_VOICED_OR_OPPED)
@@ -246,6 +294,7 @@ struct Mode {
   char key[KEYLEN + 1];
   char upass[KEYLEN + 1];
   char apass[KEYLEN + 1];
+  char linktarget[CHANNELLEN + 1];
 };
 
 #define BAN_IPMASK         0x0001  /**< ban mask is an IP-number mask */
@@ -277,9 +326,14 @@ struct Channel {
   time_t             creationtime; /**< Creation time of this channel */
   time_t             topic_time;   /**< Modification time of the topic */
   unsigned int       users;	   /**< Number of clients on this channel */
+  int joinflood_count;      /**< Number of joins in the current time window */
+  time_t joinflood_time;    /**< Timestamp of the first join in the window */
+  int joinflood_limit;      /**< Maximum allowed joins in the window */
+  int joinflood_period;     /**< Time window in seconds for join flood */
   struct Membership* members;	   /**< Pointer to the clients on this channel*/
   struct SLink*      invites;	   /**< List of invites on this channel */
   struct Ban*        banlist;      /**< List of bans on this channel */
+  struct Ban* ban_exceptions; /**< List of exceptions on this channel */
   struct Mode        mode;	   /**< This channels mode */
   char               topic[TOPICLEN + 1]; /**< Channels topic */
   char               topic_nick[NICKLEN + 1]; /**< Nick of the person who set
@@ -364,6 +418,15 @@ struct JoinBuf {
 extern struct Channel* GlobalChannelList;
 extern int             LocalChanOperMode;
 
+struct ChannelRenameEntry {
+	char oldname[CHANNELLEN + 1];
+	char newname[CHANNELLEN + 1];
+	time_t renametime;
+	struct ChannelRenameEntry* next;
+};
+
+extern struct ChannelRenameEntry* GlobalChannelRenameList;
+
 /*
  * Proto types
  */
@@ -391,8 +454,13 @@ extern struct Client* find_chasing(struct Client* sptr, const char* user, int* c
 void add_invite(struct Client *cptr, struct Channel *chptr);
 int number_of_zombies(struct Channel *chptr);
 
+extern int has_channel_permission(struct Membership* setter, struct Membership* target, unsigned int required_flag);
+
 extern const char* find_no_nickchange_channel(struct Client* cptr);
 extern struct Membership* find_channel_member(struct Client* cptr, struct Channel* chptr);
+extern int is_privileged_member(struct Membership* member);
+extern int is_privileged_user(struct Client* cptr, struct Channel* chptr);
+
 extern int member_can_send_to_channel(struct Membership* member, int reveal);
 extern int client_can_send_to_channel(struct Client *cptr, struct Channel *chptr, int reveal);
 
@@ -408,6 +476,7 @@ extern int has_voice(struct Client *cptr, struct Channel *chptr);
    this function can't make any assumptions that it has a channel
 */
 extern int IsInvited(struct Client* cptr, const void* chptr);
+extern int is_ban_exception(struct Channel* chptr, struct Client* sptr);
 extern void send_channel_modes(struct Client *cptr, struct Channel *chptr);
 extern char *pretty_mask(char *mask);
 extern void del_invite(struct Client *cptr, struct Channel *chptr);
@@ -453,8 +522,14 @@ extern void joinbuf_init(struct JoinBuf *jbuf, struct Client *source,
 extern void joinbuf_join(struct JoinBuf *jbuf, struct Channel *chan,
 			 unsigned int flags);
 extern int joinbuf_flush(struct JoinBuf *jbuf);
+extern void create_network_channel(const char* base_name, char* out_name, size_t out_size);
+extern void add_channel_rename(const char* oldname, const char* newname);
+extern void remove_reverse_rename(const char* newname);
+extern const char* get_renamed_channel(const char* oldname);
+extern const char* get_original_channel(const char* newname);
+extern void get_network_channel_list(const char* visible_name, char* out_list, size_t out_size);
 extern struct Ban *make_ban(const char *banstr);
-extern struct Ban *find_ban(struct Client *cptr, struct Ban *banlist);
+extern struct Ban *find_ban(struct Client *cptr, struct Ban *banlist, struct Ban *exceptionlist);
 extern int apply_ban(struct Ban **banlist, struct Ban *newban, int free);
 extern void free_ban(struct Ban *ban);
 

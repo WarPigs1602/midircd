@@ -29,6 +29,18 @@ extern struct SLink *opsarray[];
 
 extern void send_buffer(struct Client* to, struct MsgBuf* buf, int prio);
 
+// IRCv3 standard reply with pattern support
+extern void send_standard_reply(struct Client* from, struct Client* to, const char* reply_type, const char* reply_code, const char* target_nick, const char* pattern, ...);
+
+// IRCv3 FAIL reply with pattern support
+extern void send_fail_reply(struct Client* from, struct Client* to, const char* reply_code, const char* target_nick, const char* pattern, ...);
+
+// IRCv3 WARN reply with pattern support
+extern void send_warn_reply(struct Client* from, struct Client* to, const char* reply_code, const char* target_nick, const char* pattern, ...);
+
+// IRCv3 NOTE reply with pattern support
+extern void send_note_reply(struct Client* from, struct Client* to, const char* reply_code, const char* target_nick, const char* pattern, ...);
+
 extern void kill_highest_sendq(int servers_too);
 extern void flush_connections(struct Client* cptr);
 extern void send_queued(struct Client *to);

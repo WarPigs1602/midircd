@@ -289,6 +289,10 @@ struct Client {
   char cli_name[HOSTLEN + 1];     /**< Unique name of the client, nick or host */
   char cli_username[USERLEN + 1]; /**< Username determined by ident lookup */
   char cli_info[REALLEN + 1];     /**< Free form additional client information */
+  int sasl_in_progress;  
+  int is_sasl_authenticated; /**< Is the client authenticated via SASL? */
+  char sasl_mechanism[32]; /**< SASL mechanism in use */
+  char sasl_buffer[512]; /**< Buffer for SASL data */
 };
 
 /** Magic constant to identify valid Client structures. */

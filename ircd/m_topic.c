@@ -133,8 +133,15 @@ int m_topic(struct Client* cptr, struct Client* sptr, int parc, char* parv[])
 		   chptr->topic_time);
       }
     }
-    else if ((chptr->mode.mode & MODE_TOPICLIMIT) && !is_chan_op(sptr, chptr))
-      send_reply(sptr, ERR_CHANOPRIVSNEEDED, chptr->chname);
+    else if ((chptr->mode.mode & MODE_TOPICLIMIT)) {
+        struct Membership* member = find_member_link(chptr, sptr);
+        if (!has_channel_permission(member, NULL, CHFL_HALFOP))
+            send_reply(sptr, ERR_CHANOPRIVSNEEDED, chptr->chname);
+        else if (!client_can_send_to_channel(sptr, chptr, 1))
+            send_reply(sptr, ERR_CANNOTSENDTOCHAN, chptr->chname);
+        else
+            do_settopic(sptr, cptr, chptr, topic, 0);
+    }
     else if (!client_can_send_to_channel(sptr, chptr, 1))
       send_reply(sptr, ERR_CANNOTSENDTOCHAN, chptr->chname);
     else

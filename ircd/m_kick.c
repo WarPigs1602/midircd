@@ -124,11 +124,18 @@ int m_kick(struct Client *cptr, struct Client *sptr, int parc, char *parv[])
     return send_reply(sptr, ERR_NOSUCHCHANNEL, name);
 
   if (!(member2 = find_member_link(chptr, sptr)) || IsZombie(member2)
-      || !IsChanOp(member2))
+      || !has_channel_permission(member2, NULL, CHFL_CHANOP))
     return send_reply(sptr, ERR_CHANOPRIVSNEEDED, name);
 
   if (!(who = find_chasing(sptr, parv[2], 0)))
     return 0; /* find_chasing sends the reply for us */
+
+  if (!(member = find_member_link(chptr, who)) || IsZombie(member))
+    return send_reply(sptr, ERR_USERNOTINCHANNEL, cli_name(who), chptr->chname);
+
+  // Neue Hierarchie-Prüfung: Darf der Ausführende das Ziel kicken?
+  if (!has_channel_permission(member2, member, CHFL_CHANOP))
+    return send_reply(sptr, ERR_CHANOPRIVSNEEDED, name);
 
   /* Don't allow the channel service to be kicked */
   /*

@@ -1,107 +1,163 @@
-# midircd - The midiandmore IRC Daemon
+# midircd � Modern IRC Server (based on ircu, forked from snircd)
 
-**midircd** is a modern, feature-rich IRC (Internet Relay Chat) daemon based on QuakeNet's snircd and inspired by Undernet's ircu. It provides a robust platform for running IRC networks, supporting classic and contemporary IRC protocols and features.
+**midircd** is a modern IRC server based on Undernet's ircu and directly forked from snircd. It extends snircd with additional IRCv3 features, improved channel/user modes, and many enhancements for advanced IRC networks.
 
----
-
-## Features
-
-- **Comprehensive IRC Protocol Support**
-  - Implements standard IRC client/server and server/server communication.
-  - Supports Undernet P10 and QuakeNet protocol extensions.
-  - Fully compatible with modern IRC clients.
-
-- **Advanced User and Channel Management**
-  - Registration, nickname handling, channel creation, and operator privileges.
-  - Supports "string channels" (channels starting with '+') with ownership and advanced /mode command support.
-
-- **Network Linking**
-  - Link multiple servers to form resilient IRC networks.
-  - Handles server registration, authentication, and synchronization with timestamp-based conflict resolution.
-  - Automatic protocol version detection for seamless upgrades and backwards compatibility.
-
-- **Extensible and Configurable**
-  - Modular configuration via `config.h` and runtime options.
-  - Feature toggling and custom behaviors through source-level and config changes.
-
-- **Performance and Efficiency**
-  - Optimized memory usage and speed.
-  - Includes a custom database primitives library (`libs/dbprim`) for efficient in-memory management using linked lists, hash tables, and sparse matrices.
-
-- **Protocol Extensions**
-  - WHOX: Extended WHO information.
-  - USERIP: IP-based banning and management.
-  - RPL_ISUPPORT: Announces server features to clients for advanced script compatibility.
-
-- **Test Suite**
-  - Perl-based automated tests for protocol and feature verification.
-
-- **Rich Documentation**
-  - Protocol and server documentation in `doc/` (notably `doc/p10.html` and `doc/features.txt`).
-  - Historical notes, changelogs, and feature overviews.
+> **Note:** midircd is a continuation and further development of the snircd project, inheriting all its features and improvements.
 
 ---
 
-## Getting Started
+## Key Features
 
-### Building
+- **Configurable Features System:**  
+  All server features can be enabled/disabled at runtime or via configuration using the feature system (see `include/ircd_features.h` and F-lines).
 
-1. **Edit Configuration:**
-   - Adjust `include/config.h` to match your requirements.
-   - Be cautious not to override protected lines unless you know what you are doing.
+- **Advanced Channel Modes:**  
+  - +c: Block mIRC/ANSI color codes  
+  - +C: Block CTCPs  
+  - +N: Block channel notices  
+  - +M: Only authenticated users may speak  
+  - +T: Block multi-target messages  
+  - +D/+d: Delayed join (invisible until activity)  
+  - +u: Hide quit/part messages  
+  - +j: Anti-join-flood  
+  - +L: Channel link  
+  - +e: Ban exception  
+  - +Z: TLS-only channels
 
-2. **Compile:**
-   - Use the provided Makefiles (typically `make` from the project root).
+- **Extended User and Oper Modes:**  
+  - +X: Oper override for channel restrictions  
+  - +k: Network service protection (no kicks/deops/kills)  
+  - +n: Hide channels in /whois  
+  - +I: Hide idle time  
+  - +R: Only accept messages from authenticated users
 
-3. **Install and Run:**
-   - Start the server:  
-     ```
-     ./ircd/ircd -f <path-to-config>
-     ```
-   - Link to other IRC servers as needed.
+- **IRCv3 Support:**  
+  - Capabilities: SASL, account-notify, away-notify, chghost, echomessage, extjoin, invite-notify, message-tags, standard-replies, channel-rename  
+  - Full SASL authentication with service forwarding (see `ircd/m_sasl.c`)
 
-### Testing
+- **Sethost:**  
+  Opers and authorized users can change their hostname (spoofing), with fine-grained control via S: and F: lines.
 
-- Use the test framework under `tests/`:
-  - Requires Perl modules: `POE`, `POE::Component::IRC` (installable from CPAN).
-  - See `tests/readme.txt` for details.
+- **Automatic Channel Modes:**  
+  New channels receive default modes (e.g., "ntCN"), configurable via `AUTOCHANMODES` and `AUTOCHANMODES_LIST`.
+
+- **Enhanced /check and /stats Commands:**  
+  Detailed information about channels, users, and servers.
+
+- **MOTD Management:**  
+  Multiple MOTDs supported, selected by hostmask, IP, or class. Caching and dynamic reload (`motd.c`).
+
+- **Anti-Abuse Mechanisms:**  
+  - Nick/host/IP abuse protection  
+  - G-lines (global bans) also on nick basis  
+  - Automatic +i (invisible) for new users  
+  - Channel join limits per user/IP
+
+- **HEAD_IN_SAND Features:**  
+  Granular control over visibility and accessibility of server information and statistics.
 
 ---
 
-## Architecture
+## Channel Privileges and Hierarchy
 
-- **Core Daemon (`ircd/`)**: Handles all protocol logic, client/server networking, and IRC state management.
-- **Database Primitives (`libs/dbprim/`)**: Custom data structures for performance and scalability.
-- **Documentation (`doc/`)**: Protocol specs, feature lists, manuals, and historical background.
+midircd supports a fine-grained privilege system for channel users. The following channel user modes and their hierarchy are available:
+
+| Mode | Prefix | Name         | Description                                                                 |
+|------|--------|--------------|-----------------------------------------------------------------------------|
+| +S   | !      | ChanService  | Channel service bot, highest privilege, can override all restrictions        |
+| +q   | ~      | Owner        | Channel owner, can set all lower modes and manage the channel                |
+| +a   | &      | Admin        | Channel admin, can set most lower modes and manage the channel               |
+| +o   | @      | Operator     | Channel operator, can manage users and moderate the channel                  |
+| +h   | %      | Half-Op      | Half-operator, limited moderation rights (cannot set higher modes)           |
+| +v   | +      | Voice        | Voiced user, can speak in moderated (+m) channels                            |
+
+**Hierarchy:**  
+`ChanService` > `Owner` > `Admin` > `Operator` > `Half-Op` > `Voice` > normal user
+
+- Only users with a higher privilege can set or remove modes for users with lower privileges.
+- Half-ops cannot set or remove operator/admin/owner modes.
+- Channel service bots (+S) can override all restrictions.
+- The privilege system is enforced for all mode changes, kicks, and other moderation actions.
 
 ---
 
-## Licensing
+## Channel Types
 
-- **Main Project**: GNU General Public License (GPL).
-- **Library Components**: GNU Library General Public License (LGPL).
-- See COPYING files for full terms.
+midircd supports several channel types, each with specific characteristics and use-cases:
+
+| Prefix | Example         | Description                                                                 |
+|--------|----------------|-----------------------------------------------------------------------------|
+| #      | #channel       | **Global Channel:** Standard, network-wide channels visible to all users.   |
+| &      | &local         | **Local Channel:** Only exists on the local server, not visible network-wide.|
+| !      | !IDchannel     | **Network Channel:** Channels with a unique network ID for collision prevention and advanced features (e.g., channel renaming, linking).|
+| +      | +channel       | **Modeless Channel:** Channels without channel modes or ops, open for all.  |
+
+- **Global Channels (`#`)**: The most common type, used for public or private group chats across the network.
+- **Local Channels (`&`)**: Useful for server-specific discussions or admin channels.
+- **Network Channels (`!`)**: Used for advanced features like channel renaming, linking, and preventing channel takeovers.
+- **Modeless Channels (`+`)**: No channel operators or modes; everyone can join and speak freely.
+
+For more details on channel types and their behavior, see the documentation and `include/channel.h`.
+
+---
+
+## Major Enhancements
+
+- **IRCv3 Capabilities:**  
+  SASL, account-notify, message-tags, channel-rename, standard-replies, and more.
+
+- **SASL Authentication:**  
+  SASL commands are forwarded to a configurable service (`FEAT_SASL_SERVICE_NAMES`), with fallback to iauthd if unavailable.
+
+- **Extended Channel and User Modes:**  
+  +M, +T, +u, +D/+d, +j, +L, +e, +Z, +R, +X, +I, +n, +k
+
+- **/check Command:**  
+  Shows status and details for channels, users, and servers.
+
+- **Sethost Improvements:**  
+  Automatic application, password protection, freeform hostnames for opers.
+
+- **Automatic Channel Modes:**  
+  New channels get default modes automatically.
+
+- **Enhanced Statistics and Debugging:**  
+  /stats commands show more details, including memory and feature reporting.
+
+- **Anti-Abuse:**  
+  Improved G-line and USERIP mechanisms, protection against channel and nick abuse.
+
+- **MOTD Improvements:**  
+  Multiple MOTDs, selection by hostmask/IP/class, caching.
+
+---
+
+## Configuration
+
+Most options are set via F-lines in the configuration or at runtime using the feature system.  
+See `doc/readme.features` and `doc/readme.snircd` (applies to midircd) for examples and details.
+
+---
+
+## Further Documentation
+
+- `doc/readme.snircd` � Detailed feature descriptions and changelog (applies to midircd)
+- `doc/readme.features` � Overview of all configurable features
+- `doc/readme.iauth` � iauth protocol documentation
 
 ---
 
 ## Contributors
 
-See `doc/AUTHORS` for a full list of contributors and acknowledgements.
+See the "contributors" section in `doc/readme.snircd`.
 
 ---
 
-## Further Reading
+## License
 
-- Protocol specification: `doc/p10.html`
-- Features: `doc/features.txt`
-- History and changelog: `doc/history/README-2.6`, `doc/history/overview.u2.9`
+GNU General Public License v2 or later.
 
 ---
 
-## Contact
-
-Bug reports and suggestions are welcome! Please see the AUTHORS file or open an issue on GitHub.
-
----
-
-**midircd** continues the development tradition of QuakeNet and Undernet, bringing modern enhancements and reliability to IRC networking.
+**Note:**  
+This README summarizes the most important features and enhancements. For details on individual features and configuration, please consult the referenced documentation.

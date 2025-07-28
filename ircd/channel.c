@@ -17,10 +17,10 @@
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
  */
-/** @file
- * @brief Channel management and maintenance
- * @version $Id: channel.c,v 1.155.2.18 2007/08/15 02:49:54 entrope Exp $
- */
+ /** @file
+  * @brief Channel management and maintenance
+  * @version $Id: channel.c,v 1.155.2.18 2007/08/15 02:49:54 entrope Exp $
+  */
 #include "config.h"
 
 #include "channel.h"
@@ -53,12 +53,13 @@
 #include "sys.h"
 #include "whowas.h"
 
-/* #include <assert.h> -- Now using assert in ircd_log.h */
+  /* #include <assert.h> -- Now using assert in ircd_log.h */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
-/** Linked list containing the full list of all channels */
+  /** Linked list containing the full list of all channels */
 struct Channel* GlobalChannelList = 0;
 
 /** Number of struct Membership*'s allocated */
@@ -72,18 +73,79 @@ static size_t bans_alloc;
 /** Number of ban structures in use. */
 static size_t bans_inuse;
 
+struct ChannelRenameEntry* GlobalChannelRenameList = NULL;
+
+void add_channel_rename(const char* oldname, const char* newname) {
+	struct ChannelRenameEntry* entry = (struct ChannelRenameEntry*)MyMalloc(sizeof(struct ChannelRenameEntry));
+	ircd_strncpy(entry->oldname, oldname, CHANNELLEN);
+	ircd_strncpy(entry->newname, newname, CHANNELLEN);
+	entry->renametime = TStime();
+	entry->next = GlobalChannelRenameList;
+	GlobalChannelRenameList = entry;
+}
+
+void remove_reverse_rename(const char* newname) {
+	struct ChannelRenameEntry* entry = GlobalChannelRenameList;
+	struct ChannelRenameEntry* prev = NULL;
+	while (entry) {
+		if (!ircd_strcmp(entry->oldname, newname)) {
+			// Entferne diesen Eintrag
+			if (prev)
+				prev->next = entry->next;
+			else
+				GlobalChannelRenameList = entry->next;
+			struct ChannelRenameEntry* tmp = entry;
+			entry = entry->next;
+			MyFree(tmp);
+			continue;
+		}
+		prev = entry;
+		entry = entry->next;
+	}
+}
+
+const char* get_renamed_channel(const char* oldname) {
+    const char* current = oldname;
+    int max_depth = 16; // Schutz vor Endlosschleifen
+    while (max_depth-- > 0) {
+        struct ChannelRenameEntry* entry = GlobalChannelRenameList;
+        int found = 0;
+        while (entry) {
+            if (!ircd_strcmp(entry->oldname, current)) {
+                current = entry->newname;
+                found = 1;
+                break;
+            }
+            entry = entry->next;
+        }
+        if (!found) break;
+    }
+    // Nur zurückgeben, wenn tatsächlich ein Rename stattfand
+    return (ircd_strcmp(oldname, current) != 0) ? current : NULL;
+}
+
+const char* get_original_channel(const char* newname) {
+	struct ChannelRenameEntry* entry = GlobalChannelRenameList;
+	while (entry) {
+		if (!ircd_strcmp(entry->newname, newname))
+			return entry->oldname;
+		entry = entry->next;
+	}
+	return NULL;
+}
+
 #if !defined(NDEBUG)
 /** return the length (>=0) of a chain of links.
  * @param lp	pointer to the start of the linked list
  * @return the number of items in the list
  */
-static int list_length(struct SLink *lp)
+static int list_length(struct SLink* lp)
 {
-  int count = 0;
+	int count = 0;
 
-  for (; lp; lp = lp->next)
-    ++count;
-  return count;
+	for (; lp; lp = lp->next)
+		++count;
+	return count;
 }
 #endif
 
@@ -92,63 +154,144 @@ static int list_length(struct SLink *lp)
  * @param[in] banstr Mask to ban.
  */
 static void
-set_ban_mask(struct Ban *ban, const char *banstr)
+set_ban_mask(struct Ban* ban, const char* banstr)
 {
-  char *sep;
-  assert(banstr != NULL);
-  ircd_strncpy(ban->banstr, banstr, sizeof(ban->banstr) - 1);
-  sep = strrchr(banstr, '@');
-  if (sep) {
-    ban->nu_len = sep - banstr;
-    if (ipmask_parse(sep + 1, &ban->address, &ban->addrbits))
-      ban->flags |= BAN_IPMASK;
-  }
+	char* sep;
+	assert(banstr != NULL);
+	ircd_strncpy(ban->banstr, banstr, sizeof(ban->banstr) - 1);
+	sep = strrchr(banstr, '@');
+	if (sep) {
+		ban->nu_len = sep - banstr;
+		if (ipmask_parse(sep + 1, &ban->address, &ban->addrbits))
+			ban->flags |= BAN_IPMASK;
+	}
+}
+
+/**
+ * Returns the visible channel name (without the network ID).
+ * For example: "!abcdeTest" -> "Test"
+ */
+static const char* extract_network_channel_name(const char* chname) {
+	if (!chname)
+		return "";
+	if (chname[0] == '!')
+		return chname + 1 + NETWORK_ID_LEN; // skip '!' and 5 chars ID
+	return chname;
+}
+
+/**
+ * Generates a random network channel ID of length NETWORK_ID_LEN.
+ */
+static void generate_channel_id(char* buf, size_t len) {
+	const char charset[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+	// Seed the random number generator with current time (only once per process)
+	static int seeded = 0;
+	if (!seeded) {
+		srand((unsigned int)time(NULL));
+		seeded = 1;
+	}
+	for (size_t i = 0; i < len; i++)
+		buf[i] = charset[rand() % (sizeof(charset) - 1)];
+	buf[len] = '\0';
+}
+
+// Returns a comma-separated list of all network channels with the same visible name
+void get_network_channel_list(const char* visible_name, char* out_list, size_t out_size) {
+	struct Channel* chptr = GlobalChannelList;
+	size_t used = 0;
+	out_list[0] = '\0';
+	while (chptr) {
+		if (IsNetworkChannel(chptr->chname) &&
+			strcmp(chptr->chname + 1 + NETWORK_ID_LEN, visible_name) == 0) {
+			size_t len = strlen(chptr->chname);
+			if (used + len + 2 < out_size) { // +2 for comma and null terminator
+				if (used > 0) {
+					out_list[used++] = ',';
+				}
+				strcpy(out_list + used, chptr->chname);
+				used += len;
+			}
+		}
+		chptr = chptr->next;
+	}
+	out_list[used] = '\0';
+}
+
+/**
+ * Finds or creates a network channel with a unique ID.
+ * If a channel with the same visible name exists, returns its full name.
+ * Otherwise, creates a new name with a random ID and returns it.
+ *
+ * @param base_name The visible channel name (without '!' and ID)
+ * @param out_name Buffer to store the full channel name (!IDbase_name)
+ * @param out_size Size of the buffer
+ */
+void create_network_channel(const char* base_name, char* out_name, size_t out_size) {
+	// Remove leading '!' from base_name if present
+	const char* clean_name = base_name;
+	if (clean_name[0] == '!')
+		clean_name++;
+
+	struct Channel* chptr = GlobalChannelList;
+	while (chptr) {
+		if (IsNetworkChannel(chptr->chname) &&
+			strcmp(extract_network_channel_name(chptr->chname), clean_name) == 0) {
+			// Channel exists, return its full name (with ID)
+			snprintf(out_name, out_size, "%s", chptr->chname);
+			return;
+		}
+		chptr = chptr->next;
+	}
+	// Channel does not exist, generate a new name with random ID
+	char id[NETWORK_ID_LEN + 1];
+	generate_channel_id(id, NETWORK_ID_LEN);
+	snprintf(out_name, out_size, "!%s%s", id, clean_name);
 }
 
 /** Allocate a new Ban structure.
  * @param[in] banstr Ban mask to use.
  * @return Newly allocated ban.
  */
-struct Ban *
-make_ban(const char *banstr)
+struct Ban*
+	make_ban(const char* banstr)
 {
-  struct Ban *ban;
-  if (free_bans) {
-    ban = free_bans;
-    free_bans = free_bans->next;
-  }
-  else if (!(ban = MyMalloc(sizeof(*ban))))
-    return NULL;
-  else
-    bans_alloc++;
-  bans_inuse++;
-  memset(ban, 0, sizeof(*ban));
-  set_ban_mask(ban, banstr);
-  return ban;
+	struct Ban* ban;
+	if (free_bans) {
+		ban = free_bans;
+		free_bans = free_bans->next;
+	}
+	else if (!(ban = MyMalloc(sizeof(*ban))))
+		return NULL;
+	else
+		bans_alloc++;
+	bans_inuse++;
+	memset(ban, 0, sizeof(*ban));
+	set_ban_mask(ban, banstr);
+	return ban;
 }
 
 /** Deallocate a ban structure.
  * @param[in] ban Ban to deallocate.
  */
 void
-free_ban(struct Ban *ban)
+free_ban(struct Ban* ban)
 {
-  ban->next = free_bans;
-  free_bans = ban;
-  bans_inuse--;
+	ban->next = free_bans;
+	free_bans = ban;
+	bans_inuse--;
 }
 
 /** Report ban usage to \a cptr.
  * @param[in] cptr Client requesting information.
  */
-void bans_send_meminfo(struct Client *cptr)
+void bans_send_meminfo(struct Client* cptr)
 {
-  struct Ban *ban;
-  size_t num_free;
-  for (num_free = 0, ban = free_bans; ban; ban = ban->next)
-    num_free++;
-  send_reply(cptr, SND_EXPLICIT | RPL_STATSDEBUG, ":Bans: inuse %zu(%zu) free %zu alloc %zu",
-	     bans_inuse, bans_inuse * sizeof(*ban), num_free, bans_alloc);
+	struct Ban* ban;
+	size_t num_free;
+	for (num_free = 0, ban = free_bans; ban; ban = ban->next)
+		num_free++;
+	send_reply(cptr, SND_EXPLICIT | RPL_STATSDEBUG, ":Bans: inuse %zu(%zu) free %zu alloc %zu",
+		bans_inuse, bans_inuse * sizeof(*ban), num_free, bans_alloc);
 }
 
 /** return the struct Membership* that represents a client on a channel
@@ -160,52 +303,52 @@ void bans_send_meminfo(struct Client *cptr)
  * @param chptr	pointer to the channel struct
  * @param cptr pointer to the client struct
  *
- * @returns pointer to the struct Membership representing this client on 
+ * @returns pointer to the struct Membership representing this client on
  *          this channel.  Returns NULL if the client is not on the channel.
  *          Returns NULL if the client is actually a server.
  * @see find_channel_member()
  */
 struct Membership* find_member_link(struct Channel* chptr, const struct Client* cptr)
 {
-  struct Membership *m;
-  assert(0 != cptr);
-  assert(0 != chptr);
-  
-  /* Servers don't have member links */
-  if (IsServer(cptr)||IsMe(cptr))
-     return 0;
-  
-  /* +k users are typically on a LOT of channels.  So we iterate over who
-   * is in the channel.  X/W are +k and are in about 5800 channels each.
-   * however there are typically no more than 1000 people in a channel
-   * at a time.
-   */
-  if (IsChannelService(cptr)) {
-    m = chptr->members;
-    while (m) {
-      assert(m->channel == chptr);
-      if (m->user == cptr)
-        return m;
-      m = m->next_member;
-    }
-  }
-  /* Users on the other hand aren't allowed on more than 15 channels.  50%
-   * of users that are on channels are on 2 or less, 95% are on 7 or less,
-   * and 99% are on 10 or less.
-   */
-  else {
-   m = (cli_user(cptr))->channel;
-   while (m) {
-     assert(m->user == cptr);
-     if (m->channel == chptr)
-       return m;
-     m = m->next_channel;
-   }
-  }
-  return 0;
+	struct Membership* m;
+	assert(0 != cptr);
+	assert(0 != chptr);
+
+	/* Servers don't have member links */
+	if (IsServer(cptr) || IsMe(cptr))
+		return 0;
+
+	/* +k users are typically on a LOT of channels.  So we iterate over who
+	 * is in the channel.  X/W are +k and are in about 5800 channels each.
+	 * however there are typically no more than 1000 people in a channel
+	 * at a time.
+	 */
+	if (IsChannelService(cptr)) {
+		m = chptr->members;
+		while (m) {
+			assert(m->channel == chptr);
+			if (m->user == cptr)
+				return m;
+			m = m->next_member;
+		}
+	}
+	/* Users on the other hand aren't allowed on more than 15 channels.  50%
+	 * of users that are on channels are on 2 or less, 95% are on 7 or less,
+	 * and 99% are on 10 or less.
+	 */
+	else {
+		m = (cli_user(cptr))->channel;
+		while (m) {
+			assert(m->user == cptr);
+			if (m->channel == chptr)
+				return m;
+			m = m->next_channel;
+		}
+	}
+	return 0;
 }
 
-/** Find the client structure for a nick name (user) 
+/** Find the client structure for a nick name (user)
  * Find the client structure for a nick name (user)
  * using history mechanism if necessary. If the client is not found, an error
  * message (NO SUCH NICK) is generated. If the client was found
@@ -216,30 +359,30 @@ struct Membership* find_member_link(struct Channel* chptr, const struct Client* 
  *
  * @param sptr	Pointer to the client that has requested the search
  * @param user	a string representing the client to be found
- * @param chasing a variable set to 0 if the user was found directly, 
+ * @param chasing a variable set to 0 if the user was found directly,
  * 		1 otherwise
  * @returns a pointer the client, or NULL if the client wasn't found.
  */
 struct Client* find_chasing(struct Client* sptr, const char* user, int* chasing)
 {
-  struct Client* who = FindClient(user);
+	struct Client* who = FindClient(user);
 
-  if (chasing)
-    *chasing = 0;
-  if (who)
-    return who;
+	if (chasing)
+		*chasing = 0;
+	if (who)
+		return who;
 
-  if (!(who = get_history(user, feature_int(FEAT_KILLCHASETIMELIMIT)))) {
-    send_reply(sptr, ERR_NOSUCHNICK, user);
-    return 0;
-  }
-  if (chasing)
-    *chasing = 1;
-  return who;
+	if (!(who = get_history(user, feature_int(FEAT_KILLCHASETIMELIMIT)))) {
+		send_reply(sptr, ERR_NOSUCHNICK, user);
+		return 0;
+	}
+	if (chasing)
+		*chasing = 1;
+	return who;
 }
 
 /** Decrement the count of users, and free if empty.
- * Subtract one user from channel i (and free channel * block, if channel 
+ * Subtract one user from channel i (and free channel * block, if channel
  * became empty).
  *
  * @param chptr The channel to subtract one from.
@@ -249,58 +392,58 @@ struct Client* find_chasing(struct Client* sptr, const char* user, int* chasing)
  */
 int sub1_from_channel(struct Channel* chptr)
 {
-  if (chptr->users > 1)         /* Can be 0, called for an empty channel too */
-  {
-    assert(0 != chptr->members);
-    --chptr->users;
-    return 1;
-  }
+	if (chptr->users > 1)         /* Can be 0, called for an empty channel too */
+	{
+		assert(0 != chptr->members);
+		--chptr->users;
+		return 1;
+	}
 
-  chptr->users = 0;
+	chptr->users = 0;
 
-  /*
-   * Also channels without Apass set need to be kept alive,
-   * otherwise Bad Guys(tm) would be able to takeover
-   * existing channels too easily, and then set an Apass!
-   * However, if a channel without Apass becomes empty
-   * then we try to be kind to them and remove possible
-   * limiting modes.
-   */
-  chptr->mode.mode &= ~MODE_INVITEONLY;
-  chptr->mode.limit = 0;
-  /*
-   * We do NOT reset a possible key or bans because when
-   * the 'channel owners' can't get in because of a key
-   * or ban then apparently there was a fight/takeover
-   * on the channel and we want them to contact IRC opers
-   * who then will educate them on the use of Apass/Upass.
-   */
-  if (!chptr->mode.apass[0])         		/* If no Apass, reset all modes. */
-  {
-    struct Ban *link, *next;
-    chptr->mode.mode = 0;
-    *chptr->mode.key = '\0';
-    while (chptr->invites)
-      del_invite(chptr->invites->value.cptr, chptr);
-    for (link = chptr->banlist; link; link = next) {
-      next = link->next;
-      free_ban(link);
-    }
-    chptr->banlist = NULL;
+	/*
+	 * Also channels without Apass set need to be kept alive,
+	 * otherwise Bad Guys(tm) would be able to takeover
+	 * existing channels too easily, and then set an Apass!
+	 * However, if a channel without Apass becomes empty
+	 * then we try to be kind to them and remove possible
+	 * limiting modes.
+	 */
+	chptr->mode.mode &= ~MODE_INVITEONLY;
+	chptr->mode.limit = 0;
+	/*
+	 * We do NOT reset a possible key or bans because when
+	 * the 'channel owners' can't get in because of a key
+	 * or ban then apparently there was a fight/takeover
+	 * on the channel and we want them to contact IRC opers
+	 * who then will educate them on the use of Apass/Upass.
+	 */
+	if (!chptr->mode.apass[0])         		/* If no Apass, reset all modes. */
+	{
+		struct Ban* link, * next;
+		chptr->mode.mode = 0;
+		*chptr->mode.key = '\0';
+		while (chptr->invites)
+			del_invite(chptr->invites->value.cptr, chptr);
+		for (link = chptr->banlist; link; link = next) {
+			next = link->next;
+			free_ban(link);
+		}
+		chptr->banlist = NULL;
 
-    /* Immediately destruct empty -A channels if not using apass. */
-    if (!feature_bool(FEAT_OPLEVELS))
-    {
-      destruct_channel(chptr);
-      return 0;
-    }
-  }
-  if (TStime() - chptr->creationtime < 172800)	/* Channel younger than 48 hours? */
-    schedule_destruct_event_1m(chptr);		/* Get rid of it in approximately 4-5 minutes */
-  else
-    schedule_destruct_event_48h(chptr);		/* Get rid of it in approximately 48 hours */
+		/* Immediately destruct empty -A channels if not using apass. */
+		if (!feature_bool(FEAT_OPLEVELS))
+		{
+			destruct_channel(chptr);
+			return 0;
+		}
+	}
+	if (TStime() - chptr->creationtime < 172800)	/* Channel younger than 48 hours? */
+		schedule_destruct_event_1m(chptr);		/* Get rid of it in approximately 4-5 minutes */
+	else
+		schedule_destruct_event_48h(chptr);		/* Get rid of it in approximately 48 hours */
 
-  return 0;
+	return 0;
 }
 
 /** Destroy an empty channel
@@ -315,35 +458,35 @@ int sub1_from_channel(struct Channel* chptr)
  */
 int destruct_channel(struct Channel* chptr)
 {
-  struct Ban *ban, *next;
+	struct Ban* ban, * next;
 
-  assert(0 == chptr->members);
+	assert(0 == chptr->members);
 
-  /*
-   * Now, find all invite links from channel structure
-   */
-  while (chptr->invites)
-    del_invite(chptr->invites->value.cptr, chptr);
+	/*
+	 * Now, find all invite links from channel structure
+	 */
+	while (chptr->invites)
+		del_invite(chptr->invites->value.cptr, chptr);
 
-  for (ban = chptr->banlist; ban; ban = next)
-  {
-    next = ban->next;
-    free_ban(ban);
-  }
-  if (chptr->prev)
-    chptr->prev->next = chptr->next;
-  else
-    GlobalChannelList = chptr->next;
-  if (chptr->next)
-    chptr->next->prev = chptr->prev;
-  hRemChannel(chptr);
-  --UserStats.channels;
-  /*
-   * make sure that channel actually got removed from hash table
-   */
-  assert(chptr->hnext == chptr);
-  MyFree(chptr);
-  return 0;
+	for (ban = chptr->banlist; ban; ban = next)
+	{
+		next = ban->next;
+		free_ban(ban);
+	}
+	if (chptr->prev)
+		chptr->prev->next = chptr->next;
+	else
+		GlobalChannelList = chptr->next;
+	if (chptr->next)
+		chptr->next->prev = chptr->prev;
+	hRemChannel(chptr);
+	--UserStats.channels;
+	/*
+	 * make sure that channel actually got removed from hash table
+	 */
+	assert(chptr->hnext == chptr);
+	MyFree(chptr);
+	return 0;
 }
 
 /** returns Membership * if a person is joined and not a zombie
@@ -356,11 +499,23 @@ int destruct_channel(struct Channel* chptr)
  */
 struct Membership* find_channel_member(struct Client* cptr, struct Channel* chptr)
 {
-  struct Membership* member;
-  assert(0 != chptr);
+	struct Membership* member;
+	assert(0 != chptr);
 
-  member = find_member_link(chptr, cptr);
-  return (member && !IsZombie(member)) ? member : 0;
+	member = find_member_link(chptr, cptr);
+	return (member && !IsZombie(member)) ? member : 0;
+}
+
+int is_privileged_member(struct Membership* member)
+{
+	if (!member) return 0;
+	return (member->status & (CHFL_CHANSERVICE | CHFL_OWNER | CHFL_ADMIN | CHFL_CHANOP | CHFL_HALFOP));
+}
+
+int is_privileged_user(struct Client* cptr, struct Channel* chptr)
+{
+	struct Membership* member = find_member_link(chptr, cptr);
+	return is_privileged_member(member);
 }
 
 /** Searches for a ban from a ban list that matches a user.
@@ -368,57 +523,63 @@ struct Membership* find_channel_member(struct Client* cptr, struct Channel* chpt
  * @param[in] banlist The list of bans to test.
  * @return Pointer to a matching ban, or NULL if none exit.
  */
-struct Ban *find_ban(struct Client *cptr, struct Ban *banlist)
+struct Ban* find_ban(struct Client* cptr, struct Ban* banlist, struct Ban* exceptionlist)
 {
-  char        nu[NICKLEN + USERLEN + 2];
-  char        tmphost[HOSTLEN + 1];
-  char        iphost[SOCKIPLEN + 1];
-  char       *hostmask;
-  char       *sr;
-  struct Ban *found;
+	char nu[NICKLEN + USERLEN + 2];
+	char tmphost[HOSTLEN + 1];
+	char iphost[SOCKIPLEN + 1];
+	char* hostmask;
+	char* sr;
+	struct Ban* ban;
 
-  /* Build nick!user and alternate host names. */
-  ircd_snprintf(0, nu, sizeof(nu), "%s!%s",
-                cli_name(cptr), cli_user(cptr)->username);
-  ircd_ntoa_r(iphost, &cli_ip(cptr));
-  if (!IsAccount(cptr))
-    sr = NULL;
-  else if (HasHiddenHost(cptr) || HasSetHost(cptr))
-    sr = cli_user(cptr)->realhost;
-  else
-  {
-    ircd_snprintf(0, tmphost, HOSTLEN, "%s.%s",
-                  cli_user(cptr)->account, feature_str(FEAT_HIDDEN_HOST));
-    sr = tmphost;
-  }
+	// Build nick!user and alternate host names
+	ircd_snprintf(0, nu, sizeof(nu), "%s!%s", cli_name(cptr), cli_user(cptr)->username);
+	ircd_ntoa_r(iphost, &cli_ip(cptr));
+	if (!IsAccount(cptr))
+		sr = NULL;
+	else if (HasHiddenHost(cptr) || HasSetHost(cptr))
+		sr = cli_user(cptr)->realhost;
+	else {
+		ircd_snprintf(0, tmphost, HOSTLEN, "%s.%s", cli_user(cptr)->account, feature_str(FEAT_HIDDEN_HOST));
+		sr = tmphost;
+	}
 
-  /* Walk through ban list. */
-  for (found = NULL; banlist; banlist = banlist->next) {
-    int res;
-    /* If we have found a positive ban already, only consider exceptions. */
-    if (found && !(banlist->flags & BAN_EXCEPTION))
-      continue;
-    /* Compare nick!user portion of ban. */
-    banlist->banstr[banlist->nu_len] = '\0';
-    res = match(banlist->banstr, nu);
-    banlist->banstr[banlist->nu_len] = '@';
-    if (res)
-      continue;
-    /* Compare host portion of ban. */
-    hostmask = banlist->banstr + banlist->nu_len + 1;
-    if (!((banlist->flags & BAN_IPMASK)
-         && ipmask_check(&cli_ip(cptr), &banlist->address, banlist->addrbits))
-        && match(hostmask, cli_user(cptr)->host)
-        && !(sr && !match(hostmask, sr)))
-        continue;
-    /* If an exception matches, no ban can match. */
-    if (banlist->flags & BAN_EXCEPTION)
-      return NULL;
-    /* Otherwise, remember this ban but keep searching for an exception. */
-    found = banlist;
-  }
-  return found;
+	// 1. Check exception list first
+	for (ban = exceptionlist; ban; ban = ban->next) {
+		if (!(ban->flags & BAN_EXCEPTION)) continue;
+		ban->banstr[ban->nu_len] = '\0';
+		if (match(ban->banstr, nu) == 0) {
+			ban->banstr[ban->nu_len] = '@';
+			hostmask = ban->banstr + ban->nu_len + 1;
+			if (match(hostmask, cli_user(cptr)->host) == 0 ||
+				(sr && match(hostmask, sr) == 0) ||
+				((ban->flags & BAN_IPMASK) && ipmask_check(&cli_ip(cptr), &ban->address, ban->addrbits))) {
+				// Exception matches: user is NOT banned
+				return NULL;
+			}
+			ban->banstr[ban->nu_len] = '@';
+		}
+	}
+
+	// 2. Check ban list
+	for (ban = banlist; ban; ban = ban->next) {
+		if (ban->flags & BAN_EXCEPTION) continue;
+		ban->banstr[ban->nu_len] = '\0';
+		if (match(ban->banstr, nu) == 0) {
+			ban->banstr[ban->nu_len] = '@';
+			hostmask = ban->banstr + ban->nu_len + 1;
+			if (match(hostmask, cli_user(cptr)->host) == 0 ||
+				(sr && match(hostmask, sr) == 0) ||
+				((ban->flags & BAN_IPMASK) && ipmask_check(&cli_ip(cptr), &ban->address, ban->addrbits))) {
+				// Ban matches: user IS banned
+				return ban;
+			}
+			ban->banstr[ban->nu_len] = '@';
+		}
+	}
+	return NULL;
 }
+
 
 /**
  * This function returns true if the user is banned on the said channel.
@@ -430,17 +591,18 @@ struct Ban *find_ban(struct Client *cptr, struct Ban *banlist)
  */
 static int is_banned(struct Membership* member)
 {
-  if (IsBanValid(member))
-    return IsBanned(member);
+	if (IsBanValid(member))
+		return IsBanned(member);
 
-  SetBanValid(member);
-  if (find_ban(member->user, member->channel->banlist)) {
-    SetBanned(member);
-    return 1;
-  } else {
-    ClearBanned(member);
-    return 0;
-  }
+	SetBanValid(member);
+	if (find_ban(member->user, member->channel->banlist, member->channel->ban_exceptions)) {
+		SetBanned(member);
+		return 1;
+	}
+	else {
+		ClearBanned(member);
+		return 0;
+	}
 }
 
 /** add a user to a channel.
@@ -453,45 +615,73 @@ static int is_banned(struct Membership* member)
  * @param oplevel The oplevel the user starts with.
  */
 void add_user_to_channel(struct Channel* chptr, struct Client* who,
-                                unsigned int flags, int oplevel)
+	unsigned int flags, int oplevel)
 {
-  assert(0 != chptr);
-  assert(0 != who);
+	assert(0 != chptr);
+	assert(0 != who);
 
-  if (cli_user(who)) {
-   
-    struct Membership* member = membershipFreeList;
-    if (member)
-      membershipFreeList = member->next_member;
-    else {
-      member = (struct Membership*) MyMalloc(sizeof(struct Membership));
-      ++membershipAllocCount;
-    }
+	// --- Anti-Join-Flood check (Mode +j) ---
+	if (!IsInvited(who, chptr) && chptr->mode.mode & MODE_ANTIJOINFLOOD) {
+		time_t now = TStime();
+		if (chptr->joinflood_time == 0 || now - chptr->joinflood_time > chptr->joinflood_period) {
+			// Reset window
+			chptr->joinflood_time = now;
+			chptr->joinflood_count = 1;
+		}
+		else {
+			chptr->joinflood_count++;
+			if (chptr->joinflood_count > chptr->joinflood_limit) {
+				// Deny join due to flood
+				if (MyUser(who))
+					send_reply(who, ERR_JOINFLOOD, chptr->chname, "Channel join flood protection (+j) active");
+				return;
+			}
+		}
+	}
 
-    assert(0 != member);
-    member->user         = who;
-    member->channel      = chptr;
-    member->status       = flags;
-    SetOpLevel(member, oplevel);
+	if (cli_user(who)) {
+		struct Membership* member = membershipFreeList;
+		if (member)
+			membershipFreeList = member->next_member;
+		else {
+			member = (struct Membership*)MyMalloc(sizeof(struct Membership));
+			++membershipAllocCount;
+		}
 
-    member->next_member  = chptr->members;
-    if (member->next_member)
-      member->next_member->prev_member = member;
-    member->prev_member  = 0; 
-    chptr->members       = member;
+		assert(0 != member);
+		member->user = who;
+		member->channel = chptr;
+		member->status = flags;
+		SetOpLevel(member, oplevel);
 
-    member->next_channel = (cli_user(who))->channel;
-    if (member->next_channel)
-      member->next_channel->prev_channel = member;
-    member->prev_channel = 0;
-    (cli_user(who))->channel = member;
+		/* Automatisch ChanService setzen */
+		if (IsChannelService(who) || IsService(who))
+			member->status |= CHFL_CHANSERVICE;
 
-    if (chptr->destruct_event)
-      remove_destruct_event(chptr);
-    ++chptr->users;
-    ++((cli_user(who))->joined);
-  }
+		/* Owner beim Join eines leeren Channels */
+		else if (chptr->users == 0) {
+			member->status |= CHFL_OWNER;
+		}
+
+		member->next_member = chptr->members;
+		if (member->next_member)
+			member->next_member->prev_member = member;
+		member->prev_member = 0;
+		chptr->members = member;
+
+		member->next_channel = (cli_user(who))->channel;
+		if (member->next_channel)
+			member->next_channel->prev_channel = member;
+		member->prev_channel = 0;
+		(cli_user(who))->channel = member;
+
+		if (chptr->destruct_event)
+			remove_destruct_event(chptr);
+		++chptr->users;
+		++((cli_user(who))->joined);
+	}
 }
+
 
 /** Remove a person from a channel, given their Membership*
  *
@@ -501,41 +691,41 @@ void add_user_to_channel(struct Channel* chptr, struct Client* who,
  */
 static int remove_member_from_channel(struct Membership* member)
 {
-  struct Channel* chptr;
-  assert(0 != member);
-  chptr = member->channel;
-  /*
-   * unlink channel member list
-   */
-  if (member->next_member)
-    member->next_member->prev_member = member->prev_member;
-  if (member->prev_member)
-    member->prev_member->next_member = member->next_member;
-  else
-    member->channel->members = member->next_member; 
+	struct Channel* chptr;
+	assert(0 != member);
+	chptr = member->channel;
+	/*
+	 * unlink channel member list
+	 */
+	if (member->next_member)
+		member->next_member->prev_member = member->prev_member;
+	if (member->prev_member)
+		member->prev_member->next_member = member->next_member;
+	else
+		member->channel->members = member->next_member;
 
-  /*
-   * If this is the last delayed-join user, may have to clear WASDELJOINS.
-   */
-  if (IsDelayedJoin(member))
-    CheckDelayedJoins(chptr);
+	/*
+	 * If this is the last delayed-join user, may have to clear WASDELJOINS.
+	 */
+	if (IsDelayedJoin(member))
+		CheckDelayedJoins(chptr);
 
-  /*
-   * unlink client channel list
-   */
-  if (member->next_channel)
-    member->next_channel->prev_channel = member->prev_channel;
-  if (member->prev_channel)
-    member->prev_channel->next_channel = member->next_channel;
-  else
-    (cli_user(member->user))->channel = member->next_channel;
+	/*
+	 * unlink client channel list
+	 */
+	if (member->next_channel)
+		member->next_channel->prev_channel = member->prev_channel;
+	if (member->prev_channel)
+		member->prev_channel->next_channel = member->next_channel;
+	else
+		(cli_user(member->user))->channel = member->next_channel;
 
-  --(cli_user(member->user))->joined;
+	--(cli_user(member->user))->joined;
 
-  member->next_member = membershipFreeList;
-  membershipFreeList = member;
+	member->next_member = membershipFreeList;
+	membershipFreeList = member;
 
-  return sub1_from_channel(chptr);
+	return sub1_from_channel(chptr);
 }
 
 /** Check if all the remaining members on the channel are zombies
@@ -545,15 +735,15 @@ static int remove_member_from_channel(struct Membership* member)
  */
 static int channel_all_zombies(struct Channel* chptr)
 {
-  struct Membership* member;
+	struct Membership* member;
 
-  for (member = chptr->members; member; member = member->next_member) {
-    if (!IsZombie(member))
-      return 0;
-  }
-  return 1;
+	for (member = chptr->members; member; member = member->next_member) {
+		if (!IsZombie(member))
+			return 0;
+	}
+	return 1;
 }
-      
+
 
 /** Remove a user from a channel
  * This is the generic entry point for removing a user from a channel, this
@@ -565,22 +755,22 @@ static int channel_all_zombies(struct Channel* chptr)
  */
 void remove_user_from_channel(struct Client* cptr, struct Channel* chptr)
 {
-  
-  struct Membership* member;
-  assert(0 != chptr);
 
-  if ((member = find_member_link(chptr, cptr))) {
-    if (remove_member_from_channel(member)) {
-      if (channel_all_zombies(chptr)) {
-        /*
-         * XXX - this looks dangerous but isn't if we got the referential
-         * integrity right for channels
-         */
-        while (remove_member_from_channel(chptr->members))
-          ;
-      }
-    }
-  }
+	struct Membership* member;
+	assert(0 != chptr);
+
+	if ((member = find_member_link(chptr, cptr))) {
+		if (remove_member_from_channel(member)) {
+			if (channel_all_zombies(chptr)) {
+				/*
+				 * XXX - this looks dangerous but isn't if we got the referential
+				 * integrity right for channels
+				 */
+				while (remove_member_from_channel(chptr->members))
+					;
+			}
+		}
+	}
 }
 
 /** Remove a user from all channels they are on.
@@ -591,12 +781,12 @@ void remove_user_from_channel(struct Client* cptr, struct Channel* chptr)
  */
 void remove_user_from_all_channels(struct Client* cptr)
 {
-  struct Membership* chan;
-  assert(0 != cptr);
-  assert(0 != cli_user(cptr));
+	struct Membership* chan;
+	assert(0 != cptr);
+	assert(0 != cli_user(cptr));
 
-  while ((chan = (cli_user(cptr))->channel))
-    remove_user_from_channel(cptr, chan->channel);
+	while ((chan = (cli_user(cptr))->channel))
+		remove_user_from_channel(cptr, chan->channel);
 }
 
 /** Check if this user is a legitimate chanop
@@ -607,14 +797,14 @@ void remove_user_from_all_channels(struct Client* cptr)
  * @returns True if the user is a chanop (And not a zombie), False otherwise.
  * @see \ref zombie
  */
-int is_chan_op(struct Client *cptr, struct Channel *chptr)
+int is_chan_op(struct Client* cptr, struct Channel* chptr)
 {
-  struct Membership* member;
-  assert(chptr);
-  if ((member = find_member_link(chptr, cptr)))
-    return (!IsZombie(member) && IsChanOp(member));
+	struct Membership* member;
+	assert(chptr);
+	if ((member = find_member_link(chptr, cptr)))
+		return (!IsZombie(member) && IsChanOp(member));
 
-  return 0;
+	return 0;
 }
 
 /** Check if a user is a Zombie on a specific channel.
@@ -627,15 +817,15 @@ int is_chan_op(struct Client *cptr, struct Channel *chptr)
  *
  * @see \ref zombie
  */
-int is_zombie(struct Client *cptr, struct Channel *chptr)
+int is_zombie(struct Client* cptr, struct Channel* chptr)
 {
-  struct Membership* member;
+	struct Membership* member;
 
-  assert(0 != chptr);
+	assert(0 != chptr);
 
-  if ((member = find_member_link(chptr, cptr)))
-      return IsZombie(member);
-  return 0;
+	if ((member = find_member_link(chptr, cptr)))
+		return IsZombie(member);
+	return 0;
 }
 
 /** Returns if a user has voice on a channel.
@@ -648,13 +838,13 @@ int is_zombie(struct Client *cptr, struct Channel *chptr)
  */
 int has_voice(struct Client* cptr, struct Channel* chptr)
 {
-  struct Membership* member;
+	struct Membership* member;
 
-  assert(0 != chptr);
-  if ((member = find_member_link(chptr, cptr)))
-    return (!IsZombie(member) && HasVoice(member));
+	assert(0 != chptr);
+	if ((member = find_member_link(chptr, cptr)))
+		return (!IsZombie(member) && HasVoice(member));
 
-  return 0;
+	return 0;
 }
 
 /** Can this member send to a channel
@@ -679,50 +869,50 @@ int has_voice(struct Client* cptr, struct Channel* chptr)
  */
 int member_can_send_to_channel(struct Membership* member, int reveal)
 {
-  assert(0 != member);
+	assert(0 != member);
 
-  /* Do not check for users on other servers: This should be a
-   * temporary desynch, or maybe they are on an older server, but
-   * we do not want to send ERR_CANNOTSENDTOCHAN more than once.
-   */
-  if (!MyUser(member->user))
-  {
-    if (IsDelayedJoin(member) && reveal)
-      RevealDelayedJoin(member);
-    return 1;
-  }
+	/* Do not check for users on other servers: This should be a
+	 * temporary desynch, or maybe they are on an older server, but
+	 * we do not want to send ERR_CANNOTSENDTOCHAN more than once.
+	 */
+	if (!MyUser(member->user))
+	{
+		if (IsDelayedJoin(member) && reveal)
+			RevealDelayedJoin(member);
+		return 1;
+	}
 
-  /* Discourage using the Apass to get op.  They should use the Upass. */
-  if (IsChannelManager(member) && member->channel->mode.apass[0])
-    return 0;
+	/* Discourage using the Apass to get op.  They should use the Upass. */
+	if (IsChannelManager(member) && member->channel->mode.apass[0])
+		return 0;
 
-  /* If you have voice or ops, you can speak. */
-  if (IsVoicedOrOpped(member))
-    return 1;
+	/* If you have voice or ops, you can speak. */
+	if (IsVoicedOrOpped(member))
+		return 1;
 
-  /*
-   * If it's moderated, and you aren't a privileged user, you can't
-   * speak.
-   */
-  if (member->channel->mode.mode & MODE_MODERATED)
-    return 0;
+	/*
+	 * If it's moderated, and you aren't a privileged user, you can't
+	 * speak.
+	 */
+	if (member->channel->mode.mode & MODE_MODERATED)
+		return 0;
 
-  /* If only logged in users may join and you're not one, you can't speak. */
-  if (member->channel->mode.mode & (MODE_MODERATENOREG|MODE_REGONLY) && !IsAccount(member->user))
-    return 0;
+	/* If only logged in users may join and you're not one, you can't speak. */
+	if (member->channel->mode.mode & (MODE_MODERATENOREG | MODE_REGONLY) && !IsAccount(member->user))
+		return 0;
 
-  /* If only TLS-using users may join and you're not one, you can't speak. */
-  if (member->channel->mode.mode & MODE_TLSONLY && !IsTLS(member->user))
-    return 0;
+	/* If only TLS-using users may join and you're not one, you can't speak. */
+	if (member->channel->mode.mode & MODE_TLSONLY && !IsTLS(member->user))
+		return 0;
 
-  /* If you're banned then you can't speak either. */
-  if (is_banned(member))
-    return 0;
+	/* If you're banned then you can't speak either. */
+	if (is_banned(member))
+		return 0;
 
-  if (IsDelayedJoin(member) && reveal)
-    RevealDelayedJoin(member);
+	if (IsDelayedJoin(member) && reveal)
+		RevealDelayedJoin(member);
 
-  return 1;
+	return 1;
 }
 
 /** Check if a client can send to a channel.
@@ -732,39 +922,39 @@ int member_can_send_to_channel(struct Membership* member, int reveal)
  *
  * @param cptr	The client to check
  * @param chptr	The channel to check
- * @param reveal If the user should be revealed (see 
+ * @param reveal If the user should be revealed (see
  * 		member_can_send_to_channel())
  *
- * @returns true if the client is allowed to speak on the channel, false 
+ * @returns true if the client is allowed to speak on the channel, false
  * 		otherwise
  *
  * @see member_can_send_to_channel()
  */
-int client_can_send_to_channel(struct Client *cptr, struct Channel *chptr, int reveal)
+int client_can_send_to_channel(struct Client* cptr, struct Channel* chptr, int reveal)
 {
-  struct Membership *member;
-  assert(0 != cptr); 
-  /*
-   * Servers can always speak on channels.
-   */
-  if (IsServer(cptr) || IsXtraOp(cptr))
-    return 1;
+	struct Membership* member;
+	assert(0 != cptr);
+	/*
+	 * Servers can always speak on channels.
+	 */
+	if (IsServer(cptr) || IsXtraOp(cptr))
+		return 1;
 
-  member = find_channel_member(cptr, chptr);
+	member = find_channel_member(cptr, chptr);
 
-  /*
-   * You can't speak if you're off channel, and it is +n (no external messages)
-   * or +m (moderated).
-   */
-  if (!member) {
-    if ((chptr->mode.mode & (MODE_NOPRIVMSGS|MODE_MODERATED)) ||
-	((chptr->mode.mode & (MODE_REGONLY|MODE_MODERATENOREG)) && !IsAccount(cptr)) ||
-        ((chptr->mode.mode & MODE_TLSONLY) && !IsTLS(cptr)))
-      return 0;
-    else
-      return !find_ban(cptr, chptr->banlist);
-  }
-  return member_can_send_to_channel(member, reveal);
+	/*
+	 * You can't speak if you're off channel, and it is +n (no external messages)
+	 * or +m (moderated).
+	 */
+	if (!member) {
+		if ((chptr->mode.mode & (MODE_NOPRIVMSGS | MODE_MODERATED)) ||
+			((chptr->mode.mode & (MODE_REGONLY | MODE_MODERATENOREG)) && !IsAccount(cptr)) ||
+			((chptr->mode.mode & MODE_TLSONLY) && !IsTLS(cptr)))
+			return 0;
+		else
+			return !find_ban(cptr, chptr->banlist, chptr->ban_exceptions);
+	}
+	return member_can_send_to_channel(member, reveal);
 }
 
 /** Returns the name of a channel that prevents the user from changing nick.
@@ -778,19 +968,19 @@ int client_can_send_to_channel(struct Client *cptr, struct Channel *chptr, int r
  */
 const char* find_no_nickchange_channel(struct Client* cptr)
 {
-  if (MyUser(cptr)) {
-    struct Membership* member;
-    for (member = (cli_user(cptr))->channel; member;
-	 member = member->next_channel) {
-      if (IsVoicedOrOpped(member))
-        continue;
-      if ((member->channel->mode.mode & MODE_MODERATED)
-          || (member->channel->mode.mode & (MODE_MODERATENOREG|MODE_REGONLY) && !IsAccount(cptr))
-          || is_banned(member))
-        return member->channel->chname;
-    }
-  }
-  return 0;
+	if (MyUser(cptr)) {
+		struct Membership* member;
+		for (member = (cli_user(cptr))->channel; member;
+			member = member->next_channel) {
+			if (IsVoicedOrOpped(member))
+				continue;
+			if ((member->channel->mode.mode & MODE_MODERATED)
+				|| (member->channel->mode.mode & (MODE_MODERATENOREG | MODE_REGONLY) && !IsAccount(cptr))
+				|| is_banned(member))
+				return member->channel->chname;
+		}
+	}
+	return 0;
 }
 
 
@@ -809,84 +999,107 @@ const char* find_no_nickchange_channel(struct Client* cptr)
  * 		if this client isn't on this channel)
  *
  */
-void channel_modes(struct Client *cptr, char *mbuf, char *pbuf, int buflen,
-                          struct Channel *chptr, struct Membership *member)
+void channel_modes(struct Client* cptr, char* mbuf, char* pbuf, int buflen,
+	struct Channel* chptr, struct Membership* member)
 {
-  int previous_parameter = 0;
+	int previous_parameter = 0;
 
-  assert(0 != mbuf);
-  assert(0 != pbuf);
-  assert(0 != chptr);
+	assert(0 != mbuf);
+	assert(0 != pbuf);
+	assert(0 != chptr);
 
-  *mbuf++ = '+';
-  if (chptr->mode.mode & MODE_SECRET)
-    *mbuf++ = 's';
-  else if (chptr->mode.mode & MODE_PRIVATE)
-    *mbuf++ = 'p';
-  if (chptr->mode.mode & MODE_MODERATED)
-    *mbuf++ = 'm';
-  if (chptr->mode.mode & MODE_TOPICLIMIT)
-    *mbuf++ = 't';
-  if (chptr->mode.mode & MODE_INVITEONLY)
-    *mbuf++ = 'i';
-  if (chptr->mode.mode & MODE_NOPRIVMSGS)
-    *mbuf++ = 'n';
-  if (chptr->mode.mode & MODE_REGONLY)
-    *mbuf++ = 'r';
-  if (chptr->mode.mode & MODE_NOCOLOUR)
-    *mbuf++ = 'c';
-  if (chptr->mode.mode & MODE_NOCTCP)
-    *mbuf++ = 'C';
-  if (chptr->mode.mode & MODE_NONOTICE)
-    *mbuf++ = 'N';
-  if (chptr->mode.mode & MODE_NOQUITPARTS)
-    *mbuf++ = 'u';
-  if (chptr->mode.mode & MODE_DELJOINS)
-    *mbuf++ = 'D';
-  if (chptr->mode.mode & MODE_NOMULTITARGET)
-    *mbuf++ = 'T';
-  if (chptr->mode.mode & MODE_MODERATENOREG)
-    *mbuf++ = 'M';
-  if (chptr->mode.mode & MODE_TLSONLY)
-    *mbuf++ = 'Z';
-  else if (MyUser(cptr) && (chptr->mode.mode & MODE_WASDELJOINS))
-    *mbuf++ = 'd';
-  if (chptr->mode.limit) {
-    *mbuf++ = 'l';
-    ircd_snprintf(0, pbuf, buflen, "%u", chptr->mode.limit);
-    previous_parameter = 1;
-  }
+	*mbuf++ = '+';
+	if (chptr->mode.mode & MODE_SECRET)
+		*mbuf++ = 's';
+	else if (chptr->mode.mode & MODE_PRIVATE)
+		*mbuf++ = 'p';
+	if (chptr->mode.mode & MODE_MODERATED)
+		*mbuf++ = 'm';
+	if (chptr->mode.mode & MODE_TOPICLIMIT)
+		*mbuf++ = 't';
+	if (chptr->mode.mode & MODE_INVITEONLY)
+		*mbuf++ = 'i';
+	if (chptr->mode.mode & MODE_NOPRIVMSGS)
+		*mbuf++ = 'n';
+	if (chptr->mode.mode & MODE_REGONLY)
+		*mbuf++ = 'r';
+	if (chptr->mode.mode & MODE_NOCOLOUR)
+		*mbuf++ = 'c';
+	if (chptr->mode.mode & MODE_NOCTCP)
+		*mbuf++ = 'C';
+	if (chptr->mode.mode & MODE_NONOTICE)
+		*mbuf++ = 'N';
+	if (chptr->mode.mode & MODE_NOQUITPARTS)
+		*mbuf++ = 'u';
+	if (chptr->mode.mode & MODE_DELJOINS)
+		*mbuf++ = 'D';
+	if (chptr->mode.mode & MODE_NOMULTITARGET)
+		*mbuf++ = 'T';
+	if (chptr->mode.mode & MODE_MODERATENOREG)
+		*mbuf++ = 'M';
+	if (chptr->mode.mode & MODE_TLSONLY)
+		*mbuf++ = 'Z';
 
-  if (*chptr->mode.key) {
-    *mbuf++ = 'k';
-    if (previous_parameter)
-      strcat(pbuf, " ");
-    if (is_chan_op(cptr, chptr) || IsServer(cptr) || IsOper(cptr)) {
-      strcat(pbuf, chptr->mode.key);
-    } else
-      strcat(pbuf, "*");
-    previous_parameter = 1;
-  }
-  if (*chptr->mode.apass) {
-    *mbuf++ = 'A';
-    if (previous_parameter)
-      strcat(pbuf, " ");
-    if (IsServer(cptr)) {
-      strcat(pbuf, chptr->mode.apass);
-    } else
-      strcat(pbuf, "*");
-    previous_parameter = 1;
-  }
-  if (*chptr->mode.upass) {
-    *mbuf++ = 'U';
-    if (previous_parameter)
-      strcat(pbuf, " ");
-    if (IsServer(cptr) || (member && IsChanOp(member) && OpLevel(member) == 0)) {
-      strcat(pbuf, chptr->mode.upass);
-    } else
-      strcat(pbuf, "*");
-  }
-  *mbuf = '\0';
+	else if (MyUser(cptr) && (chptr->mode.mode & MODE_WASDELJOINS))
+		*mbuf++ = 'd';
+	if (chptr->mode.limit) {
+		*mbuf++ = 'l';
+		ircd_snprintf(0, pbuf, buflen, "%u", chptr->mode.limit);
+		previous_parameter = 1;
+	}
+
+	if (*chptr->mode.key) {
+		*mbuf++ = 'k';
+		if (previous_parameter)
+			strcat(pbuf, " ");
+		if (is_privileged_user(cptr, chptr) || IsServer(cptr) || IsOper(cptr)) {
+			strcat(pbuf, chptr->mode.key);
+		}
+		else
+			strcat(pbuf, "*");
+		previous_parameter = 1;
+	}
+	if (*chptr->mode.apass) {
+		*mbuf++ = 'A';
+		if (previous_parameter)
+			strcat(pbuf, " ");
+		if (IsServer(cptr)) {
+			strcat(pbuf, chptr->mode.apass);
+		}
+		else
+			strcat(pbuf, "*");
+		previous_parameter = 1;
+	}
+	if (*chptr->mode.upass) {
+		*mbuf++ = 'U';
+		if (previous_parameter)
+			strcat(pbuf, " ");
+		if (IsServer(cptr) || (member && is_privileged_member(member) && OpLevel(member) == 0)) {
+			strcat(pbuf, chptr->mode.upass);
+		}
+		else
+			strcat(pbuf, "*");
+	}
+
+	if (chptr->mode.mode & MODE_ANTIJOINFLOOD) {
+		*mbuf++ = 'j';
+		if (chptr->joinflood_limit > 0 && chptr->joinflood_period > 0) {
+			if (previous_parameter)
+				strcat(pbuf, " ");
+			char tmp[32];
+			snprintf(tmp, sizeof(tmp), "%d:%d", chptr->joinflood_limit, chptr->joinflood_period);
+			strcat(pbuf, tmp);
+			previous_parameter = 1;
+		}
+	}
+	if (chptr->mode.mode & MODE_LINK) {
+		*mbuf++ = 'L';
+		if (previous_parameter)
+			strcat(pbuf, " ");
+		strcat(pbuf, chptr->mode.linktarget);
+		previous_parameter = 1;
+	}
+	*mbuf = '\0';
 }
 
 /** Compare two members oplevel
@@ -898,13 +1111,24 @@ void channel_modes(struct Client *cptr, char *mbuf, char *pbuf, int buflen,
  *
  * Used for qsort(3).
  */
-int compare_member_oplevel(const void *mp1, const void *mp2)
+int compare_member_oplevel(const void* mp1, const void* mp2)
 {
-  struct Membership const* member1 = *(struct Membership const**)mp1;
-  struct Membership const* member2 = *(struct Membership const**)mp2;
-  if (member1->oplevel == member2->oplevel)
-    return 0;
-  return (member1->oplevel < member2->oplevel) ? -1 : 1;
+	struct Membership const* member1 = *(struct Membership const**)mp1;
+	struct Membership const* member2 = *(struct Membership const**)mp2;
+	if (member1->oplevel == member2->oplevel)
+		return 0;
+	return (member1->oplevel < member2->oplevel) ? -1 : 1;
+}
+
+// Add function to check for ban exception
+int is_ban_exception(struct Channel* chptr, struct Client* sptr)
+{
+	struct Ban* banex;
+	for (banex = chptr->ban_exceptions; banex; banex = banex->next) {
+		if (match(banex->banstr, cli_name(sptr)) == 0)
+			return 1; // Exception found
+	}
+	return 0; // No exception
 }
 
 /* send "cptr" a full list of the modes for channel chptr.
@@ -914,216 +1138,118 @@ int compare_member_oplevel(const void *mp1, const void *mp2)
  * @param cptr	Client pointer
  * @param chptr	Channel pointer
  */
-void send_channel_modes(struct Client *cptr, struct Channel *chptr)
+void send_channel_modes(struct Client* cptr, struct Channel* chptr)
 {
-  /* The order in which modes are generated is now mandatory */
-  static unsigned int current_flags[4] =
-      { 0, CHFL_VOICE, CHFL_CHANOP, CHFL_CHANOP | CHFL_VOICE };
-  int                first = 1;
-  int                full  = 1;
-  int                flag_cnt = 0;
-  int                new_mode = 0;
-  size_t             len;
-  struct Membership* member;
-  struct Ban*        lp2;
-  char modebuf[MODEBUFLEN];
-  char parabuf[MODEBUFLEN];
-  struct MsgBuf *mb;
-  int                 number_of_ops = 0;
-  int                 opped_members_index = 0;
-  struct Membership** opped_members = NULL;
-  int                 last_oplevel = 0;
-  int                 send_oplevels = 0;
+	static const struct {
+		unsigned int flag;
+		char modechar;
+	} user_modes[] = {
+		{ CHFL_CHANSERVICE, 'S' },
+		{ CHFL_OWNER,       'q' },
+		{ CHFL_ADMIN,       'a' },
+		{ CHFL_CHANOP,      'o' },
+		{ CHFL_HALFOP,      'h' },
+		{ CHFL_VOICE,       'v' }
+	};
+	char modebuf[MODEBUFLEN], parabuf[MODEBUFLEN];
+	struct Membership* member;
+	struct Ban* ban;
+	struct Ban* exban;
+	struct MsgBuf* mb;
+	int first, full;
+	size_t len;
 
-  assert(0 != cptr);
-  assert(0 != chptr); 
+	assert(cptr);
+	assert(chptr);
 
-  if (IsLocalChannel(chptr->chname))
-    return;
+	if (IsLocalChannel(chptr->chname))
+		return;
 
-  member = chptr->members;
-  lp2 = chptr->banlist;
+	*modebuf = *parabuf = '\0';
+	channel_modes(cptr, modebuf, parabuf, sizeof(parabuf), chptr, 0);
 
-  *modebuf = *parabuf = '\0';
-  channel_modes(cptr, modebuf, parabuf, sizeof(parabuf), chptr, 0);
+	first = 1;
+	full = 1;
 
-  for (first = 1; full; first = 0)      /* Loop for multiple messages */
-  {
-    full = 0;                   /* Assume by default we get it
-                                 all in one message */
+	while (full) {
+		full = 0;
+		mb = msgq_make(&me, "%C " TOK_BURST " %H %Tu", &me, chptr, chptr->creationtime);
 
-    /* (Continued) prefix: "<Y> B <channel> <TS>" */
-    /* is there any better way we can do this? */
-    mb = msgq_make(&me, "%C " TOK_BURST " %H %Tu", &me, chptr,
-		   chptr->creationtime);
+		if (first && modebuf[1]) {
+			msgq_append(&me, mb, " %s", modebuf);
+			if (*parabuf)
+				msgq_append(&me, mb, " %s", parabuf);
+		}
 
-    if (first && modebuf[1])    /* Add simple modes (Aiklmnpstu)
-                                 if first message */
-    {
-      /* prefix: "<Y> B <channel> <TS>[ <modes>[ <params>]]" */
-      msgq_append(&me, mb, " %s", modebuf);
 
-      if (*parabuf)
-	msgq_append(&me, mb, " %s", parabuf);
-    }
+		// PATCH: User-Modes für alle Mitglieder ausgeben
+		for (member = chptr->members, first = 1; member; member = member->next_member) {
+			char* nick = cli_name(member->user);
+			char modestr[8] = { 0 };
+			int m = 0;
+			for (int mode_index = 0; mode_index < sizeof(user_modes) / sizeof(user_modes[0]); ++mode_index) {
+				if (member->status & user_modes[mode_index].flag)
+					modestr[m++] = user_modes[mode_index].modechar;
+			}
+			modestr[m] = '\0';
 
-    /*
-     * Attach nicks, comma separated " nick[:modes],nick[:modes],..."
-     *
-     * First find all opless members.
-     * Run 2 times over all members, to group the members with
-     * and without voice together.
-     * Then run 2 times over all opped members (which are ordered
-     * by op-level) to also group voice and non-voice together.
-     */
-    for (first = 1; flag_cnt < 4; new_mode = 1, ++flag_cnt)
-    {
-      while (member)
-      {
-	if (flag_cnt < 2 && IsChanOp(member))
-	{
-	  /*
-	   * The first loop (to find all non-voice/op), we count the ops.
-	   * The second loop (to find all voiced non-ops), store the ops
-	   * in a dynamic array.
-	   */
-	  if (flag_cnt == 0)
-	    ++number_of_ops;
-	  else
-	    opped_members[opped_members_index++] = member;
-          /* We also send oplevels if anyone is below the weakest level.  */
-          if (OpLevel(member) < MAXOPLEVEL)
-            send_oplevels = 1;
+			if (modestr[0]) {
+				msgq_append(&me, mb, " %s:%s", nick, modestr);
+			}
+			else {
+				msgq_append(&me, mb, " %s", nick);
+			}
+
+			len = strlen(nick) + (modestr[0] ? strlen(modestr) + 1 : 0);
+			if (msgq_bufleft(mb) < len + 2) {
+				full = 1;
+				break;
+			}
+			msgq_append(&me, mb, "%c%C%s%s", first ? ' ' : ',', member->user,
+				modestr[0] ? ":" : "", modestr);
+			first = 0;
+		}
+
+		// --- Bans ausgeben ---
+		if (!full) {
+			for (ban = chptr->banlist, first = 2; ban; ban = ban->next) {
+				len = strlen(ban->banstr);
+				if (msgq_bufleft(mb) < len + 1 + first) {
+					full = 1;
+					break;
+				}
+				msgq_append(&me, mb, " %s%s", first ? ":%" : "", ban->banstr);
+				first = 0;
+			}
+		}
+
+		// --- Ban-Exceptions (+e) ausgeben ---
+		if (!full) {
+			for (exban = chptr->ban_exceptions, first = 1; exban; exban = exban->next) {
+				len = strlen(exban->banstr);
+				if (msgq_bufleft(mb) < len + 4 + first) {
+					full = 1;
+					break;
+				}
+				// Format: " :%+e:mask"
+				msgq_append(&me, mb, " %s+e:%s", first ? ":%" : "", exban->banstr);
+				first = 0;
+			}
+		}
+
+		send_buffer(cptr, mb, 0);
+		msgq_clean(mb);
 	}
-	/* Only handle the members with the flags that we are interested in. */
-        if ((member->status & CHFL_VOICED_OR_OPPED) == current_flags[flag_cnt])
-	{
-	  if (msgq_bufleft(mb) < NUMNICKLEN + 3 + MAXOPLEVELDIGITS)
-	    /* The 3 + MAXOPLEVELDIGITS is a possible ",:v999". */
-	  {
-	    full = 1;           /* Make sure we continue after
-				   sending it so far */
-	    /* Ensure the new BURST line contains the current
-	     * ":mode", except when there is no mode yet. */
-	    new_mode = (flag_cnt > 0) ? 1 : 0;
-	    break;              /* Do not add this member to this message */
-	  }
-	  msgq_append(&me, mb, "%c%C", first ? ' ' : ',', member->user);
-	  first = 0;              /* From now on, use commas to add new nicks */
 
-	  /*
-	   * Do we have a nick with a new mode ?
-	   * Or are we starting a new BURST line?
-	   */
-	  if (new_mode)
-	  {
-	    /*
-	     * This means we are at the _first_ member that has only
-	     * voice, or the first member that has only ops, or the
-	     * first member that has voice and ops (so we get here
-	     * at most three times, plus once for every start of
-	     * a continued BURST line where only these modes is current.
-	     * In the two cases where the current mode includes ops,
-	     * we need to add the _absolute_ value of the oplevel to the mode.
-	     */
-	    char tbuf[3 + MAXOPLEVELDIGITS] = ":";
-	    int loc = 1;
-
-	    if (HasVoice(member))	/* flag_cnt == 1 or 3 */
-	      tbuf[loc++] = 'v';
-	    if (IsChanOp(member))	/* flag_cnt == 2 or 3 */
-	    {
-              /* append the absolute value of the oplevel */
-              if (send_oplevels)
-                loc += ircd_snprintf(0, tbuf + loc, sizeof(tbuf) - loc, "%u", last_oplevel = member->oplevel);
-              else
-                tbuf[loc++] = 'o';
-	    }
-	    tbuf[loc] = '\0';
-	    msgq_append(&me, mb, tbuf);
-	    new_mode = 0;
-	  }
-	  else if (send_oplevels && flag_cnt > 1 && last_oplevel != member->oplevel)
-	  {
-	    /*
-	     * This can't be the first member of a (continued) BURST
-	     * message because then either flag_cnt == 0 or new_mode == 1
-	     * Now we need to append the incremental value of the oplevel.
-	     */
-            char tbuf[2 + MAXOPLEVELDIGITS];
-	    ircd_snprintf(0, tbuf, sizeof(tbuf), ":%u", member->oplevel - last_oplevel);
-	    last_oplevel = member->oplevel;
-	    msgq_append(&me, mb, tbuf);
-	  }
-	}
-	/* Go to the next `member'. */
-	if (flag_cnt < 2)
-	  member = member->next_member;
-	else
-	  member = opped_members[++opped_members_index];
-      }
-      if (full)
-	break;
-
-      /* Point `member' at the start of the list again. */
-      if (flag_cnt == 0)
-      {
-	member = chptr->members;
-	/* Now, after one loop, we know the number of ops and can
-	 * allocate the dynamic array with pointer to the ops. */
-	opped_members = (struct Membership**)
-	  MyMalloc((number_of_ops + 1) * sizeof(struct Membership*));
-	opped_members[number_of_ops] = NULL;	/* Needed for loop termination */
-      }
-      else
-      {
-	/* At the end of the second loop, sort the opped members with
-	 * increasing op-level, so that we will output them in the
-	 * correct order (and all op-level increments stay positive) */
-	if (flag_cnt == 1)
-	  qsort(opped_members, number_of_ops,
-	        sizeof(struct Membership*), compare_member_oplevel);
-	/* The third and fourth loop run only over the opped members. */
-	member = opped_members[(opped_members_index = 0)];
-      }
-
-    } /* loop over 0,+v,+o,+ov */
-
-    if (!full)
-    {
-      /* Attach all bans, space separated " :%ban ban ..." */
-      for (first = 2; lp2; lp2 = lp2->next)
-      {
-        len = strlen(lp2->banstr);
-	if (msgq_bufleft(mb) < len + 1 + first)
-          /* The +1 stands for the added ' '.
-           * The +first stands for the added ":%".
-           */
-        {
-          full = 1;
-          break;
-        }
-	msgq_append(&me, mb, " %s%s", first ? ":%" : "",
-		    lp2->banstr);
-	first = 0;
-      }
-    }
-
-    send_buffer(cptr, mb, 0);  /* Send this message */
-    msgq_clean(mb);
-  }                             /* Continue when there was something
-                                 that didn't fit (full==1) */
-  if (opped_members)
-    MyFree(opped_members);
-  if (feature_bool(FEAT_TOPIC_BURST) && (chptr->topic[0] != '\0'))
-      sendcmdto_one(&me, CMD_TOPIC, cptr, "%H %Tu %Tu :%s", chptr,
-                    chptr->creationtime, chptr->topic_time, chptr->topic);
+	if (feature_bool(FEAT_TOPIC_BURST) && (chptr->topic[0] != '\0'))
+		sendcmdto_one(&me, CMD_TOPIC, cptr, "%H %Tu %Tu :%s", chptr,
+			chptr->creationtime, chptr->topic_time, chptr->topic);
 }
 
 /** Canonify a mask.
  * pretty_mask
  *
- * @author Carlo Wood (Run), 
+ * @author Carlo Wood (Run),
  * 05 Oct 1998.
  *
  * When the nick is longer then NICKLEN, it is cut off (its an error of course).
@@ -1141,85 +1267,85 @@ void send_channel_modes(struct Client *cptr, struct Channel *chptr)
  * @param mask	The uncanonified mask.
  * @returns The updated mask in a static buffer.
  */
-char *pretty_mask(char *mask)
+char* pretty_mask(char* mask)
 {
-  static char star[2] = { '*', 0 };
-  static char retmask[NICKLEN + USERLEN + HOSTLEN + 3];
-  char *last_dot = NULL;
-  char *ptr;
+	static char star[2] = { '*', 0 };
+	static char retmask[NICKLEN + USERLEN + HOSTLEN + 3];
+	char* last_dot = NULL;
+	char* ptr;
 
-  /* Case 1: default */
-  char *nick = mask;
-  char *user = star;
-  char *host = star;
+	/* Case 1: default */
+	char* nick = mask;
+	char* user = star;
+	char* host = star;
 
-  /* Do a _single_ pass through the characters of the mask: */
-  for (ptr = mask; *ptr; ++ptr)
-  {
-    if (*ptr == '!')
-    {
-      /* Case 3 or 5: Found first '!' (without finding a '@' yet) */
-      user = ++ptr;
-      host = star;
-    }
-    else if (*ptr == '@')
-    {
-      /* Case 4: Found last '@' (without finding a '!' yet) */
-      nick = star;
-      user = mask;
-      host = ++ptr;
-    }
-    else if (*ptr == '.' || *ptr == ':')
-    {
-      /* Case 2: Found character specific to IP or hostname (without
-       * finding a '!' or '@' yet) */
-      last_dot = ptr;
-      continue;
-    }
-    else
-      continue;
-    for (; *ptr; ++ptr)
-    {
-      if (*ptr == '@')
-      {
-        /* Case 4 or 5: Found last '@' */
-        host = ptr + 1;
-      }
-    }
-    break;
-  }
-  if (user == star && last_dot)
-  {
-    /* Case 2: */
-    nick = star;
-    user = star;
-    host = mask;
-  }
-  /* Check lengths */
-  if (nick != star)
-  {
-    char *nick_end = (user != star) ? user - 1 : ptr;
-    if (nick_end - nick > NICKLEN)
-      nick[NICKLEN] = 0;
-    *nick_end = 0;
-  }
-  if (user != star)
-  {
-    char *user_end = (host != star) ? host - 1 : ptr;
-    if (user_end - user > USERLEN)
-    {
-      user = user_end - USERLEN;
-      *user = '*';
-    }
-    *user_end = 0;
-  }
-  if (host != star && ptr - host > HOSTLEN)
-  {
-    host = ptr - HOSTLEN;
-    *host = '*';
-  }
-  ircd_snprintf(0, retmask, sizeof(retmask), "%s!%s@%s", nick, user, host);
-  return retmask;
+	/* Do a _single_ pass through the characters of the mask: */
+	for (ptr = mask; *ptr; ++ptr)
+	{
+		if (*ptr == '!')
+		{
+			/* Case 3 or 5: Found first '!' (without finding a '@' yet) */
+			user = ++ptr;
+			host = star;
+		}
+		else if (*ptr == '@')
+		{
+			/* Case 4: Found last '@' (without finding a '!' yet) */
+			nick = star;
+			user = mask;
+			host = ++ptr;
+		}
+		else if (*ptr == '.' || *ptr == ':')
+		{
+			/* Case 2: Found character specific to IP or hostname (without
+			 * finding a '!' or '@' yet) */
+			last_dot = ptr;
+			continue;
+		}
+		else
+			continue;
+		for (; *ptr; ++ptr)
+		{
+			if (*ptr == '@')
+			{
+				/* Case 4 or 5: Found last '@' */
+				host = ptr + 1;
+			}
+		}
+		break;
+	}
+	if (user == star && last_dot)
+	{
+		/* Case 2: */
+		nick = star;
+		user = star;
+		host = mask;
+	}
+	/* Check lengths */
+	if (nick != star)
+	{
+		char* nick_end = (user != star) ? user - 1 : ptr;
+		if (nick_end - nick > NICKLEN)
+			nick[NICKLEN] = 0;
+		*nick_end = 0;
+	}
+	if (user != star)
+	{
+		char* user_end = (host != star) ? host - 1 : ptr;
+		if (user_end - user > USERLEN)
+		{
+			user = user_end - USERLEN;
+			*user = '*';
+		}
+		*user_end = 0;
+	}
+	if (host != star && ptr - host > HOSTLEN)
+	{
+		host = ptr - HOSTLEN;
+		*host = '*';
+	}
+	ircd_snprintf(0, retmask, sizeof(retmask), "%s!%s@%s", nick, user, host);
+	return retmask;
 }
 
 /** send a banlist to a client for a channel
@@ -1229,44 +1355,44 @@ char *pretty_mask(char *mask)
  */
 static void send_ban_list(struct Client* cptr, struct Channel* chptr)
 {
-  struct Ban* lp;
+	struct Ban* lp;
 
-  assert(0 != cptr);
-  assert(0 != chptr);
+	assert(0 != cptr);
+	assert(0 != chptr);
 
-  for (lp = chptr->banlist; lp; lp = lp->next)
-    send_reply(cptr, RPL_BANLIST, chptr->chname, lp->banstr,
-	       lp->who, lp->when);
+	for (lp = chptr->banlist; lp; lp = lp->next)
+		send_reply(cptr, RPL_BANLIST, chptr->chname, lp->banstr,
+			lp->who, lp->when);
 
-  send_reply(cptr, RPL_ENDOFBANLIST, chptr->chname);
+	send_reply(cptr, RPL_ENDOFBANLIST, chptr->chname);
 }
 
 /** Remove bells and commas from channel name
  *
  * @param cn	Channel name to clean, modified in place.
  */
-void clean_channelname(char *cn)
+void clean_channelname(char* cn)
 {
-  int i;
+	int i;
 
-  for (i = 0; cn[i]; i++) {
-    if (i >= IRCD_MIN(CHANNELLEN, feature_int(FEAT_CHANNELLEN))
-        || !IsChannelChar(cn[i])) {
-      cn[i] = '\0';
-      return;
-    }
-    if (IsChannelLower(cn[i])) {
-      cn[i] = ToLower(cn[i]);
+	for (i = 0; cn[i]; i++) {
+		if (i >= IRCD_MIN(CHANNELLEN, feature_int(FEAT_CHANNELLEN))
+			|| !IsChannelChar(cn[i])) {
+			cn[i] = '\0';
+			return;
+		}
+		if (IsChannelLower(cn[i])) {
+			cn[i] = ToLower(cn[i]);
 #ifndef FIXME
-      /*
-       * Remove for .08+
-       * toupper(0xd0)
-       */
-      if ((unsigned char)(cn[i]) == 0xd0)
-        cn[i] = (char) 0xf0;
+			/*
+			 * Remove for .08+
+			 * toupper(0xd0)
+			 */
+			if ((unsigned char)(cn[i]) == 0xd0)
+				cn[i] = (char)0xf0;
 #endif
-    }
-  }
+		}
+	}
 }
 
 /** Get a channel block, creating if necessary.
@@ -1275,93 +1401,93 @@ void clean_channelname(char *cn)
  *
  * @param cptr		Client joining the channel.
  * @param chname	The name of the channel to join.
- * @param flag		set to CGT_CREATE to create the channel if it doesn't 
+ * @param flag		set to CGT_CREATE to create the channel if it doesn't
  * 			exist
  *
- * @returns NULL if the channel is invalid, doesn't exist and CGT_CREATE 
+ * @returns NULL if the channel is invalid, doesn't exist and CGT_CREATE
  * 	wasn't specified or a pointer to the channel structure
  */
-struct Channel *get_channel(struct Client *cptr, char *chname, ChannelGetType flag)
+struct Channel* get_channel(struct Client* cptr, char* chname, ChannelGetType flag)
 {
-  struct Channel *chptr;
-  int len;
+	struct Channel* chptr;
+	int len;
 
-  if (EmptyString(chname))
-    return NULL;
+	if (EmptyString(chname))
+		return NULL;
 
-  len = strlen(chname);
-  if (MyUser(cptr) && len > CHANNELLEN)
-  {
-    len = CHANNELLEN;
-    *(chname + CHANNELLEN) = '\0';
-  }
-  if ((chptr = FindChannel(chname)))
-    return (chptr);
-  if (flag == CGT_CREATE)
-  {
-    chptr = (struct Channel*) MyMalloc(sizeof(struct Channel) + len);
-    assert(0 != chptr);
-    ++UserStats.channels;
-    memset(chptr, 0, sizeof(struct Channel));
-    strcpy(chptr->chname, chname);
-    if (GlobalChannelList)
-      GlobalChannelList->prev = chptr;
-    chptr->prev = NULL;
-    chptr->next = GlobalChannelList;
-    chptr->creationtime = MyUser(cptr) ? TStime() : (time_t) 0;
-    GlobalChannelList = chptr;
-    hAddChannel(chptr);
-  }
-  return chptr;
+	len = strlen(chname);
+	if (MyUser(cptr) && len > CHANNELLEN)
+	{
+		len = CHANNELLEN;
+		*(chname + CHANNELLEN) = '\0';
+	}
+	if ((chptr = FindChannel(chname)))
+		return (chptr);
+	if (flag == CGT_CREATE)
+	{
+		chptr = (struct Channel*)MyMalloc(sizeof(struct Channel) + len);
+		assert(0 != chptr);
+		++UserStats.channels;
+		memset(chptr, 0, sizeof(struct Channel));
+		strcpy(chptr->chname, chname);
+		if (GlobalChannelList)
+			GlobalChannelList->prev = chptr;
+		chptr->prev = NULL;
+		chptr->next = GlobalChannelList;
+		chptr->creationtime = MyUser(cptr) ? TStime() : (time_t)0;
+		GlobalChannelList = chptr;
+		hAddChannel(chptr);
+	}
+	return chptr;
 }
 
-int SetAutoChanModes(struct Channel *chptr)
+int SetAutoChanModes(struct Channel* chptr)
 {
-  static int chan_flags[] = {
-    MODE_PRIVATE,       'p',
-    MODE_SECRET,        's',
-    MODE_MODERATED,     'm',
-    MODE_TOPICLIMIT,    't',
-    MODE_INVITEONLY,    'i',
-    MODE_NOPRIVMSGS,    'n',
-    MODE_REGONLY,       'r',
-    MODE_NOCOLOUR,      'c',
-    MODE_NOCTCP,        'C',
-    MODE_NONOTICE,      'N',
-    MODE_DELJOINS,      'D',
-    MODE_NOQUITPARTS,   'u',
-    MODE_NOMULTITARGET, 'T',
-    MODE_MODERATENOREG, 'M'
-  };
+	static int chan_flags[] = {
+	  MODE_PRIVATE,       'p',
+	  MODE_SECRET,        's',
+	  MODE_MODERATED,     'm',
+	  MODE_TOPICLIMIT,    't',
+	  MODE_INVITEONLY,    'i',
+	  MODE_NOPRIVMSGS,    'n',
+	  MODE_REGONLY,       'r',
+	  MODE_NOCOLOUR,      'c',
+	  MODE_NOCTCP,        'C',
+	  MODE_NONOTICE,      'N',
+	  MODE_DELJOINS,      'D',
+	  MODE_NOQUITPARTS,   'u',
+	  MODE_NOMULTITARGET, 'T',
+	  MODE_MODERATENOREG, 'M'
+	};
 
-  unsigned int *flag_p;
-  unsigned int t_mode;
-  const char *modestr;
+	unsigned int* flag_p;
+	unsigned int t_mode;
+	const char* modestr;
 
-  t_mode = 0;
+	t_mode = 0;
 
-  assert(0 != chptr);
+	assert(0 != chptr);
 
-  if (!feature_bool(FEAT_AUTOCHANMODES) || !feature_str(FEAT_AUTOCHANMODES_LIST) || strlen(feature_str(FEAT_AUTOCHANMODES_LIST)) <= 1)
-    return(-1);
+	if (!feature_bool(FEAT_AUTOCHANMODES) || !feature_str(FEAT_AUTOCHANMODES_LIST) || strlen(feature_str(FEAT_AUTOCHANMODES_LIST)) <= 1)
+		return(-1);
 
-  modestr = feature_str(FEAT_AUTOCHANMODES_LIST);
+	modestr = feature_str(FEAT_AUTOCHANMODES_LIST);
 
-  for (; *modestr; modestr++) {
-    for (flag_p = chan_flags; flag_p[0]; flag_p += 2) /* look up flag */
-      if (flag_p[1] == *modestr)
-        break;
+	for (; *modestr; modestr++) {
+		for (flag_p = chan_flags; flag_p[0]; flag_p += 2) /* look up flag */
+			if (flag_p[1] == *modestr)
+				break;
 
-    if (!flag_p[0]) /* didn't find it */
-      continue;
+		if (!flag_p[0]) /* didn't find it */
+			continue;
 
-    t_mode |= flag_p[0]; 
+		t_mode |= flag_p[0];
 
-  } /* for (; *modestr; modestr++) { */
+	} /* for (; *modestr; modestr++) { */
 
-  if (t_mode != 0)
-    chptr->mode.mode = t_mode;
-  return(0);
+	if (t_mode != 0)
+		chptr->mode.mode = t_mode;
+	return(0);
 }
 
 /** invite a user to a channel.
@@ -1372,33 +1498,33 @@ int SetAutoChanModes(struct Channel *chptr)
  * @param cptr	The client to be invited.
  * @param chptr	The channel to be invited to.
  */
-void add_invite(struct Client *cptr, struct Channel *chptr)
+void add_invite(struct Client* cptr, struct Channel* chptr)
 {
-  struct SLink *inv, **tmp;
+	struct SLink* inv, ** tmp;
 
-  del_invite(cptr, chptr);
-  /*
-   * Delete last link in chain if the list is max length
-   */
-  assert(list_length((cli_user(cptr))->invited) == (cli_user(cptr))->invites);
-  if ((cli_user(cptr))->invites >= feature_int(FEAT_MAXCHANNELSPERUSER))
-    del_invite(cptr, (cli_user(cptr))->invited->value.chptr);
-  /*
-   * Add client to channel invite list
-   */
-  inv = make_link();
-  inv->value.cptr = cptr;
-  inv->next = chptr->invites;
-  chptr->invites = inv;
-  /*
-   * Add channel to the end of the client invite list
-   */
-  for (tmp = &((cli_user(cptr))->invited); *tmp; tmp = &((*tmp)->next));
-  inv = make_link();
-  inv->value.chptr = chptr;
-  inv->next = NULL;
-  (*tmp) = inv;
-  (cli_user(cptr))->invites++;
+	del_invite(cptr, chptr);
+	/*
+	 * Delete last link in chain if the list is max length
+	 */
+	assert(list_length((cli_user(cptr))->invited) == (cli_user(cptr))->invites);
+	if ((cli_user(cptr))->invites >= feature_int(FEAT_MAXCHANNELSPERUSER))
+		del_invite(cptr, (cli_user(cptr))->invited->value.chptr);
+	/*
+	 * Add client to channel invite list
+	 */
+	inv = make_link();
+	inv->value.cptr = cptr;
+	inv->next = chptr->invites;
+	chptr->invites = inv;
+	/*
+	 * Add channel to the end of the client invite list
+	 */
+	for (tmp = &((cli_user(cptr))->invited); *tmp; tmp = &((*tmp)->next));
+	inv = make_link();
+	inv->value.chptr = chptr;
+	inv->next = NULL;
+	(*tmp) = inv;
+	(cli_user(cptr))->invites++;
 }
 
 /** Delete an invite
@@ -1407,28 +1533,28 @@ void add_invite(struct Client *cptr, struct Channel *chptr)
  * @param cptr	Client pointer
  * @param chptr	Channel pointer
  */
-void del_invite(struct Client *cptr, struct Channel *chptr)
+void del_invite(struct Client* cptr, struct Channel* chptr)
 {
-  struct SLink **inv, *tmp;
+	struct SLink** inv, * tmp;
 
-  for (inv = &(chptr->invites); (tmp = *inv); inv = &tmp->next)
-    if (tmp->value.cptr == cptr)
-    {
-      *inv = tmp->next;
-      free_link(tmp);
-      tmp = 0;
-      (cli_user(cptr))->invites--;
-      break;
-    }
+	for (inv = &(chptr->invites); (tmp = *inv); inv = &tmp->next)
+		if (tmp->value.cptr == cptr)
+		{
+			*inv = tmp->next;
+			free_link(tmp);
+			tmp = 0;
+			(cli_user(cptr))->invites--;
+			break;
+		}
 
-  for (inv = &((cli_user(cptr))->invited); (tmp = *inv); inv = &tmp->next)
-    if (tmp->value.chptr == chptr)
-    {
-      *inv = tmp->next;
-      free_link(tmp);
-      tmp = 0;
-      break;
-    }
+	for (inv = &((cli_user(cptr))->invited); (tmp = *inv); inv = &tmp->next)
+		if (tmp->value.chptr == chptr)
+		{
+			*inv = tmp->next;
+			free_link(tmp);
+			tmp = 0;
+			break;
+		}
 }
 
 /** @page zombie Explanation of Zombies
@@ -1488,53 +1614,53 @@ void del_invite(struct Client *cptr, struct Channel *chptr)
  * --Run
  */
 
-/** Turn a user on a channel into a zombie
- * This function turns a user into a zombie (see \ref zombie)
- *
- * @param member  The structure representing this user on this channel.
- * @param who	  The client that is being kicked.
- * @param cptr	  The connection the kick came from.
- * @param sptr    The client that is doing the kicking.
- * @param chptr	  The channel the user is being kicked from.
- */
-void make_zombie(struct Membership* member, struct Client* who, 
-		struct Client* cptr, struct Client* sptr, struct Channel* chptr)
-{
-  assert(0 != member);
-  assert(0 != who);
-  assert(0 != cptr);
-  assert(0 != chptr);
-
-  /* Default for case a): */
-  SetZombie(member);
-
-  /* Case b) or c) ?: */
-  if (MyUser(who))      /* server 4 */
-  {
-    if (IsServer(cptr)) /* Case b) ? */
-      sendcmdto_one(who, CMD_PART, cptr, "%H", chptr);
-    remove_user_from_channel(who, chptr);
-    return;
-  }
-  if (cli_from(who) == cptr)        /* True on servers 1, 5 and 6 */
-  {
-    struct Client *acptr = IsServer(sptr) ? sptr : (cli_user(sptr))->server;
-    for (; acptr != &me; acptr = (cli_serv(acptr))->up)
-      if (acptr == (cli_user(who))->server)   /* Case d) (server 5) */
-      {
-        remove_user_from_channel(who, chptr);
-        return;
-      }
-  }
-
-  /* Case a) (servers 1, 2, 3 and 6) */
-  if (channel_all_zombies(chptr))
-    remove_user_from_channel(who, chptr);
-
-  /* XXX Can't actually call Debug here; if the channel is all zombies,
-   * chptr will no longer exist when we get here.
-  Debug((DEBUG_INFO, "%s is now a zombie on %s", who->name, chptr->chname));
+ /** Turn a user on a channel into a zombie
+  * This function turns a user into a zombie (see \ref zombie)
+  *
+  * @param member  The structure representing this user on this channel.
+  * @param who	  The client that is being kicked.
+  * @param cptr	  The connection the kick came from.
+  * @param sptr    The client that is doing the kicking.
+  * @param chptr	  The channel the user is being kicked from.
   */
+void make_zombie(struct Membership* member, struct Client* who,
+	struct Client* cptr, struct Client* sptr, struct Channel* chptr)
+{
+	assert(0 != member);
+	assert(0 != who);
+	assert(0 != cptr);
+	assert(0 != chptr);
+
+	/* Default for case a): */
+	SetZombie(member);
+
+	/* Case b) or c) ?: */
+	if (MyUser(who))      /* server 4 */
+	{
+		if (IsServer(cptr)) /* Case b) ? */
+			sendcmdto_one(who, CMD_PART, cptr, "%H", chptr);
+		remove_user_from_channel(who, chptr);
+		return;
+	}
+	if (cli_from(who) == cptr)        /* True on servers 1, 5 and 6 */
+	{
+		struct Client* acptr = IsServer(sptr) ? sptr : (cli_user(sptr))->server;
+		for (; acptr != &me; acptr = (cli_serv(acptr))->up)
+			if (acptr == (cli_user(who))->server)   /* Case d) (server 5) */
+			{
+				remove_user_from_channel(who, chptr);
+				return;
+			}
+	}
+
+	/* Case a) (servers 1, 2, 3 and 6) */
+	if (channel_all_zombies(chptr))
+		remove_user_from_channel(who, chptr);
+
+	/* XXX Can't actually call Debug here; if the channel is all zombies,
+	 * chptr will no longer exist when we get here.
+	Debug((DEBUG_INFO, "%s is now a zombie on %s", who->name, chptr->chname));
+	*/
 }
 
 /** returns the number of zombies on a channel
@@ -1542,17 +1668,17 @@ void make_zombie(struct Membership* member, struct Client* who,
  *
  * @returns The number of zombies on the channel.
  */
-int number_of_zombies(struct Channel *chptr)
+int number_of_zombies(struct Channel* chptr)
 {
-  struct Membership* member;
-  int                count = 0;
+	struct Membership* member;
+	int                count = 0;
 
-  assert(0 != chptr);
-  for (member = chptr->members; member; member = member->next_member) {
-    if (IsZombie(member))
-      ++count;
-  }
-  return count;
+	assert(0 != chptr);
+	for (member = chptr->members; member; member = member->next_member) {
+		if (IsZombie(member))
+			++count;
+	}
+	return count;
 }
 
 /** Concatenate some strings together.
@@ -1567,21 +1693,71 @@ int number_of_zombies(struct Channel *chptr)
  * @param c		Charactor to separate the string from str1 and str2.
  */
 static void
-build_string(char *strptr, int *strptr_i, const char *str1,
-             const char *str2, char c)
+build_string(char* strptr, int* strptr_i, const char* str1,
+	const char* str2, char c)
 {
-  if (c)
-    strptr[(*strptr_i)++] = c;
+	if (c)
+		strptr[(*strptr_i)++] = c;
 
-  while (*str1)
-    strptr[(*strptr_i)++] = *(str1++);
+	while (*str1)
+		strptr[(*strptr_i)++] = *(str1++);
 
-  if (str2)
-    while (*str2)
-      strptr[(*strptr_i)++] = *(str2++);
+	if (str2)
+		while (*str2)
+			strptr[(*strptr_i)++] = *(str2++);
 
-  strptr[(*strptr_i)] = '\0';
+	strptr[(*strptr_i)] = '\0';
 }
+
+static int get_mode_rank(unsigned int status)
+{
+	if (status & CHFL_CHANSERVICE) return 6;
+	if (status & CHFL_OWNER)       return 5;
+	if (status & CHFL_ADMIN)       return 4;
+	if (status & CHFL_CHANOP)      return 3;
+	if (status & CHFL_HALFOP)      return 2;
+	if (status & CHFL_VOICE)       return 1;
+	return 0;
+}
+
+// Gibt zurück, ob ein Mitglied einen Befehl auf ein anderes ausführen darf
+int has_channel_permission(struct Membership* setter, struct Membership* target, unsigned int required_flag) {
+	int setter_rank = get_mode_rank(setter ? setter->status : 0);
+	int required_rank = get_mode_rank(required_flag);
+	int target_rank = get_mode_rank(target ? target->status : 0);
+
+	// ChanService darf alles
+	if (setter && (setter->status & CHFL_CHANSERVICE))
+		return 1;
+
+	// Muss mindestens den Rang für die Aktion haben und darf sich nicht an Gleichrangigen/Höheren vergreifen
+	return setter_rank >= required_rank && setter_rank > target_rank;
+}
+
+// Berechtigungsprüfung für das Setzen von Channel-User-Modi
+static int can_set_channel_user_mode(struct Membership* setter, struct Membership* target, unsigned int modeflag)
+{
+	int setter_rank = setter ? get_mode_rank(setter->status) : 0;
+	int target_rank = target ? get_mode_rank(target->status) : 0;
+	int mode_rank = get_mode_rank(modeflag);
+
+	// Voice kann keine Modi setzen
+	if (setter_rank == 1) return 0;
+
+	// Nur gleichrangige oder höhere dürfen setzen
+	return setter_rank >= mode_rank && setter_rank >= target_rank;
+}
+
+static const struct {
+	unsigned int flag;
+	char modechar;
+} user_modes_with_level[] = {
+	{ MODE_CHANSERVICE, 'S' },
+	{ MODE_OWNER,       'q' },
+	{ MODE_ADMIN,       'a' },
+	{ MODE_CHANOP,      'o' },
+	{ MODE_HALFOP,      'h' }
+};
 
 /** Flush out the modes
  * This is the workhorse of our ModeBuf suite; this actually generates the
@@ -1594,386 +1770,441 @@ build_string(char *strptr, int *strptr_i, const char *str1,
  * @returns 0
  */
 static int
-modebuf_flush_int(struct ModeBuf *mbuf, int all)
+modebuf_flush_int(struct ModeBuf* mbuf, int all)
 {
-  /* we only need the flags that don't take args right now */
-  static int flags[] = {
-/*  MODE_CHANOP,	'o', */
-/*  MODE_VOICE,		'v', */
-    MODE_PRIVATE,	'p',
-    MODE_SECRET,	's',
-    MODE_MODERATED,	'm',
-    MODE_TOPICLIMIT,	't',
-    MODE_INVITEONLY,	'i',
-    MODE_NOPRIVMSGS,	'n',
-    MODE_REGONLY,	'r',
-    MODE_DELJOINS,      'D',
-/*  MODE_KEY,		'k', */
-/*  MODE_BAN,		'b', */
-    MODE_LIMIT,		'l',
-/*  MODE_APASS,		'A', */
-/*  MODE_UPASS,		'U', */
-    MODE_NOQUITPARTS,   'u',
-    MODE_NOCOLOUR,      'c',
-    MODE_NOCTCP,        'C',
-    MODE_NONOTICE,	'N',
-    MODE_NOMULTITARGET, 'T',
-    MODE_MODERATENOREG, 'M',
-    MODE_TLSONLY,       'Z',
-    0x0, 0x0
-  };
-  static int local_flags[] = {
-    MODE_WASDELJOINS,   'd',
-    0x0, 0x0
-  };
-  int i;
-  int *flag_p;
+	/* we only need the flags that don't take args right now */
+	static int flags[] = {
+		/*  MODE_CHANOP,	'o', */
+		/*  MODE_VOICE,		'v', */
+			MODE_PRIVATE,	'p',
+			MODE_SECRET,	's',
+			MODE_MODERATED,	'm',
+			MODE_TOPICLIMIT,	't',
+			MODE_INVITEONLY,	'i',
+			MODE_NOPRIVMSGS,	'n',
+			MODE_REGONLY,	'r',
+			MODE_DELJOINS,      'D',
+			/*  MODE_KEY,		'k', */
+			/*  MODE_BAN,		'b', */
+				MODE_LIMIT,		'l',
+				/*  MODE_APASS,		'A', */
+				/*  MODE_UPASS,		'U', */
+					MODE_NOQUITPARTS,   'u',
+					MODE_NOCOLOUR,      'c',
+					MODE_NOCTCP,        'C',
+					MODE_NONOTICE,	'N',
+					MODE_NOMULTITARGET, 'T',
+					MODE_MODERATENOREG, 'M',
+					MODE_TLSONLY,       'Z',
+					MODE_ANTIJOINFLOOD, 'j', // Added joinflood mode (+j)
+					MODE_LINK,          'L',
+					0x0, 0x0
+	};
+	static int local_flags[] = {
+	  MODE_WASDELJOINS,   'd',
+	  0x0, 0x0
+	};
+	int i;
+	int* flag_p;
 
-  struct Client *app_source; /* where the MODE appears to come from */
+	struct Client* app_source; /* where the MODE appears to come from */
 
-  char addbuf[20], addbuf_local[20]; /* accumulates +psmtin, etc. */
-  int addbuf_i = 0, addbuf_local_i = 0;
-  char rembuf[20], rembuf_local[20]; /* accumulates -psmtin, etc. */
-  int rembuf_i = 0, rembuf_local_i = 0;
-  char *bufptr; /* we make use of indirection to simplify the code */
-  int *bufptr_i;
+	char addbuf[20], addbuf_local[20]; /* accumulates +psmtin, etc. */
+	int addbuf_i = 0, addbuf_local_i = 0;
+	char rembuf[20], rembuf_local[20]; /* accumulates -psmtin, etc. */
+	int rembuf_i = 0, rembuf_local_i = 0;
+	char* bufptr; /* we make use of indirection to simplify the code */
+	int* bufptr_i;
 
-  char addstr[BUFSIZE]; /* accumulates MODE parameters to add */
-  int addstr_i;
-  char remstr[BUFSIZE]; /* accumulates MODE parameters to remove */
-  int remstr_i;
-  char *strptr; /* more indirection to simplify the code */
-  int *strptr_i;
+	char addstr[BUFSIZE]; /* accumulates MODE parameters to add */
+	int addstr_i;
+	char remstr[BUFSIZE]; /* accumulates MODE parameters to remove */
+	int remstr_i;
+	char* strptr; /* more indirection to simplify the code */
+	int* strptr_i;
 
-  int totalbuflen = BUFSIZE - 200; /* fuzz factor -- don't overrun buffer! */
-  int tmp;
+	int totalbuflen = BUFSIZE - 200; /* fuzz factor -- don't overrun buffer! */
+	int tmp;
 
-  char limitbuf[20]; /* convert limits to strings */
+	char limitbuf[20]; /* convert limits to strings */
 
-  unsigned int limitdel = MODE_LIMIT;
+	unsigned int limitdel = MODE_LIMIT;
 
-  assert(0 != mbuf);
+	assert(0 != mbuf);
 
-  /* If the ModeBuf is empty, we have nothing to do */
-  if (mbuf->mb_add == 0 && mbuf->mb_rem == 0 && mbuf->mb_count == 0)
-    return 0;
+	/* If the ModeBuf is empty, we have nothing to do */
+	if (mbuf->mb_add == 0 && mbuf->mb_rem == 0 && mbuf->mb_count == 0)
+		return 0;
 
-  /* Ok, if we were given the OPMODE flag, or its a server, hide the source.
-   */
-  if (feature_bool(FEAT_HIS_MODEWHO) &&
-      (mbuf->mb_dest & MODEBUF_DEST_OPMODE ||
-       IsServer(mbuf->mb_source) ||
-       IsMe(mbuf->mb_source)))
-    app_source = &his;
-  else
-    app_source = mbuf->mb_source;
+	/* Ok, if we were given the OPMODE flag, or its a server, hide the source.
+	 */
+	if (feature_bool(FEAT_HIS_MODEWHO) &&
+		(mbuf->mb_dest & MODEBUF_DEST_OPMODE ||
+			IsServer(mbuf->mb_source) ||
+			IsMe(mbuf->mb_source)))
+		app_source = &his;
+	else
+		app_source = mbuf->mb_source;
 
-  /*
-   * Account for user we're bouncing; we have to get it in on the first
-   * bounced MODE, or we could have problems
-   */
-  if (mbuf->mb_dest & MODEBUF_DEST_DEOP)
-    totalbuflen -= 6; /* numeric nick == 5, plus one space */
+	/*
+	 * Account for user we're bouncing; we have to get it in on the first
+	 * bounced MODE, or we could have problems
+	 */
+	if (mbuf->mb_dest & MODEBUF_DEST_DEOP)
+		totalbuflen -= 6; /* numeric nick == 5, plus one space */
 
-  /* Calculate the simple flags */
-  for (flag_p = flags; flag_p[0]; flag_p += 2) {
-    if (*flag_p & mbuf->mb_add)
-      addbuf[addbuf_i++] = flag_p[1];
-    else if (*flag_p & mbuf->mb_rem)
-      rembuf[rembuf_i++] = flag_p[1];
-  }
-
-  /* Some flags may be for local display only. */
-  for (flag_p = local_flags; flag_p[0]; flag_p += 2) {
-    if (*flag_p & mbuf->mb_add)
-      addbuf_local[addbuf_local_i++] = flag_p[1];
-    else if (*flag_p & mbuf->mb_rem)
-      rembuf_local[rembuf_local_i++] = flag_p[1];
-  }
-
-  /* Now go through the modes with arguments... */
-  for (i = 0; i < mbuf->mb_count; i++) {
-    if (MB_TYPE(mbuf, i) & MODE_ADD) { /* adding or removing? */
-      bufptr = addbuf;
-      bufptr_i = &addbuf_i;
-    } else {
-      bufptr = rembuf;
-      bufptr_i = &rembuf_i;
-    }
-
-    if (MB_TYPE(mbuf, i) & (MODE_CHANOP | MODE_VOICE)) {
-      tmp = strlen(cli_name(MB_CLIENT(mbuf, i)));
-
-      if ((totalbuflen - IRCD_MAX(9, tmp)) <= 0) /* don't overflow buffer */
-	MB_TYPE(mbuf, i) |= MODE_SAVE; /* save for later */
-      else {
-	bufptr[(*bufptr_i)++] = MB_TYPE(mbuf, i) & MODE_CHANOP ? 'o' : 'v';
-	totalbuflen -= IRCD_MAX(9, tmp) + 1;
-      }
-    } else if (MB_TYPE(mbuf, i) & (MODE_BAN | MODE_APASS | MODE_UPASS)) {
-      tmp = strlen(MB_STRING(mbuf, i));
-
-      if ((totalbuflen - tmp) <= 0) /* don't overflow buffer */
-	MB_TYPE(mbuf, i) |= MODE_SAVE; /* save for later */
-      else {
-	char mode_char;
-	switch(MB_TYPE(mbuf, i) & (MODE_BAN | MODE_APASS | MODE_UPASS))
-	{
-	  case MODE_APASS:
-	    mode_char = 'A';
-	    break;
-	  case MODE_UPASS:
-	    mode_char = 'U';
-	    break;
-	  default:
-	    mode_char = 'b';
-	    break;
+	/* Calculate the simple flags */
+	for (flag_p = flags; flag_p[0]; flag_p += 2) {
+		if (*flag_p & mbuf->mb_add)
+			addbuf[addbuf_i++] = flag_p[1];
+		else if (*flag_p & mbuf->mb_rem)
+			rembuf[rembuf_i++] = flag_p[1];
 	}
-	bufptr[(*bufptr_i)++] = mode_char;
-	totalbuflen -= tmp + 1;
-      }
-    } else if (MB_TYPE(mbuf, i) & MODE_KEY) {
-      tmp = (mbuf->mb_dest & MODEBUF_DEST_NOKEY ? 1 :
-	     strlen(MB_STRING(mbuf, i)));
 
-      if ((totalbuflen - tmp) <= 0) /* don't overflow buffer */
-	MB_TYPE(mbuf, i) |= MODE_SAVE; /* save for later */
-      else {
-	bufptr[(*bufptr_i)++] = 'k';
-	totalbuflen -= tmp + 1;
-      }
-    } else if (MB_TYPE(mbuf, i) & MODE_LIMIT) {
-      /* if it's a limit, we also format the number */
-      ircd_snprintf(0, limitbuf, sizeof(limitbuf), "%u", MB_UINT(mbuf, i));
+	/* Some flags may be for local display only. */
+	for (flag_p = local_flags; flag_p[0]; flag_p += 2) {
+		if (*flag_p & mbuf->mb_add)
+			addbuf_local[addbuf_local_i++] = flag_p[1];
+		else if (*flag_p & mbuf->mb_rem)
+			rembuf_local[rembuf_local_i++] = flag_p[1];
+	}
 
-      tmp = strlen(limitbuf);
+	/* Now go through the modes with arguments... */
+	for (i = 0; i < mbuf->mb_count; i++) {
+		if (MB_TYPE(mbuf, i) & MODE_ADD) { /* adding or removing? */
+			bufptr = addbuf;
+			bufptr_i = &addbuf_i;
+		}
+		else {
+			bufptr = rembuf;
+			bufptr_i = &rembuf_i;
+		}
 
-      if ((totalbuflen - tmp) <= 0) /* don't overflow buffer */
-	MB_TYPE(mbuf, i) |= MODE_SAVE; /* save for later */
-      else {
-	bufptr[(*bufptr_i)++] = 'l';
-	totalbuflen -= tmp + 1;
-      }
-    }
-  }
+		if (MB_TYPE(mbuf, i) & (MODE_CHANSERVICE | MODE_OWNER | MODE_ADMIN | MODE_CHANOP | MODE_HALFOP | MODE_VOICE)) {
+			tmp = strlen(cli_name(MB_CLIENT(mbuf, i)));
+			if ((totalbuflen - IRCD_MAX(9, tmp)) <= 0)
+				MB_TYPE(mbuf, i) |= MODE_SAVE;
+			else {
+				char modechar = 0;
+				if (MB_TYPE(mbuf, i) & MODE_CHANSERVICE) modechar = 'S';
+				else if (MB_TYPE(mbuf, i) & MODE_OWNER) modechar = 'q';
+				else if (MB_TYPE(mbuf, i) & MODE_ADMIN) modechar = 'a';
+				else if (MB_TYPE(mbuf, i) & MODE_CHANOP) modechar = 'o';
+				else if (MB_TYPE(mbuf, i) & MODE_HALFOP) modechar = 'h';
+				else if (MB_TYPE(mbuf, i) & MODE_VOICE) modechar = 'v';
 
-  /* terminate the mode strings */
-  addbuf[addbuf_i] = '\0';
-  rembuf[rembuf_i] = '\0';
-  addbuf_local[addbuf_local_i] = '\0';
-  rembuf_local[rembuf_local_i] = '\0';
+				if (modechar)
+					bufptr[(*bufptr_i)++] = modechar;
+				totalbuflen -= IRCD_MAX(9, tmp) + 1;
+			}
+		}
+		else if (MB_TYPE(mbuf, i) & (MODE_BAN | MODE_BANEXCEPTION | MODE_APASS | MODE_UPASS)) {
+			tmp = strlen(MB_STRING(mbuf, i));
+			if ((totalbuflen - tmp) <= 0)
+				MB_TYPE(mbuf, i) |= MODE_SAVE;
+			else {
+				char mode_char;
+				switch (MB_TYPE(mbuf, i) & (MODE_BAN | MODE_BANEXCEPTION | MODE_APASS | MODE_UPASS))
+				{
+				case MODE_APASS:
+					mode_char = 'A';
+					break;
+				case MODE_UPASS:
+					mode_char = 'U';
+					break;
+				case MODE_BANEXCEPTION:
+					mode_char = 'e'; // Ban-Exception (+e)
+					break;
+				case MODE_ANTIJOINFLOOD:
+					mode_char = 'j'; // Joinflood (+j)
+					break;
+				case MODE_LINK:
+					mode_char = 'L'; // Link (+L)
+					break;
+				default:
+					mode_char = 'b';
+					break;
+				}
+				bufptr[(*bufptr_i)++] = mode_char;
+				totalbuflen -= tmp + 1;
+			}
+		}
 
-  /* If we're building a user visible MODE or HACK... */
-  if (mbuf->mb_dest & (MODEBUF_DEST_CHANNEL | MODEBUF_DEST_HACK2 |
-		       MODEBUF_DEST_HACK3   | MODEBUF_DEST_HACK4 |
-		       MODEBUF_DEST_LOG)) {
-    /* Set up the parameter strings */
-    addstr[0] = '\0';
-    addstr_i = 0;
-    remstr[0] = '\0';
-    remstr_i = 0;
+		else if (MB_TYPE(mbuf, i) & MODE_LIMIT) {
+			/* if it's a limit, we also format the number */
+			ircd_snprintf(0, limitbuf, sizeof(limitbuf), "%u", MB_UINT(mbuf, i));
 
-    for (i = 0; i < mbuf->mb_count; i++) {
-      if (MB_TYPE(mbuf, i) & MODE_SAVE)
-	continue;
+			tmp = strlen(limitbuf);
 
-      if (MB_TYPE(mbuf, i) & MODE_ADD) { /* adding or removing? */
-	strptr = addstr;
-	strptr_i = &addstr_i;
-      } else {
-	strptr = remstr;
-	strptr_i = &remstr_i;
-      }
+			if ((totalbuflen - tmp) <= 0) /* don't overflow buffer */
+				MB_TYPE(mbuf, i) |= MODE_SAVE; /* save for later */
+			else {
+				bufptr[(*bufptr_i)++] = 'l';
+				totalbuflen -= tmp + 1;
+			}
+		}
+		else if (MB_TYPE(mbuf, i) & MODE_ANTIJOINFLOOD) {
+			char joinfloodbuf[32];
+			snprintf(joinfloodbuf, sizeof(joinfloodbuf), "%d:%d",
+				mbuf->mb_channel->joinflood_limit,
+				mbuf->mb_channel->joinflood_period);
+			bufptr[(*bufptr_i)++] = 'j';
+			totalbuflen -= strlen(joinfloodbuf) + 1;
+		}
+		else if (MB_TYPE(mbuf, i) & MODE_LINK) {
+			/* Link mode (+L) */
+			tmp = strlen(MB_STRING(mbuf, i));
+			if ((totalbuflen - tmp) <= 0)
+				MB_TYPE(mbuf, i) |= MODE_SAVE; /* save for later */
+			else {
+				bufptr[(*bufptr_i)++] = 'L';
+				totalbuflen -= tmp + 1;
+			}
+		}
+	}
 
-      /* deal with clients... */
-      if (MB_TYPE(mbuf, i) & (MODE_CHANOP | MODE_VOICE))
-	build_string(strptr, strptr_i, cli_name(MB_CLIENT(mbuf, i)), 0, ' ');
+	/* terminate the mode strings */
+	addbuf[addbuf_i] = '\0';
+	rembuf[rembuf_i] = '\0';
+	addbuf_local[addbuf_local_i] = '\0';
+	rembuf_local[rembuf_local_i] = '\0';
 
-      /* deal with bans... */
-      else if (MB_TYPE(mbuf, i) & MODE_BAN)
-	build_string(strptr, strptr_i, MB_STRING(mbuf, i), 0, ' ');
+	/* If we're building a user visible MODE or HACK... */
+	if (mbuf->mb_dest & (MODEBUF_DEST_CHANNEL | MODEBUF_DEST_HACK2 |
+		MODEBUF_DEST_HACK3 | MODEBUF_DEST_HACK4 |
+		MODEBUF_DEST_LOG)) {
+		/* Set up the parameter strings */
+		addstr[0] = '\0';
+		addstr_i = 0;
+		remstr[0] = '\0';
+		remstr_i = 0;
 
-      /* deal with keys... */
-      else if (MB_TYPE(mbuf, i) & MODE_KEY)
-	build_string(strptr, strptr_i, mbuf->mb_dest & MODEBUF_DEST_NOKEY ?
-		     "*" : MB_STRING(mbuf, i), 0, ' ');
+		for (i = 0; i < mbuf->mb_count; i++) {
+			if (MB_TYPE(mbuf, i) & MODE_SAVE)
+				continue;
 
-      /* deal with invisible passwords */
-      else if (MB_TYPE(mbuf, i) & (MODE_APASS | MODE_UPASS))
-	build_string(strptr, strptr_i, "*", 0, ' ');
+			if (MB_TYPE(mbuf, i) & MODE_ADD) { /* adding or removing? */
+				strptr = addstr;
+				strptr_i = &addstr_i;
+			}
+			else {
+				strptr = remstr;
+				strptr_i = &remstr_i;
+			}
 
-      /*
-       * deal with limit; note we cannot include the limit parameter if we're
-       * removing it
-       */
-      else if ((MB_TYPE(mbuf, i) & (MODE_ADD | MODE_LIMIT)) ==
-	       (MODE_ADD | MODE_LIMIT))
-	build_string(strptr, strptr_i, limitbuf, 0, ' ');
-    }
+			/* deal with clients... */
+			if (MB_TYPE(mbuf, i) & (MODE_CHANSERVICE|MODE_OWNER|MODE_ADMIN|MODE_CHANOP | MODE_HALFOP | MODE_VOICE))
+				build_string(strptr, strptr_i, cli_name(MB_CLIENT(mbuf, i)), 0, ' ');
+			/* deal with bans... */
+			else if (MB_TYPE(mbuf, i) & (MODE_BAN|MODE_BANEXCEPTION))
+				build_string(strptr, strptr_i, MB_STRING(mbuf, i), 0, ' ');
 
-    /* send the messages off to their destination */
-    if (mbuf->mb_dest & MODEBUF_DEST_HACK2)
-      sendto_opmask_butone(0, SNO_HACK2, "HACK(2): %s MODE %s %s%s%s%s%s%s "
-			   "[%Tu]",
-                           cli_name(feature_bool(FEAT_HIS_SNOTICES) ?
-                                    mbuf->mb_source : app_source),
-			   mbuf->mb_channel->chname,
-			   rembuf_i ? "-" : "", rembuf, addbuf_i ? "+" : "",
-			   addbuf, remstr, addstr,
-			   mbuf->mb_channel->creationtime);
+			/* deal with keys... */
+			else if (MB_TYPE(mbuf, i) & MODE_KEY)
+				build_string(strptr, strptr_i, mbuf->mb_dest & MODEBUF_DEST_NOKEY ?
+					"*" : MB_STRING(mbuf, i), 0, ' ');
 
-    if (mbuf->mb_dest & MODEBUF_DEST_HACK3)
-      sendto_opmask_butone(0, SNO_HACK3, "BOUNCE or HACK(3): %s MODE %s "
-			   "%s%s%s%s%s%s [%Tu]",
-                           cli_name(feature_bool(FEAT_HIS_SNOTICES) ? 
-                                    mbuf->mb_source : app_source),
-			   mbuf->mb_channel->chname, rembuf_i ? "-" : "",
-			   rembuf, addbuf_i ? "+" : "", addbuf, remstr, addstr,
-			   mbuf->mb_channel->creationtime);
+			/* deal with invisible passwords */
+			else if (MB_TYPE(mbuf, i) & (MODE_APASS | MODE_UPASS))
+				build_string(strptr, strptr_i, "*", 0, ' ');
 
-    if (mbuf->mb_dest & MODEBUF_DEST_HACK4)
-      sendto_opmask_butone(0, SNO_HACK4, "HACK(4): %s MODE %s %s%s%s%s%s%s "
-			   "[%Tu]",
-			   cli_name(feature_bool(FEAT_HIS_SNOTICES) ?
-                                    mbuf->mb_source : app_source),
-			   mbuf->mb_channel->chname,
-			   rembuf_i ? "-" : "", rembuf, addbuf_i ? "+" : "",
-			   addbuf, remstr, addstr,
-			   mbuf->mb_channel->creationtime);
+			/*
+			 * deal with limit; note we cannot include the limit parameter if we're
+			 * removing it
+			 */
+			else if ((MB_TYPE(mbuf, i) & (MODE_ADD | MODE_LIMIT)) ==
+				(MODE_ADD | MODE_LIMIT))
+				build_string(strptr, strptr_i, limitbuf, 0, ' ');
+			else if ((MB_TYPE(mbuf, i) & (MODE_ADD | MODE_ANTIJOINFLOOD)) == (MODE_ADD | MODE_ANTIJOINFLOOD)) {
+				char joinfloodbuf[32];
+				snprintf(joinfloodbuf, sizeof(joinfloodbuf), "%d:%d",
+					mbuf->mb_channel->joinflood_limit,
+					mbuf->mb_channel->joinflood_period);
+				build_string(strptr, strptr_i, joinfloodbuf, 0, ' ');
+			}
+			else if ((MB_TYPE(mbuf, i) & (MODE_ADD | MODE_LINK)) == (MODE_ADD | MODE_LINK)) {
+				build_string(strptr, strptr_i, MB_STRING(mbuf, i), 0, ' ');
+			}
+		}
 
-    if (mbuf->mb_dest & MODEBUF_DEST_LOG)
-      log_write(LS_OPERMODE, L_INFO, LOG_NOSNOTICE,
-		"%#C OPMODE %H %s%s%s%s%s%s", mbuf->mb_source,
-		mbuf->mb_channel, rembuf_i ? "-" : "", rembuf,
-		addbuf_i ? "+" : "", addbuf, remstr, addstr);
+		/* send the messages off to their destination */
+		if (mbuf->mb_dest & MODEBUF_DEST_HACK2)
+			sendto_opmask_butone(0, SNO_HACK2, "HACK(2): %s MODE %s %s%s%s%s%s%s "
+				"[%Tu]",
+				cli_name(feature_bool(FEAT_HIS_SNOTICES) ?
+					mbuf->mb_source : app_source),
+				mbuf->mb_channel->chname,
+				rembuf_i ? "-" : "", rembuf, addbuf_i ? "+" : "",
+				addbuf, remstr, addstr,
+				mbuf->mb_channel->creationtime);
 
-    if (mbuf->mb_dest & MODEBUF_DEST_CHANNEL)
-      sendcmdto_channel_butserv_butone(app_source, CMD_MODE, mbuf->mb_channel, NULL, 0,
-                                       "%H %s%s%s%s%s%s%s%s", mbuf->mb_channel,
-                                       rembuf_i || rembuf_local_i ? "-" : "",
-                                       rembuf, rembuf_local,
-                                       addbuf_i || addbuf_local_i ? "+" : "",
-                                       addbuf, addbuf_local,
-                                       remstr, addstr);
-  }
+		if (mbuf->mb_dest & MODEBUF_DEST_HACK3)
+			sendto_opmask_butone(0, SNO_HACK3, "BOUNCE or HACK(3): %s MODE %s "
+				"%s%s%s%s%s%s [%Tu]",
+				cli_name(feature_bool(FEAT_HIS_SNOTICES) ?
+					mbuf->mb_source : app_source),
+				mbuf->mb_channel->chname, rembuf_i ? "-" : "",
+				rembuf, addbuf_i ? "+" : "", addbuf, remstr, addstr,
+				mbuf->mb_channel->creationtime);
 
-  /* Now are we supposed to propagate to other servers? */
-  if (mbuf->mb_dest & MODEBUF_DEST_SERVER) {
-    /* set up parameter string */
-    addstr[0] = '\0';
-    addstr_i = 0;
-    remstr[0] = '\0';
-    remstr_i = 0;
+		if (mbuf->mb_dest & MODEBUF_DEST_HACK4)
+			sendto_opmask_butone(0, SNO_HACK4, "HACK(4): %s MODE %s %s%s%s%s%s%s "
+				"[%Tu]",
+				cli_name(feature_bool(FEAT_HIS_SNOTICES) ?
+					mbuf->mb_source : app_source),
+				mbuf->mb_channel->chname,
+				rembuf_i ? "-" : "", rembuf, addbuf_i ? "+" : "",
+				addbuf, remstr, addstr,
+				mbuf->mb_channel->creationtime);
 
-    /*
-     * limit is supressed if we're removing it; we have to figure out which
-     * direction is the direction for it to be removed, though...
-     */
-    limitdel |= (mbuf->mb_dest & MODEBUF_DEST_BOUNCE) ? MODE_DEL : MODE_ADD;
+		if (mbuf->mb_dest & MODEBUF_DEST_LOG)
+			log_write(LS_OPERMODE, L_INFO, LOG_NOSNOTICE,
+				"%#C OPMODE %H %s%s%s%s%s%s", mbuf->mb_source,
+				mbuf->mb_channel, rembuf_i ? "-" : "", rembuf,
+				addbuf_i ? "+" : "", addbuf, remstr, addstr);
 
-    for (i = 0; i < mbuf->mb_count; i++) {
-      if (MB_TYPE(mbuf, i) & MODE_SAVE)
-	continue;
+		if (mbuf->mb_dest & MODEBUF_DEST_CHANNEL)
+			sendcmdto_channel_butserv_butone(app_source, CMD_MODE, mbuf->mb_channel, NULL, 0,
+				"%H %s%s%s%s%s%s%s%s", mbuf->mb_channel,
+				rembuf_i || rembuf_local_i ? "-" : "",
+				rembuf, rembuf_local,
+				addbuf_i || addbuf_local_i ? "+" : "",
+				addbuf, addbuf_local,
+				remstr, addstr);
+	}
 
-      if (MB_TYPE(mbuf, i) & MODE_ADD) { /* adding or removing? */
-	strptr = addstr;
-	strptr_i = &addstr_i;
-      } else {
-	strptr = remstr;
-	strptr_i = &remstr_i;
-      }
+	/* Now are we supposed to propagate to other servers? */
+	if (mbuf->mb_dest & MODEBUF_DEST_SERVER) {
+		/* set up parameter string */
+		addstr[0] = '\0';
+		addstr_i = 0;
+		remstr[0] = '\0';
+		remstr_i = 0;
 
-      /* if we're changing oplevels and we know the oplevel, pass it on */
-      if ((MB_TYPE(mbuf, i) & MODE_CHANOP)
-          && MB_OPLEVEL(mbuf, i) < MAXOPLEVEL)
-          *strptr_i += ircd_snprintf(0, strptr + *strptr_i, BUFSIZE - *strptr_i,
-                                     " %s%s:%d",
-                                     NumNick(MB_CLIENT(mbuf, i)),
-                                     MB_OPLEVEL(mbuf, i));
+		/*
+		 * limit is supressed if we're removing it; we have to figure out which
+		 * direction is the direction for it to be removed, though...
+		 */
+		limitdel |= (mbuf->mb_dest & MODEBUF_DEST_BOUNCE) ? MODE_DEL : MODE_ADD;
 
-      /* deal with other modes that take clients */
-      else if (MB_TYPE(mbuf, i) & (MODE_CHANOP | MODE_VOICE))
-	build_string(strptr, strptr_i, NumNick(MB_CLIENT(mbuf, i)), ' ');
+		for (i = 0; i < mbuf->mb_count; i++) {
+			if (MB_TYPE(mbuf, i) & MODE_SAVE)
+				continue;
 
-      /* deal with modes that take strings */
-      else if (MB_TYPE(mbuf, i) & (MODE_KEY | MODE_BAN | MODE_APASS | MODE_UPASS))
-	build_string(strptr, strptr_i, MB_STRING(mbuf, i), 0, ' ');
+			if (MB_TYPE(mbuf, i) & MODE_ADD) { /* adding or removing? */
+				strptr = addstr;
+				strptr_i = &addstr_i;
+			}
+			else {
+				strptr = remstr;
+				strptr_i = &remstr_i;
+			}
 
-      /*
-       * deal with the limit.  Logic here is complicated; if HACK2 is set,
-       * we're bouncing the mode, so sense is reversed, and we have to
-       * include the original limit if it looks like it's being removed
-       */
-      else if ((MB_TYPE(mbuf, i) & limitdel) == limitdel)
-	build_string(strptr, strptr_i, limitbuf, 0, ' ');
-    }
+			/* if we're changing oplevels and we know the oplevel, pass it on */
+			if ((MB_TYPE(mbuf, i) & (MODE_CHANSERVICE | MODE_OWNER | MODE_ADMIN | MODE_CHANOP | MODE_HALFOP))
+				&& MB_OPLEVEL(mbuf, i) < MAXOPLEVEL)
+				*strptr_i += ircd_snprintf(0, strptr + *strptr_i, BUFSIZE - *strptr_i,
+					" %s%s:%d",
+					NumNick(MB_CLIENT(mbuf, i)),
+					MB_OPLEVEL(mbuf, i));
 
-    /* we were told to deop the source */
-    if (mbuf->mb_dest & MODEBUF_DEST_DEOP) {
-      addbuf[addbuf_i++] = 'o'; /* remember, sense is reversed */
-      addbuf[addbuf_i] = '\0'; /* terminate the string... */
-      build_string(addstr, &addstr_i, NumNick(mbuf->mb_source), ' ');
+			/* deal with other modes that take clients */
+			else if (MB_TYPE(mbuf, i) & (MODE_CHANSERVICE|MODE_OWNER|MODE_ADMIN|MODE_CHANOP | MODE_HALFOP | MODE_VOICE))
+				build_string(strptr, strptr_i, NumNick(MB_CLIENT(mbuf, i)), ' ');
 
-      /* mark that we've done this, so we don't do it again */
-      mbuf->mb_dest &= ~MODEBUF_DEST_DEOP;
-    }
+			/* deal with modes that take strings */
+			else if (MB_TYPE(mbuf, i) & (MODE_KEY | MODE_BAN | MODE_BANEXCEPTION | MODE_APASS | MODE_UPASS))
+				build_string(strptr, strptr_i, MB_STRING(mbuf, i), 0, ' ');
 
-    if (mbuf->mb_dest & MODEBUF_DEST_OPMODE) {
-      /* If OPMODE was set, we're propagating the mode as an OPMODE message */
-      sendcmdto_serv_butone(mbuf->mb_source, CMD_OPMODE, mbuf->mb_connect,
-			    "%H %s%s%s%s%s%s", mbuf->mb_channel,
-			    rembuf_i ? "-" : "", rembuf, addbuf_i ? "+" : "",
-			    addbuf, remstr, addstr);
-    } else if (mbuf->mb_dest & MODEBUF_DEST_BOUNCE) {
-      /*
-       * If HACK2 was set, we're bouncing; we send the MODE back to
-       * the connection we got it from with the senses reversed and
-       * the proper TS; origin is us
-       */
-      sendcmdto_one(&me, CMD_MODE, mbuf->mb_connect, "%H %s%s%s%s%s%s %Tu",
-		    mbuf->mb_channel, addbuf_i ? "-" : "", addbuf,
-		    rembuf_i ? "+" : "", rembuf, addstr, remstr,
-		    mbuf->mb_channel->creationtime);
-    } else {
-      /*
-       * We're propagating a normal (or HACK3 or HACK4) MODE command
-       * to the rest of the network.  We send the actual channel TS.
-       */
-      sendcmdto_serv_butone(mbuf->mb_source, CMD_MODE, mbuf->mb_connect,
-                            "%H %s%s%s%s%s%s %Tu", mbuf->mb_channel,
-                            rembuf_i ? "-" : "", rembuf, addbuf_i ? "+" : "",
-                            addbuf, remstr, addstr,
-                            mbuf->mb_channel->creationtime);
-    }
-  }
+			/*
+			 * deal with the limit.  Logic here is complicated; if HACK2 is set,
+			 * we're bouncing the mode, so sense is reversed, and we have to
+			 * include the original limit if it looks like it's being removed
+			 */
+			else if ((MB_TYPE(mbuf, i) & limitdel) == limitdel)
+				build_string(strptr, strptr_i, limitbuf, 0, ' ');
+			else if ((MB_TYPE(mbuf, i) & (MODE_ADD | MODE_ANTIJOINFLOOD)) == (MODE_ADD | MODE_ANTIJOINFLOOD)) {
+				char joinfloodbuf[32];
+				snprintf(joinfloodbuf, sizeof(joinfloodbuf), "%d:%d",
+					mbuf->mb_channel->joinflood_limit,
+					mbuf->mb_channel->joinflood_period);
+				build_string(strptr, strptr_i, joinfloodbuf, 0, ' ');
+			}
+			else if ((MB_TYPE(mbuf, i) & (MODE_ADD | MODE_LINK)) == (MODE_ADD | MODE_LINK)) {
+				build_string(strptr, strptr_i, MB_STRING(mbuf, i), 0, ' ');
+			}
+		}
 
-  /* We've drained the ModeBuf... */
-  mbuf->mb_add = 0;
-  mbuf->mb_rem = 0;
-  mbuf->mb_count = 0;
+		/* we were told to deop the source */
+		if (mbuf->mb_dest & MODEBUF_DEST_DEOP) {
+			addbuf[addbuf_i++] = 'o'; /* remember, sense is reversed */
+			addbuf[addbuf_i] = '\0'; /* terminate the string... */
+			build_string(addstr, &addstr_i, NumNick(mbuf->mb_source), ' ');
 
-  /* reinitialize the mode-with-arg slots */
-  for (i = 0; i < MAXMODEPARAMS; i++) {
-    /* If we saved any, pack them down */
-    if (MB_TYPE(mbuf, i) & MODE_SAVE) {
-      mbuf->mb_modeargs[mbuf->mb_count] = mbuf->mb_modeargs[i];
-      MB_TYPE(mbuf, mbuf->mb_count) &= ~MODE_SAVE; /* don't save anymore */
+			/* mark that we've done this, so we don't do it again */
+			mbuf->mb_dest &= ~MODEBUF_DEST_DEOP;
+		}
 
-      if (mbuf->mb_count++ == i) /* don't overwrite our hard work */
-	continue;
-    } else if (MB_TYPE(mbuf, i) & MODE_FREE)
-      MyFree(MB_STRING(mbuf, i)); /* free string if needed */
+		if (mbuf->mb_dest & MODEBUF_DEST_OPMODE) {
+			/* If OPMODE was set, we're propagating the mode as an OPMODE message */
+			sendcmdto_serv_butone(mbuf->mb_source, CMD_OPMODE, mbuf->mb_connect,
+				"%H %s%s%s%s%s%s", mbuf->mb_channel,
+				rembuf_i ? "-" : "", rembuf, addbuf_i ? "+" : "",
+				addbuf, remstr, addstr);
+		}
+		else if (mbuf->mb_dest & MODEBUF_DEST_BOUNCE) {
+			/*
+			 * If HACK2 was set, we're bouncing; we send the MODE back to
+			 * the connection we got it from with the senses reversed and
+			 * the proper TS; origin is us
+			 */
+			sendcmdto_one(&me, CMD_MODE, mbuf->mb_connect, "%H %s%s%s%s%s%s %Tu",
+				mbuf->mb_channel, addbuf_i ? "-" : "", addbuf,
+				rembuf_i ? "+" : "", rembuf, addstr, remstr,
+				mbuf->mb_channel->creationtime);
+		}
+		else {
+			/*
+			 * We're propagating a normal (or HACK3 or HACK4) MODE command
+			 * to the rest of the network.  We send the actual channel TS.
+			 */
+			sendcmdto_serv_butone(mbuf->mb_source, CMD_MODE, mbuf->mb_connect,
+				"%H %s%s%s%s%s%s %Tu", mbuf->mb_channel,
+				rembuf_i ? "-" : "", rembuf, addbuf_i ? "+" : "",
+				addbuf, remstr, addstr,
+				mbuf->mb_channel->creationtime);
+		}
+	}
 
-    MB_TYPE(mbuf, i) = 0;
-    MB_UINT(mbuf, i) = 0;
-  }
+	/* We've drained the ModeBuf... */
+	mbuf->mb_add = 0;
+	mbuf->mb_rem = 0;
+	mbuf->mb_count = 0;
 
-  /* If we're supposed to flush it all, do so--all hail tail recursion */
-  if (all && mbuf->mb_count)
-    return modebuf_flush_int(mbuf, 1);
+	/* reinitialize the mode-with-arg slots */
+	for (i = 0; i < MAXMODEPARAMS; i++) {
+		/* If we saved any, pack them down */
+		if (MB_TYPE(mbuf, i) & MODE_SAVE) {
+			mbuf->mb_modeargs[mbuf->mb_count] = mbuf->mb_modeargs[i];
+			MB_TYPE(mbuf, mbuf->mb_count) &= ~MODE_SAVE; /* don't save anymore */
 
-  return 0;
+			if (mbuf->mb_count++ == i) /* don't overwrite our hard work */
+				continue;
+		}
+		else if (MB_TYPE(mbuf, i) & MODE_FREE)
+			MyFree(MB_STRING(mbuf, i)); /* free string if needed */
+
+		MB_TYPE(mbuf, i) = 0;
+		MB_UINT(mbuf, i) = 0;
+	}
+
+	/* If we're supposed to flush it all, do so--all hail tail recursion */
+	if (all && mbuf->mb_count)
+		return modebuf_flush_int(mbuf, 1);
+
+	return 0;
 }
+
 
 /** Initialise a modebuf
  * This routine just initializes a ModeBuf structure with the information
@@ -1986,31 +2217,31 @@ modebuf_flush_int(struct ModeBuf *mbuf, int all)
  * @param dest		?
  */
 void
-modebuf_init(struct ModeBuf *mbuf, struct Client *source,
-	     struct Client *connect, struct Channel *chan, unsigned int dest)
+modebuf_init(struct ModeBuf* mbuf, struct Client* source,
+	struct Client* connect, struct Channel* chan, unsigned int dest)
 {
-  int i;
+	int i;
 
-  assert(0 != mbuf);
-  assert(0 != source);
-  assert(0 != chan);
-  assert(0 != dest);
+	assert(0 != mbuf);
+	assert(0 != source);
+	assert(0 != chan);
+	assert(0 != dest);
 
-  if (IsLocalChannel(chan->chname)) dest &= ~MODEBUF_DEST_SERVER;
+	if (IsLocalChannel(chan->chname)) dest &= ~MODEBUF_DEST_SERVER;
 
-  mbuf->mb_add = 0;
-  mbuf->mb_rem = 0;
-  mbuf->mb_source = source;
-  mbuf->mb_connect = connect;
-  mbuf->mb_channel = chan;
-  mbuf->mb_dest = dest;
-  mbuf->mb_count = 0;
+	mbuf->mb_add = 0;
+	mbuf->mb_rem = 0;
+	mbuf->mb_source = source;
+	mbuf->mb_connect = connect;
+	mbuf->mb_channel = chan;
+	mbuf->mb_dest = dest;
+	mbuf->mb_count = 0;
 
-  /* clear each mode-with-parameter slot */
-  for (i = 0; i < MAXMODEPARAMS; i++) {
-    MB_TYPE(mbuf, i) = 0;
-    MB_UINT(mbuf, i) = 0;
-  }
+	/* clear each mode-with-parameter slot */
+	for (i = 0; i < MAXMODEPARAMS; i++) {
+		MB_TYPE(mbuf, i) = 0;
+		MB_UINT(mbuf, i) = 0;
+	}
 }
 
 /** Append a new mode to a modebuf
@@ -2021,26 +2252,27 @@ modebuf_init(struct ModeBuf *mbuf, struct Client *source,
  * @param mode		MODE_ADD or MODE_DEL OR'd with MODE_PRIVATE etc.
  */
 void
-modebuf_mode(struct ModeBuf *mbuf, unsigned int mode)
+modebuf_mode(struct ModeBuf* mbuf, unsigned int mode)
 {
-  assert(0 != mbuf);
-  assert(0 != (mode & (MODE_ADD | MODE_DEL)));
+	assert(0 != mbuf);
+	assert(0 != (mode & (MODE_ADD | MODE_DEL)));
 
-  mode &= (MODE_ADD | MODE_DEL | MODE_PRIVATE | MODE_SECRET | MODE_MODERATED |
-           MODE_TOPICLIMIT | MODE_INVITEONLY | MODE_NOPRIVMSGS | MODE_REGONLY |
-           MODE_DELJOINS | MODE_WASDELJOINS | MODE_NOQUITPARTS  | MODE_NOCOLOUR |
-           MODE_NOCTCP | MODE_NONOTICE | MODE_NOMULTITARGET | MODE_MODERATENOREG | MODE_TLSONLY);
+	mode &= (MODE_ADD | MODE_DEL | MODE_PRIVATE | MODE_SECRET | MODE_MODERATED |
+		MODE_TOPICLIMIT | MODE_INVITEONLY | MODE_NOPRIVMSGS | MODE_REGONLY |
+		MODE_DELJOINS | MODE_WASDELJOINS | MODE_NOQUITPARTS | MODE_NOCOLOUR |
+		MODE_NOCTCP | MODE_NONOTICE | MODE_NOMULTITARGET | MODE_MODERATENOREG | MODE_TLSONLY);
 
-  if (!(mode & ~(MODE_ADD | MODE_DEL))) /* don't add empty modes... */
-    return;
+	if (!(mode & ~(MODE_ADD | MODE_DEL))) /* don't add empty modes... */
+		return;
 
-  if (mode & MODE_ADD) {
-    mbuf->mb_rem &= ~mode;
-    mbuf->mb_add |= mode;
-  } else {
-    mbuf->mb_add &= ~mode;
-    mbuf->mb_rem |= mode;
-  }
+	if (mode & MODE_ADD) {
+		mbuf->mb_rem &= ~mode;
+		mbuf->mb_add |= mode;
+	}
+	else {
+		mbuf->mb_add &= ~mode;
+		mbuf->mb_rem |= mode;
+	}
 }
 
 /** Append a mode that takes an int argument to the modebuf
@@ -2054,22 +2286,22 @@ modebuf_mode(struct ModeBuf *mbuf, unsigned int mode)
  * @param uint		The argument to the mode.
  */
 void
-modebuf_mode_uint(struct ModeBuf *mbuf, unsigned int mode, unsigned int uint)
+modebuf_mode_uint(struct ModeBuf* mbuf, unsigned int mode, unsigned int uint)
 {
-  assert(0 != mbuf);
-  assert(0 != (mode & (MODE_ADD | MODE_DEL)));
+	assert(0 != mbuf);
+	assert(0 != (mode & (MODE_ADD | MODE_DEL)));
 
-  if (mode == (MODE_LIMIT | ((mbuf->mb_dest & MODEBUF_DEST_BOUNCE) ? MODE_ADD : MODE_DEL))) {
-      mbuf->mb_rem |= mode;
-      return;
-  }
-  MB_TYPE(mbuf, mbuf->mb_count) = mode;
-  MB_UINT(mbuf, mbuf->mb_count) = uint;
+	if (mode == (MODE_LIMIT | ((mbuf->mb_dest & MODEBUF_DEST_BOUNCE) ? MODE_ADD : MODE_DEL))) {
+		mbuf->mb_rem |= mode;
+		return;
+	}
+	MB_TYPE(mbuf, mbuf->mb_count) = mode;
+	MB_UINT(mbuf, mbuf->mb_count) = uint;
 
-  /* when we've reached the maximal count, flush the buffer */
-  if (++mbuf->mb_count >=
-      (MAXMODEPARAMS - (mbuf->mb_dest & MODEBUF_DEST_DEOP ? 1 : 0)))
-    modebuf_flush_int(mbuf, 0);
+	/* when we've reached the maximal count, flush the buffer */
+	if (++mbuf->mb_count >=
+		(MAXMODEPARAMS - (mbuf->mb_dest & MODEBUF_DEST_DEOP ? 1 : 0)))
+		modebuf_flush_int(mbuf, 0);
 }
 
 /** append a string mode
@@ -2083,19 +2315,19 @@ modebuf_mode_uint(struct ModeBuf *mbuf, unsigned int mode, unsigned int uint)
  * @param free		If the string should be free'd later.
  */
 void
-modebuf_mode_string(struct ModeBuf *mbuf, unsigned int mode, char *string,
-		    int free)
+modebuf_mode_string(struct ModeBuf* mbuf, unsigned int mode, char* string,
+	int free)
 {
-  assert(0 != mbuf);
-  assert(0 != (mode & (MODE_ADD | MODE_DEL)));
+	assert(0 != mbuf);
+	assert(0 != (mode & (MODE_ADD | MODE_DEL)));
 
-  MB_TYPE(mbuf, mbuf->mb_count) = mode | (free ? MODE_FREE : 0);
-  MB_STRING(mbuf, mbuf->mb_count) = string;
+	MB_TYPE(mbuf, mbuf->mb_count) = mode | (free ? MODE_FREE : 0);
+	MB_STRING(mbuf, mbuf->mb_count) = string;
 
-  /* when we've reached the maximal count, flush the buffer */
-  if (++mbuf->mb_count >=
-      (MAXMODEPARAMS - (mbuf->mb_dest & MODEBUF_DEST_DEOP ? 1 : 0)))
-    modebuf_flush_int(mbuf, 0);
+	/* when we've reached the maximal count, flush the buffer */
+	if (++mbuf->mb_count >=
+		(MAXMODEPARAMS - (mbuf->mb_dest & MODEBUF_DEST_DEOP ? 1 : 0)))
+		modebuf_flush_int(mbuf, 0);
 }
 
 /** Append a mode on a client to a modebuf.
@@ -2108,21 +2340,47 @@ modebuf_mode_string(struct ModeBuf *mbuf, unsigned int mode, char *string,
  * @param client	The client argument to append.
  * @param oplevel       The oplevel the user had or will have
  */
-void
-modebuf_mode_client(struct ModeBuf *mbuf, unsigned int mode,
-		    struct Client *client, int oplevel)
+void modebuf_mode_client(struct ModeBuf* mbuf, unsigned int mode,
+	struct Client* client, int oplevel)
 {
-  assert(0 != mbuf);
-  assert(0 != (mode & (MODE_ADD | MODE_DEL)));
+	assert(mbuf);
+	assert(mode & (MODE_ADD | MODE_DEL));
 
-  MB_TYPE(mbuf, mbuf->mb_count) = mode;
-  MB_CLIENT(mbuf, mbuf->mb_count) = client;
-  MB_OPLEVEL(mbuf, mbuf->mb_count) = oplevel;
+	// Deduplizierung: Prüfe für jeden User-Modus einzeln
+	static const struct {
+		unsigned int flag;
+	} user_modes[] = {
+		{ MODE_CHANSERVICE },
+		{ MODE_OWNER },
+		{ MODE_ADMIN },
+		{ MODE_CHANOP },
+		{ MODE_HALFOP },
+		{ MODE_VOICE }
+	};
 
-  /* when we've reached the maximal count, flush the buffer */
-  if (++mbuf->mb_count >=
-      (MAXMODEPARAMS - (mbuf->mb_dest & MODEBUF_DEST_DEOP ? 1 : 0)))
-    modebuf_flush_int(mbuf, 0);
+	const char* nick = cli_name(client);
+	if (!nick || !*nick) return; // String-Check: Leerer Nick
+
+	for (int um = 0; um < sizeof(user_modes) / sizeof(user_modes[0]); ++um) {
+		if (mode & user_modes[um].flag) {
+			for (int i = 0; i < mbuf->mb_count; i++) {
+				if (MB_CLIENT(mbuf, i) == client &&
+					(MB_TYPE(mbuf, i) & user_modes[um].flag) &&
+					(MB_TYPE(mbuf, i) & (MODE_ADD | MODE_DEL)) == (mode & (MODE_ADD | MODE_DEL))) {
+					// Modus für diesen User existiert bereits
+					return;
+				}
+			}
+		}
+	}
+
+	MB_TYPE(mbuf, mbuf->mb_count) = mode;
+	MB_CLIENT(mbuf, mbuf->mb_count) = client;
+	MB_OPLEVEL(mbuf, mbuf->mb_count) = oplevel;
+
+	if (++mbuf->mb_count >=
+		(MAXMODEPARAMS - (mbuf->mb_dest & MODEBUF_DEST_DEOP ? 1 : 0)))
+		modebuf_flush_int(mbuf, 0);
 }
 
 /** Check a channel for join-delayed members.
@@ -2130,43 +2388,43 @@ modebuf_mode_client(struct ModeBuf *mbuf, unsigned int mode,
  * @return Non-zero if any members are join-delayed; false if none are.
  */
 static int
-find_delayed_joins(const struct Channel *chan)
+find_delayed_joins(const struct Channel* chan)
 {
-  const struct Membership *memb;
-  for (memb = chan->members; memb; memb = memb->next_member)
-    if (IsDelayedJoin(memb))
-      return 1;
-  return 0;
+	const struct Membership* memb;
+	for (memb = chan->members; memb; memb = memb->next_member)
+		if (IsDelayedJoin(memb))
+			return 1;
+	return 0;
 }
 
 /** The exported binding for modebuf_flush()
  *
  * @param mbuf	The mode buffer to flush.
- * 
+ *
  * @see modebuf_flush_int()
  */
 int
-modebuf_flush(struct ModeBuf *mbuf)
+modebuf_flush(struct ModeBuf* mbuf)
 {
-  /* Check if MODE_WASDELJOINS should be set: */
-  /* Must be set if going -D and some clients are hidden */
-  if ((mbuf->mb_rem & MODE_DELJOINS)
-      && !(mbuf->mb_channel->mode.mode & (MODE_DELJOINS | MODE_WASDELJOINS))
-      && find_delayed_joins(mbuf->mb_channel)) {
-    mbuf->mb_channel->mode.mode |= MODE_WASDELJOINS;
-    mbuf->mb_add |= MODE_WASDELJOINS;
-    mbuf->mb_rem &= ~MODE_WASDELJOINS;
-  }
-  /* Must be cleared if +D is set */
-  if ((mbuf->mb_add & MODE_DELJOINS)
-      && ((mbuf->mb_channel->mode.mode & (MODE_WASDELJOINS | MODE_WASDELJOINS))
-          == (MODE_WASDELJOINS | MODE_WASDELJOINS))) {
-    mbuf->mb_channel->mode.mode &= ~MODE_WASDELJOINS;
-    mbuf->mb_add &= ~MODE_WASDELJOINS;
-    mbuf->mb_rem |= MODE_WASDELJOINS;
-  }
+	/* Check if MODE_WASDELJOINS should be set: */
+	/* Must be set if going -D and some clients are hidden */
+	if ((mbuf->mb_rem & MODE_DELJOINS)
+		&& !(mbuf->mb_channel->mode.mode & (MODE_DELJOINS | MODE_WASDELJOINS))
+		&& find_delayed_joins(mbuf->mb_channel)) {
+		mbuf->mb_channel->mode.mode |= MODE_WASDELJOINS;
+		mbuf->mb_add |= MODE_WASDELJOINS;
+		mbuf->mb_rem &= ~MODE_WASDELJOINS;
+	}
+	/* Must be cleared if +D is set */
+	if ((mbuf->mb_add & MODE_DELJOINS)
+		&& ((mbuf->mb_channel->mode.mode & (MODE_WASDELJOINS | MODE_WASDELJOINS))
+			== (MODE_WASDELJOINS | MODE_WASDELJOINS))) {
+		mbuf->mb_channel->mode.mode &= ~MODE_WASDELJOINS;
+		mbuf->mb_add &= ~MODE_WASDELJOINS;
+		mbuf->mb_rem |= MODE_WASDELJOINS;
+	}
 
-  return modebuf_flush_int(mbuf, 1);
+	return modebuf_flush_int(mbuf, 1);
 }
 
 /* This extracts the simple modes contained in mbuf
@@ -2175,84 +2433,100 @@ modebuf_flush(struct ModeBuf *mbuf)
  * @param buf		The string buffer to write the modes into.
  */
 void
-modebuf_extract(struct ModeBuf *mbuf, char *buf)
+modebuf_extract(struct ModeBuf* mbuf, char* buf)
 {
-  static int flags[] = {
-/*  MODE_CHANOP,	'o', */
-/*  MODE_VOICE,		'v', */
-    MODE_PRIVATE,	'p',
-    MODE_SECRET,	's',
-    MODE_MODERATED,	'm',
-    MODE_TOPICLIMIT,	't',
-    MODE_INVITEONLY,	'i',
-    MODE_NOPRIVMSGS,	'n',
-    MODE_KEY,		'k',
-    MODE_APASS,		'A',
-    MODE_UPASS,		'U',
-/*  MODE_BAN,		'b', */
-    MODE_LIMIT,		'l',
-    MODE_REGONLY,	'r',
-    MODE_DELJOINS,      'D',
-    MODE_NOQUITPARTS,   'u',
-    MODE_NOCOLOUR,      'c',
-    MODE_NOCTCP,        'C',
-    MODE_NONOTICE,      'N',
-    MODE_NOMULTITARGET, 'T',
-    MODE_MODERATENOREG, 'M',
-    MODE_TLSONLY,       'Z',
-    0x0, 0x0
-  };
-  unsigned int add;
-  int i, bufpos = 0, len;
-  int *flag_p;
-  char *key = 0, limitbuf[20];
-  char *apass = 0, *upass = 0;
+	static int flags[] = {
+		/*  MODE_CHANOP,	'o', */
+		/*  MODE_VOICE,		'v', */
+			MODE_PRIVATE,	'p',
+			MODE_SECRET,	's',
+			MODE_MODERATED,	'm',
+			MODE_TOPICLIMIT,	't',
+			MODE_INVITEONLY,	'i',
+			MODE_NOPRIVMSGS,	'n',
+			MODE_KEY,		'k',
+			MODE_APASS,		'A',
+			MODE_UPASS,		'U',
+			/*  MODE_BAN,		'b', */
+				MODE_LIMIT,		'l',
+				MODE_ANTIJOINFLOOD, 'j', // +j: Joinflood mode
+				MODE_LINK,		'L', // +L: Link mode
+				MODE_REGONLY,	'r',
+				MODE_DELJOINS,      'D',
+				MODE_NOQUITPARTS,   'u',
+				MODE_NOCOLOUR,      'c',
+				MODE_NOCTCP,        'C',
+				MODE_NONOTICE,      'N',
+				MODE_NOMULTITARGET, 'T',
+				MODE_MODERATENOREG, 'M',
+				MODE_TLSONLY,       'Z',
+				0x0, 0x0
+	};
+	unsigned int add;
+	int i, bufpos = 0, len;
+	int* flag_p;
+	char* key = 0, limitbuf[20];
+	char* apass = 0, * upass = 0;
+	char joinfloodbuf[32] = { 0 }; // Buffer for +j parameter
 
-  assert(0 != mbuf);
-  assert(0 != buf);
+	assert(0 != mbuf);
+	assert(0 != buf);
 
-  buf[0] = '\0';
+	buf[0] = '\0';
 
-  add = mbuf->mb_add;
+	add = mbuf->mb_add;
 
-  for (i = 0; i < mbuf->mb_count; i++) { /* find keys and limits */
-    if (MB_TYPE(mbuf, i) & MODE_ADD) {
-      add |= MB_TYPE(mbuf, i) & (MODE_KEY | MODE_LIMIT | MODE_APASS | MODE_UPASS);
+	for (i = 0; i < mbuf->mb_count; i++) { /* find keys and limits */
+		if (MB_TYPE(mbuf, i) & MODE_ADD) {
+			add |= MB_TYPE(mbuf, i) & (MODE_KEY | MODE_LIMIT | MODE_APASS | MODE_UPASS | MODE_ANTIJOINFLOOD | MODE_LINK);
 
-      if (MB_TYPE(mbuf, i) & MODE_KEY) /* keep strings */
-	key = MB_STRING(mbuf, i);
-      else if (MB_TYPE(mbuf, i) & MODE_LIMIT)
-	ircd_snprintf(0, limitbuf, sizeof(limitbuf), "%u", MB_UINT(mbuf, i));
-      else if (MB_TYPE(mbuf, i) & MODE_UPASS)
-	upass = MB_STRING(mbuf, i);
-      else if (MB_TYPE(mbuf, i) & MODE_APASS)
-	apass = MB_STRING(mbuf, i);
-    }
-  }
+			if (MB_TYPE(mbuf, i) & MODE_KEY) /* keep strings */
+				key = MB_STRING(mbuf, i);
+			else if (MB_TYPE(mbuf, i) & MODE_LIMIT)
+				ircd_snprintf(0, limitbuf, sizeof(limitbuf), "%u", MB_UINT(mbuf, i));
+			else if (MB_TYPE(mbuf, i) & MODE_UPASS)
+				upass = MB_STRING(mbuf, i);
+			else if (MB_TYPE(mbuf, i) & MODE_APASS)
+				apass = MB_STRING(mbuf, i);
+			else if (MB_TYPE(mbuf, i) & MODE_ANTIJOINFLOOD)
+				ircd_snprintf(0, joinfloodbuf, sizeof(joinfloodbuf), "%d:%d",
+					mbuf->mb_channel->joinflood_limit,
+					mbuf->mb_channel->joinflood_period);
+			else if (MB_TYPE(mbuf, i) & MODE_LINK) {
+				// Link mode (+L)
+				if (MB_STRING(mbuf, i) && *MB_STRING(mbuf, i))
+					ircd_snprintf(0, limitbuf, sizeof(limitbuf), "%s", MB_STRING(mbuf, i));
+				else
+					limitbuf[0] = '\0'; // No link set
+			}
+		}
+	}
 
-  if (!add)
-    return;
+	if (!add)
+		return;
 
-  buf[bufpos++] = '+'; /* start building buffer */
+	buf[bufpos++] = '+'; /* start building buffer */
 
-  for (flag_p = flags; flag_p[0]; flag_p += 2)
-    if (*flag_p & add)
-      buf[bufpos++] = flag_p[1];
+	for (flag_p = flags; flag_p[0]; flag_p += 2)
+		if (*flag_p & add)
+			buf[bufpos++] = flag_p[1];
 
-  for (i = 0, len = bufpos; i < len; i++) {
-    if (buf[i] == 'k')
-      build_string(buf, &bufpos, key, 0, ' ');
-    else if (buf[i] == 'l')
-      build_string(buf, &bufpos, limitbuf, 0, ' ');
-    else if (buf[i] == 'U')
-      build_string(buf, &bufpos, upass, 0, ' ');
-    else if (buf[i] == 'A')
-      build_string(buf, &bufpos, apass, 0, ' ');
-  }
+	for (i = 0, len = bufpos; i < len; i++) {
+		if (buf[i] == 'k')
+			build_string(buf, &bufpos, key, 0, ' ');
+		else if (buf[i] == 'l')
+			build_string(buf, &bufpos, limitbuf, 0, ' ');
+		else if (buf[i] == 'U')
+			build_string(buf, &bufpos, upass, 0, ' ');
+		else if (buf[i] == 'A')
+			build_string(buf, &bufpos, apass, 0, ' ');
+		else if (buf[i] == 'j')
+			build_string(buf, &bufpos, joinfloodbuf, 0, ' ');
+	}
 
-  buf[bufpos] = '\0';
+	buf[bufpos] = '\0';
 
-  return;
+	return;
 }
 
 /** Simple function to invalidate a channel's ban cache.
@@ -2263,12 +2537,12 @@ modebuf_extract(struct ModeBuf *mbuf, char *buf)
  * @param chan	The channel to operate on.
  */
 void
-mode_ban_invalidate(struct Channel *chan)
+mode_ban_invalidate(struct Channel* chan)
 {
-  struct Membership *member;
+	struct Membership* member;
 
-  for (member = chan->members; member; member = member->next_member)
-    ClearBanValid(member);
+	for (member = chan->members; member; member = member->next_member)
+		ClearBanValid(member);
 }
 
 /** Simple function to drop invite structures
@@ -2279,10 +2553,10 @@ mode_ban_invalidate(struct Channel *chan)
  *
  */
 void
-mode_invite_clear(struct Channel *chan)
+mode_invite_clear(struct Channel* chan)
 {
-  while (chan->invites)
-    del_invite(chan->invites->value.cptr, chan);
+	while (chan->invites)
+		del_invite(chan->invites->value.cptr, chan);
 }
 
 /* What we've done for mode_parse so far... */
@@ -2296,29 +2570,37 @@ mode_invite_clear(struct Channel *chan)
 #define DONE_KEY_DEL    0x80    /**< We've removed the key */
 #define DONE_UPASS_DEL  0x100   /**< We've removed the user pass */
 #define DONE_APASS_DEL  0x200   /**< We've removed the admin pass */
+#define DONE_ANTIJOINFLOOD 0x400 /**< We've set the joinflood mode */
+#define DONE_BANEXCEPTION 0x800 /**< We've set a ban exception */
+#define DONE_BANEXCEPTION_DEL 0x1000 /**< We've removed a ban exception */
+#define DONE_BANEXCEPTION_ADD 0x2000 /**< We've added a ban exception */
+#define DONE_ANTIJOINFLOOD_DEL 0x4000 /**< We've removed the joinflood mode */
+#define DONE_ANTIJOINFLOOD_ADD 0x8000 /**< We've added the joinflood mode */
+#define DONE_LINK_ADD 0x10000 /**< We've added a link mode */
+#define DONE_LINK_DEL 0x20000 /**< We've removed a link mode */
 
 struct ParseState {
-  struct ModeBuf *mbuf;
-  struct Client *cptr;
-  struct Client *sptr;
-  struct Channel *chptr;
-  struct Membership *member;
-  int parc;
-  char **parv;
-  unsigned int flags;
-  unsigned int dir;
-  unsigned int done;
-  unsigned int add;
-  unsigned int del;
-  int args_used;
-  int max_args;
-  int numbans;
-  struct Ban banlist[MAXPARA];
-  struct {
-    unsigned int flag;
-    unsigned short oplevel;
-    struct Client *client;
-  } cli_change[MAXPARA];
+	struct ModeBuf* mbuf;
+	struct Client* cptr;
+	struct Client* sptr;
+	struct Channel* chptr;
+	struct Membership* member;
+	int parc;
+	char** parv;
+	unsigned int flags;
+	unsigned int dir;
+	unsigned int done;
+	unsigned int add;
+	unsigned int del;
+	int args_used;
+	int max_args;
+	int numbans;
+	struct Ban banlist[MAXPARA];
+	struct {
+		unsigned int flag;
+		unsigned short oplevel;
+		struct Client* client;
+	} cli_change[MAXPARA];
 };
 
 /** Helper function to send "Not oper" or "Not member" messages
@@ -2328,15 +2610,26 @@ struct ParseState {
  * @param state 	Parsing State object
  */
 static void
-send_notoper(struct ParseState *state)
+send_notoper(struct ParseState* state, unsigned int modeflag)
 {
-  if (state->done & DONE_NOTOPER)
-    return;
+	if (state->done & DONE_NOTOPER)
+		return;
 
-  send_reply(state->sptr, (state->flags & MODE_PARSE_NOTOPER) ?
-	     ERR_CHANOPRIVSNEEDED : ERR_NOTONCHANNEL, state->chptr->chname);
+	struct Membership* setter = state->member;
+	int setter_rank = setter ? get_mode_rank(setter->status) : 0;
+	int mode_rank = get_mode_rank(modeflag);
 
-  state->done |= DONE_NOTOPER;
+	// Voice und Nicht-Mitglieder können keine Rechte setzen
+	if (!setter || setter_rank < 2 || setter_rank < mode_rank) {
+		send_reply(state->sptr, ERR_CHANOPRIVSNEEDED, state->chptr->chname);
+		state->done |= DONE_NOTOPER;
+		return;
+	}
+
+	// Optional: Für andere Fehlerfälle (z.B. kein Channel-Member)
+	send_reply(state->sptr, ERR_NOTONCHANNEL, state->chptr->chname);
+
+	state->done |= DONE_NOTOPER;
 }
 
 /** Parse a limit
@@ -2346,449 +2639,461 @@ send_notoper(struct ParseState *state)
  * @param flag_p	?
  */
 static void
-mode_parse_limit(struct ParseState *state, int *flag_p)
+mode_parse_limit(struct ParseState* state, int* flag_p)
 {
-  unsigned int t_limit;
+	unsigned int t_limit;
 
-  if (state->dir == MODE_ADD) { /* convert arg only if adding limit */
-    if (MyUser(state->sptr) && state->max_args <= 0) /* too many args? */
-      return;
+	if (state->dir == MODE_ADD) { /* convert arg only if adding limit */
+		if (MyUser(state->sptr) && state->max_args <= 0) /* too many args? */
+			return;
 
-    if (state->parc <= 0) { /* warn if not enough args */
-      if (MyUser(state->sptr))
-	need_more_params(state->sptr, "MODE +l");
-      return;
-    }
+		if (state->parc <= 0) { /* warn if not enough args */
+			if (MyUser(state->sptr))
+				need_more_params(state->sptr, "MODE +l");
+			return;
+		}
 
-    t_limit = strtoul(state->parv[state->args_used++], 0, 10); /* grab arg */
-    state->parc--;
-    state->max_args--;
+		t_limit = strtoul(state->parv[state->args_used++], 0, 10); /* grab arg */
+		state->parc--;
+		state->max_args--;
 
-    if ((int)t_limit<0) /* don't permit a negative limit */
-      return;
+		if ((int)t_limit < 0) /* don't permit a negative limit */
+			return;
 
-    if (!(state->flags & MODE_PARSE_WIPEOUT) &&
-	(!t_limit || t_limit == state->chptr->mode.limit))
-      return;
-  } else
-    t_limit = state->chptr->mode.limit;
+		if (!(state->flags & MODE_PARSE_WIPEOUT) &&
+			(!t_limit || t_limit == state->chptr->mode.limit))
+			return;
+	}
+	else
+		t_limit = state->chptr->mode.limit;
 
-  /* If they're not an oper, they can't change modes */
-  if (state->flags & (MODE_PARSE_NOTOPER | MODE_PARSE_NOTMEMBER)) {
-    send_notoper(state);
-    return;
-  }
+	/* If they're not an oper, they can't change modes */
+	if (!(state->flags & (MODE_CHANSERVICE|MODE_OWNER|MODE_ADMIN|MODE_CHANOP|MODE_HALFOP))) {
+		send_notoper(state, flag_p[0]);
+		return;
+	}
 
-  /* Can't remove a limit that's not there */
-  if (state->dir == MODE_DEL && !state->chptr->mode.limit)
-    return;
-    
-  /* Skip if this is a burst and a lower limit than this is set already */
-  if ((state->flags & MODE_PARSE_BURST) &&
-      (state->chptr->mode.mode & flag_p[0]) &&
-      (state->chptr->mode.limit < t_limit))
-    return;
+	/* Can't remove a limit that's not there */
+	if (state->dir == MODE_DEL && !state->chptr->mode.limit)
+		return;
 
-  if (state->done & DONE_LIMIT) /* allow limit to be set only once */
-    return;
-  state->done |= DONE_LIMIT;
+	/* Skip if this is a burst and a lower limit than this is set already */
+	if ((state->flags & MODE_PARSE_BURST) &&
+		(state->chptr->mode.mode & flag_p[0]) &&
+		(state->chptr->mode.limit < t_limit))
+		return;
 
-  if (!state->mbuf)
-    return;
+	if (state->done & DONE_LIMIT) /* allow limit to be set only once */
+		return;
+	state->done |= DONE_LIMIT;
 
-  modebuf_mode_uint(state->mbuf, state->dir | flag_p[0], t_limit);
+	if (!state->mbuf)
+		return;
 
-  if (state->flags & MODE_PARSE_SET) { /* set the limit */
-    if (state->dir & MODE_ADD) {
-      state->chptr->mode.mode |= flag_p[0];
-      state->chptr->mode.limit = t_limit;
-    } else {
-      state->chptr->mode.mode &= ~flag_p[0];
-      state->chptr->mode.limit = 0;
-    }
-  }
+	modebuf_mode_uint(state->mbuf, state->dir | flag_p[0], t_limit);
+
+	if (state->flags & MODE_PARSE_SET) { /* set the limit */
+		if (state->dir & MODE_ADD) {
+			state->chptr->mode.mode |= flag_p[0];
+			state->chptr->mode.limit = t_limit;
+		}
+		else {
+			state->chptr->mode.mode &= ~flag_p[0];
+			state->chptr->mode.limit = 0;
+		}
+	}
 }
 
 /** Helper function to clean key-like parameters. */
 static void
-clean_key(char *s)
+clean_key(char* s)
 {
-  int t_len = KEYLEN;
+	int t_len = KEYLEN;
 
-  while (*s > ' ' && *s != ':' && *s != ',' && t_len--)
-    s++;
-  *s = '\0';
+	while (*s > ' ' && *s != ':' && *s != ',' && t_len--)
+		s++;
+	*s = '\0';
 }
 
 /*
  * Helper function to convert keys
  */
 static void
-mode_parse_key(struct ParseState *state, int *flag_p)
+mode_parse_key(struct ParseState* state, int* flag_p)
 {
-  char *t_str;
+	char* t_str;
 
-  if (MyUser(state->sptr) && state->max_args <= 0) /* drop if too many args */
-    return;
+	if (MyUser(state->sptr) && state->max_args <= 0) /* drop if too many args */
+		return;
 
-  if (state->parc <= 0) { /* warn if not enough args */
-    if (MyUser(state->sptr))
-      need_more_params(state->sptr, state->dir == MODE_ADD ? "MODE +k" :
-		       "MODE -k");
-    return;
-  }
+	if (state->parc <= 0) { /* warn if not enough args */
+		if (MyUser(state->sptr))
+			need_more_params(state->sptr, state->dir == MODE_ADD ? "MODE +k" :
+				"MODE -k");
+		return;
+	}
 
-  t_str = state->parv[state->args_used++]; /* grab arg */
-  state->parc--;
-  state->max_args--;
+	t_str = state->parv[state->args_used++]; /* grab arg */
+	state->parc--;
+	state->max_args--;
 
-  /* If they're not an oper, they can't change modes */
-  if (state->flags & (MODE_PARSE_NOTOPER | MODE_PARSE_NOTMEMBER)) {
-    send_notoper(state);
-    return;
-  }
+	/* If they're not an oper, they can't change modes */
+	if (!(state->flags & (MODE_CHANSERVICE|MODE_OWNER|MODE_ADMIN|MODE_CHANOP|MODE_HALFOP))) {
+		send_notoper(state, flag_p[0]);
+		return;
+	}
 
-  /* allow removing and then adding key, but not adding and then removing */
-  if (state->dir == MODE_ADD)
-  {
-    if (state->done & DONE_KEY_ADD)
-      return;
-    state->done |= DONE_KEY_ADD;
-  }
-  else
-  {
-    if (state->done & (DONE_KEY_ADD | DONE_KEY_DEL))
-      return;
-    state->done |= DONE_KEY_DEL;
-  }
+	/* allow removing and then adding key, but not adding and then removing */
+	if (state->dir == MODE_ADD)
+	{
+		if (state->done & DONE_KEY_ADD)
+			return;
+		state->done |= DONE_KEY_ADD;
+	}
+	else
+	{
+		if (state->done & (DONE_KEY_ADD | DONE_KEY_DEL))
+			return;
+		state->done |= DONE_KEY_DEL;
+	}
 
-  /* clean up the key string */
-  clean_key(t_str);
-  if (!*t_str || *t_str == ':') { /* warn if empty */
-    if (MyUser(state->sptr))
-      need_more_params(state->sptr, state->dir == MODE_ADD ? "MODE +k" :
-		       "MODE -k");
-    return;
-  }
+	/* clean up the key string */
+	clean_key(t_str);
+	if (!*t_str || *t_str == ':') { /* warn if empty */
+		if (MyUser(state->sptr))
+			need_more_params(state->sptr, state->dir == MODE_ADD ? "MODE +k" :
+				"MODE -k");
+		return;
+	}
 
-  if (!state->mbuf)
-    return;
+	if (!state->mbuf)
+		return;
 
-  /* Skip if this is a burst, we have a key already and the new key is 
-   * after the old one alphabetically */
-  if ((state->flags & MODE_PARSE_BURST) &&
-      *(state->chptr->mode.key) &&
-      ircd_strcmp(state->chptr->mode.key, t_str) <= 0)
-    return;
+	/* Skip if this is a burst, we have a key already and the new key is
+	 * after the old one alphabetically */
+	if ((state->flags & MODE_PARSE_BURST) &&
+		*(state->chptr->mode.key) &&
+		ircd_strcmp(state->chptr->mode.key, t_str) <= 0)
+		return;
 
-  /* can't add a key if one is set, nor can one remove the wrong key */
-  if (!(state->flags & MODE_PARSE_FORCE))
-    if ((state->dir == MODE_ADD && *state->chptr->mode.key) ||
-	(state->dir == MODE_DEL &&
-	 ircd_strcmp(state->chptr->mode.key, t_str))) {
-      send_reply(state->sptr, ERR_KEYSET, state->chptr->chname);
-      return;
-    }
+	/* can't add a key if one is set, nor can one remove the wrong key */
+	if (!(state->flags & MODE_PARSE_FORCE))
+		if ((state->dir == MODE_ADD && *state->chptr->mode.key) ||
+			(state->dir == MODE_DEL &&
+				ircd_strcmp(state->chptr->mode.key, t_str))) {
+			send_reply(state->sptr, ERR_KEYSET, state->chptr->chname);
+			return;
+		}
 
-  if (!(state->flags & MODE_PARSE_WIPEOUT) && state->dir == MODE_ADD &&
-      !ircd_strcmp(state->chptr->mode.key, t_str))
-    return; /* no key change */
+	if (!(state->flags & MODE_PARSE_WIPEOUT) && state->dir == MODE_ADD &&
+		!ircd_strcmp(state->chptr->mode.key, t_str))
+		return; /* no key change */
 
-  if (state->flags & MODE_PARSE_BOUNCE) {
-    if (*state->chptr->mode.key) /* reset old key */
-      modebuf_mode_string(state->mbuf, MODE_DEL | flag_p[0],
-			  state->chptr->mode.key, 0);
-    else /* remove new bogus key */
-      modebuf_mode_string(state->mbuf, MODE_ADD | flag_p[0], t_str, 0);
-  } else /* send new key */
-    modebuf_mode_string(state->mbuf, state->dir | flag_p[0], t_str, 0);
+	if (state->flags & MODE_PARSE_BOUNCE) {
+		if (*state->chptr->mode.key) /* reset old key */
+			modebuf_mode_string(state->mbuf, MODE_DEL | flag_p[0],
+				state->chptr->mode.key, 0);
+		else /* remove new bogus key */
+			modebuf_mode_string(state->mbuf, MODE_ADD | flag_p[0], t_str, 0);
+	}
+	else /* send new key */
+		modebuf_mode_string(state->mbuf, state->dir | flag_p[0], t_str, 0);
 
-  if (state->flags & MODE_PARSE_SET) {
-    if (state->dir == MODE_DEL) /* remove the old key */
-      *state->chptr->mode.key = '\0';
-    else
-      ircd_strncpy(state->chptr->mode.key, t_str, KEYLEN);
-  }
+	if (state->flags & MODE_PARSE_SET) {
+		if (state->dir == MODE_DEL) /* remove the old key */
+			*state->chptr->mode.key = '\0';
+		else
+			ircd_strncpy(state->chptr->mode.key, t_str, KEYLEN);
+	}
 }
 
 /*
  * Helper function to convert user passes
  */
 static void
-mode_parse_upass(struct ParseState *state, int *flag_p)
+mode_parse_upass(struct ParseState* state, int* flag_p)
 {
-  char *t_str;
+	char* t_str;
 
-  if (MyUser(state->sptr) && state->max_args <= 0) /* drop if too many args */
-    return;
+	if (MyUser(state->sptr) && state->max_args <= 0) /* drop if too many args */
+		return;
 
-  if (state->parc <= 0) { /* warn if not enough args */
-    if (MyUser(state->sptr))
-      need_more_params(state->sptr, state->dir == MODE_ADD ? "MODE +U" :
-		       "MODE -U");
-    return;
-  }
+	if (state->parc <= 0) { /* warn if not enough args */
+		if (MyUser(state->sptr))
+			need_more_params(state->sptr, state->dir == MODE_ADD ? "MODE +U" :
+				"MODE -U");
+		return;
+	}
 
-  t_str = state->parv[state->args_used++]; /* grab arg */
-  state->parc--;
-  state->max_args--;
+	t_str = state->parv[state->args_used++]; /* grab arg */
+	state->parc--;
+	state->max_args--;
 
-  /* If they're not an oper, they can't change modes */
-  if (state->flags & (MODE_PARSE_NOTOPER | MODE_PARSE_NOTMEMBER)) {
-    send_notoper(state);
-    return;
-  }
+	/* If they're not an oper, they can't change modes */
+	if (!(state->flags & (MODE_CHANSERVICE|MODE_OWNER|MODE_ADMIN|MODE_CHANOP|MODE_HALFOP))) {
+		send_notoper(state, flag_p[0]);
+		return;
+	}
 
-  /* If a non-service user is trying to force it, refuse. */
-  if (state->flags & MODE_PARSE_FORCE && MyUser(state->sptr)
-      && !HasPriv(state->sptr, PRIV_APASS_OPMODE)) {
-    send_reply(state->sptr, ERR_NOTMANAGER, state->chptr->chname,
-               state->chptr->chname);
-    return;
-  }
+	/* If a non-service user is trying to force it, refuse. */
+	if (state->flags & MODE_PARSE_FORCE && MyUser(state->sptr)
+		&& !HasPriv(state->sptr, PRIV_APASS_OPMODE)) {
+		send_reply(state->sptr, ERR_NOTMANAGER, state->chptr->chname,
+			state->chptr->chname);
+		return;
+	}
 
-  /* If they are not the channel manager, they are not allowed to change it */
-  if (MyUser(state->sptr) && !(state->flags & MODE_PARSE_FORCE || IsChannelManager(state->member))) {
-    if (*state->chptr->mode.apass) {
-      send_reply(state->sptr, ERR_NOTMANAGER, state->chptr->chname,
-                 state->chptr->chname);
-    } else {
-      send_reply(state->sptr, ERR_NOMANAGER, state->chptr->chname,
-          (TStime() - state->chptr->creationtime < 172800) ?
-	  "approximately 4-5 minutes" : "approximately 48 hours");
-    }
-    return;
-  }
+	/* If they are not the channel manager, they are not allowed to change it */
+	if (MyUser(state->sptr) && !(state->flags & MODE_PARSE_FORCE || IsChannelManager(state->member))) {
+		if (*state->chptr->mode.apass) {
+			send_reply(state->sptr, ERR_NOTMANAGER, state->chptr->chname,
+				state->chptr->chname);
+		}
+		else {
+			send_reply(state->sptr, ERR_NOMANAGER, state->chptr->chname,
+				(TStime() - state->chptr->creationtime < 172800) ?
+				"approximately 4-5 minutes" : "approximately 48 hours");
+		}
+		return;
+	}
 
-  /* allow removing and then adding upass, but not adding and then removing */
-  if (state->dir == MODE_ADD)
-  {
-    if (state->done & DONE_UPASS_ADD)
-      return;
-    state->done |= DONE_UPASS_ADD;
-  }
-  else
-  {
-    if (state->done & (DONE_UPASS_ADD | DONE_UPASS_DEL))
-      return;
-    state->done |= DONE_UPASS_DEL;
-  }
+	/* allow removing and then adding upass, but not adding and then removing */
+	if (state->dir == MODE_ADD)
+	{
+		if (state->done & DONE_UPASS_ADD)
+			return;
+		state->done |= DONE_UPASS_ADD;
+	}
+	else
+	{
+		if (state->done & (DONE_UPASS_ADD | DONE_UPASS_DEL))
+			return;
+		state->done |= DONE_UPASS_DEL;
+	}
 
-  /* clean up the upass string */
-  clean_key(t_str);
-  if (!*t_str || *t_str == ':') { /* warn if empty */
-    if (MyUser(state->sptr))
-      need_more_params(state->sptr, state->dir == MODE_ADD ? "MODE +U" :
-		       "MODE -U");
-    return;
-  }
+	/* clean up the upass string */
+	clean_key(t_str);
+	if (!*t_str || *t_str == ':') { /* warn if empty */
+		if (MyUser(state->sptr))
+			need_more_params(state->sptr, state->dir == MODE_ADD ? "MODE +U" :
+				"MODE -U");
+		return;
+	}
 
-  if (!state->mbuf)
-    return;
+	if (!state->mbuf)
+		return;
 
-  if (!(state->flags & MODE_PARSE_FORCE)) {
-    /* can't add the upass while apass is not set */
-    if (state->dir == MODE_ADD && !*state->chptr->mode.apass) {
-      send_reply(state->sptr, ERR_UPASSNOTSET, state->chptr->chname, state->chptr->chname);
-      return;
-    }
-    /* cannot set a +U password that is the same as +A */
-    if (state->dir == MODE_ADD && !ircd_strcmp(state->chptr->mode.apass, t_str)) {
-      send_reply(state->sptr, ERR_UPASS_SAME_APASS, state->chptr->chname);
-      return;
-    }
-    /* can't add a upass if one is set, nor can one remove the wrong upass */
-    if ((state->dir == MODE_ADD && *state->chptr->mode.upass) ||
-	(state->dir == MODE_DEL &&
-	 ircd_strcmp(state->chptr->mode.upass, t_str))) {
-      send_reply(state->sptr, ERR_KEYSET, state->chptr->chname);
-      return;
-    }
-  }
+	if (!(state->flags & MODE_PARSE_FORCE)) {
+		/* can't add the upass while apass is not set */
+		if (state->dir == MODE_ADD && !*state->chptr->mode.apass) {
+			send_reply(state->sptr, ERR_UPASSNOTSET, state->chptr->chname, state->chptr->chname);
+			return;
+		}
+		/* cannot set a +U password that is the same as +A */
+		if (state->dir == MODE_ADD && !ircd_strcmp(state->chptr->mode.apass, t_str)) {
+			send_reply(state->sptr, ERR_UPASS_SAME_APASS, state->chptr->chname);
+			return;
+		}
+		/* can't add a upass if one is set, nor can one remove the wrong upass */
+		if ((state->dir == MODE_ADD && *state->chptr->mode.upass) ||
+			(state->dir == MODE_DEL &&
+				ircd_strcmp(state->chptr->mode.upass, t_str))) {
+			send_reply(state->sptr, ERR_KEYSET, state->chptr->chname);
+			return;
+		}
+	}
 
-  if (!(state->flags & MODE_PARSE_WIPEOUT) && state->dir == MODE_ADD &&
-      !ircd_strcmp(state->chptr->mode.upass, t_str))
-    return; /* no upass change */
+	if (!(state->flags & MODE_PARSE_WIPEOUT) && state->dir == MODE_ADD &&
+		!ircd_strcmp(state->chptr->mode.upass, t_str))
+		return; /* no upass change */
 
-  /* Skip if this is a burst, we have a Upass already and the new Upass is
-   * after the old one alphabetically */
-  if ((state->flags & MODE_PARSE_BURST) &&
-      *(state->chptr->mode.upass) &&
-      ircd_strcmp(state->chptr->mode.upass, t_str) <= 0)
-    return;
+	/* Skip if this is a burst, we have a Upass already and the new Upass is
+	 * after the old one alphabetically */
+	if ((state->flags & MODE_PARSE_BURST) &&
+		*(state->chptr->mode.upass) &&
+		ircd_strcmp(state->chptr->mode.upass, t_str) <= 0)
+		return;
 
-  if (state->flags & MODE_PARSE_BOUNCE) {
-    if (*state->chptr->mode.upass) /* reset old upass */
-      modebuf_mode_string(state->mbuf, MODE_DEL | flag_p[0],
-			  state->chptr->mode.upass, 0);
-    else /* remove new bogus upass */
-      modebuf_mode_string(state->mbuf, MODE_ADD | flag_p[0], t_str, 0);
-  } else /* send new upass */
-    modebuf_mode_string(state->mbuf, state->dir | flag_p[0], t_str, 0);
+	if (state->flags & MODE_PARSE_BOUNCE) {
+		if (*state->chptr->mode.upass) /* reset old upass */
+			modebuf_mode_string(state->mbuf, MODE_DEL | flag_p[0],
+				state->chptr->mode.upass, 0);
+		else /* remove new bogus upass */
+			modebuf_mode_string(state->mbuf, MODE_ADD | flag_p[0], t_str, 0);
+	}
+	else /* send new upass */
+		modebuf_mode_string(state->mbuf, state->dir | flag_p[0], t_str, 0);
 
-  if (state->flags & MODE_PARSE_SET) {
-    if (state->dir == MODE_DEL) /* remove the old upass */
-      *state->chptr->mode.upass = '\0';
-    else
-      ircd_strncpy(state->chptr->mode.upass, t_str, KEYLEN);
-  }
+	if (state->flags & MODE_PARSE_SET) {
+		if (state->dir == MODE_DEL) /* remove the old upass */
+			*state->chptr->mode.upass = '\0';
+		else
+			ircd_strncpy(state->chptr->mode.upass, t_str, KEYLEN);
+	}
 }
+
+static const unsigned int privileged_modes =
+MODE_CHANSERVICE | MODE_OWNER | MODE_ADMIN | MODE_CHANOP | MODE_HALFOP;
 
 /*
  * Helper function to convert admin passes
  */
 static void
-mode_parse_apass(struct ParseState *state, int *flag_p)
+mode_parse_apass(struct ParseState* state, int* flag_p)
 {
-  struct Membership *memb;
-  char *t_str;
+	struct Membership* memb;
+	char* t_str;
 
-  if (MyUser(state->sptr) && state->max_args <= 0) /* drop if too many args */
-    return;
+	if (MyUser(state->sptr) && state->max_args <= 0) /* drop if too many args */
+		return;
 
-  if (state->parc <= 0) { /* warn if not enough args */
-    if (MyUser(state->sptr))
-      need_more_params(state->sptr, state->dir == MODE_ADD ? "MODE +A" :
-		       "MODE -A");
-    return;
-  }
+	if (state->parc <= 0) { /* warn if not enough args */
+		if (MyUser(state->sptr))
+			need_more_params(state->sptr, state->dir == MODE_ADD ? "MODE +A" :
+				"MODE -A");
+		return;
+	}
 
-  t_str = state->parv[state->args_used++]; /* grab arg */
-  state->parc--;
-  state->max_args--;
+	t_str = state->parv[state->args_used++]; /* grab arg */
+	state->parc--;
+	state->max_args--;
 
-  /* If they're not an oper, they can't change modes */
-  if (state->flags & (MODE_PARSE_NOTOPER | MODE_PARSE_NOTMEMBER)) {
-    send_notoper(state);
-    return;
-  }
+	/* If they're not an oper, they can't change modes */
+	if (!(state->flags & (MODE_CHANSERVICE|MODE_OWNER|MODE_ADMIN|MODE_CHANOP|MODE_HALFOP))) {
+		send_notoper(state, flag_p[0]);
+		return;
+	}
 
-  if (MyUser(state->sptr)) {
-    if (state->flags & MODE_PARSE_FORCE) {
-      /* If an unprivileged oper is trying to force it, refuse. */
-      if (!HasPriv(state->sptr, PRIV_APASS_OPMODE)) {
-        send_reply(state->sptr, ERR_NOTMANAGER, state->chptr->chname,
-                   state->chptr->chname);
-        return;
-      }
-    } else {
-      /* If they are not the channel manager, they are not allowed to change it. */
-      if (!IsChannelManager(state->member)) {
-        if (*state->chptr->mode.apass) {
-          send_reply(state->sptr, ERR_NOTMANAGER, state->chptr->chname,
-                     state->chptr->chname);
-        } else {
-          send_reply(state->sptr, ERR_NOMANAGER, state->chptr->chname,
-                     (TStime() - state->chptr->creationtime < 172800) ?
-                     "approximately 4-5 minutes" : "approximately 48 hours");
-        }
-        return;
-      }
-      /* Can't remove the Apass while Upass is still set. */
-      if (state->dir == MODE_DEL && *state->chptr->mode.upass) {
-        send_reply(state->sptr, ERR_UPASSSET, state->chptr->chname, state->chptr->chname);
-        return;
-      }
-      /* Can't add an Apass if one is set, nor can one remove the wrong Apass. */
-      if ((state->dir == MODE_ADD && *state->chptr->mode.apass) ||
-          (state->dir == MODE_DEL && ircd_strcmp(state->chptr->mode.apass, t_str))) {
-        send_reply(state->sptr, ERR_KEYSET, state->chptr->chname);
-        return;
-      }
-    }
+	if (MyUser(state->sptr)) {
+		if (state->flags & MODE_PARSE_FORCE) {
+			/* If an unprivileged oper is trying to force it, refuse. */
+			if (!HasPriv(state->sptr, PRIV_APASS_OPMODE)) {
+				send_reply(state->sptr, ERR_NOTMANAGER, state->chptr->chname,
+					state->chptr->chname);
+				return;
+			}
+		}
+		else {
+			/* If they are not the channel manager, they are not allowed to change it. */
+			if (!IsChannelManager(state->member)) {
+				if (*state->chptr->mode.apass) {
+					send_reply(state->sptr, ERR_NOTMANAGER, state->chptr->chname,
+						state->chptr->chname);
+				}
+				else {
+					send_reply(state->sptr, ERR_NOMANAGER, state->chptr->chname,
+						(TStime() - state->chptr->creationtime < 172800) ?
+						"approximately 4-5 minutes" : "approximately 48 hours");
+				}
+				return;
+			}
+			/* Can't remove the Apass while Upass is still set. */
+			if (state->dir == MODE_DEL && *state->chptr->mode.upass) {
+				send_reply(state->sptr, ERR_UPASSSET, state->chptr->chname, state->chptr->chname);
+				return;
+			}
+			/* Can't add an Apass if one is set, nor can one remove the wrong Apass. */
+			if ((state->dir == MODE_ADD && *state->chptr->mode.apass) ||
+				(state->dir == MODE_DEL && ircd_strcmp(state->chptr->mode.apass, t_str))) {
+				send_reply(state->sptr, ERR_KEYSET, state->chptr->chname);
+				return;
+			}
+		}
 
-    /* Forbid removing the Apass if the channel is older than 48 hours
-     * unless an oper is doing it. */
-    if (TStime() - state->chptr->creationtime >= 172800
-        && state->dir == MODE_DEL
-        && !IsAnOper(state->sptr)) {
-      send_reply(state->sptr, ERR_CHANSECURED, state->chptr->chname);
-      return;
-    }
-  }
+		/* Forbid removing the Apass if the channel is older than 48 hours
+		 * unless an oper is doing it. */
+		if (TStime() - state->chptr->creationtime >= 172800
+			&& state->dir == MODE_DEL
+			&& !IsAnOper(state->sptr)) {
+			send_reply(state->sptr, ERR_CHANSECURED, state->chptr->chname);
+			return;
+		}
+	}
 
-  /* allow removing and then adding apass, but not adding and then removing */
-  if (state->dir == MODE_ADD)
-  {
-    if (state->done & DONE_APASS_ADD)
-      return;
-    state->done |= DONE_APASS_ADD;
-  }
-  else
-  {
-    if (state->done & (DONE_APASS_ADD | DONE_APASS_DEL))
-      return;
-    state->done |= DONE_APASS_DEL;
-  }
+	/* allow removing and then adding apass, but not adding and then removing */
+	if (state->dir == MODE_ADD)
+	{
+		if (state->done & DONE_APASS_ADD)
+			return;
+		state->done |= DONE_APASS_ADD;
+	}
+	else
+	{
+		if (state->done & (DONE_APASS_ADD | DONE_APASS_DEL))
+			return;
+		state->done |= DONE_APASS_DEL;
+	}
 
-  /* clean up the apass string */
-  clean_key(t_str);
-  if (!*t_str || *t_str == ':') { /* warn if empty */
-    if (MyUser(state->sptr))
-      need_more_params(state->sptr, state->dir == MODE_ADD ? "MODE +A" :
-		       "MODE -A");
-    return;
-  }
+	/* clean up the apass string */
+	clean_key(t_str);
+	if (!*t_str || *t_str == ':') { /* warn if empty */
+		if (MyUser(state->sptr))
+			need_more_params(state->sptr, state->dir == MODE_ADD ? "MODE +A" :
+				"MODE -A");
+		return;
+	}
 
-  if (!state->mbuf)
-    return;
+	if (!state->mbuf)
+		return;
 
-  if (!(state->flags & MODE_PARSE_WIPEOUT) && state->dir == MODE_ADD &&
-      !ircd_strcmp(state->chptr->mode.apass, t_str))
-    return; /* no apass change */
+	if (!(state->flags & MODE_PARSE_WIPEOUT) && state->dir == MODE_ADD &&
+		!ircd_strcmp(state->chptr->mode.apass, t_str))
+		return; /* no apass change */
 
-  /* Skip if this is a burst, we have an Apass already and the new Apass is
-   * after the old one alphabetically */
-  if ((state->flags & MODE_PARSE_BURST) &&
-      *(state->chptr->mode.apass) &&
-      ircd_strcmp(state->chptr->mode.apass, t_str) <= 0)
-    return;
+	/* Skip if this is a burst, we have an Apass already and the new Apass is
+	 * after the old one alphabetically */
+	if ((state->flags & MODE_PARSE_BURST) &&
+		*(state->chptr->mode.apass) &&
+		ircd_strcmp(state->chptr->mode.apass, t_str) <= 0)
+		return;
 
-  if (state->flags & MODE_PARSE_BOUNCE) {
-    if (*state->chptr->mode.apass) /* reset old apass */
-      modebuf_mode_string(state->mbuf, MODE_DEL | flag_p[0],
-			  state->chptr->mode.apass, 0);
-    else /* remove new bogus apass */
-      modebuf_mode_string(state->mbuf, MODE_ADD | flag_p[0], t_str, 0);
-  } else /* send new apass */
-    modebuf_mode_string(state->mbuf, state->dir | flag_p[0], t_str, 0);
+	if (state->flags & MODE_PARSE_BOUNCE) {
+		if (*state->chptr->mode.apass) /* reset old apass */
+			modebuf_mode_string(state->mbuf, MODE_DEL | flag_p[0],
+				state->chptr->mode.apass, 0);
+		else /* remove new bogus apass */
+			modebuf_mode_string(state->mbuf, MODE_ADD | flag_p[0], t_str, 0);
+	}
+	else /* send new apass */
+		modebuf_mode_string(state->mbuf, state->dir | flag_p[0], t_str, 0);
 
-  if (state->flags & MODE_PARSE_SET) {
-    if (state->dir == MODE_ADD) { /* set the new apass */
-      /* Only accept the new apass if there is no current apass or
-       * this is a BURST. */
-      if (state->chptr->mode.apass[0] == '\0' ||
-          (state->flags & MODE_PARSE_BURST))
-        ircd_strncpy(state->chptr->mode.apass, t_str, KEYLEN);
-      /* Make it VERY clear to the user that this is a one-time password */
-      if (MyUser(state->sptr)) {
-	send_reply(state->sptr, RPL_APASSWARN_SET, state->chptr->mode.apass);
-	send_reply(state->sptr, RPL_APASSWARN_SECRET, state->chptr->chname,
-                   state->chptr->mode.apass);
-      }
-      /* Give the channel manager level 0 ops.
-         There should not be tested for IsChannelManager here because
-	 on the local server it is impossible to set the apass if one
-	 isn't a channel manager and remote servers might need to sync
-	 the oplevel here: when someone creates a channel (and becomes
-	 channel manager) during a net.break, and only sets the Apass
-	 after the net rejoined, they will have oplevel MAXOPLEVEL on
-	 all remote servers. */
-      if (state->member)
-        SetOpLevel(state->member, 0);
-    } else { /* remove the old apass */
-      *state->chptr->mode.apass = '\0';
-      /* Clear Upass so that there is never a Upass set when a zannel is burst. */
-      *state->chptr->mode.upass = '\0';
-      if (MyUser(state->sptr))
-        send_reply(state->sptr, RPL_APASSWARN_CLEAR);
-      /* Revert everyone to MAXOPLEVEL. */
-      for (memb = state->chptr->members; memb; memb = memb->next_member) {
-        if (memb->status & MODE_CHANOP)
-          SetOpLevel(memb, MAXOPLEVEL);
-      }
-    }
-  }
+	if (state->flags & MODE_PARSE_SET) {
+		if (state->dir == MODE_ADD) { /* set the new apass */
+			/* Only accept the new apass if there is no current apass or
+			 * this is a BURST. */
+			if (state->chptr->mode.apass[0] == '\0' ||
+				(state->flags & MODE_PARSE_BURST))
+				ircd_strncpy(state->chptr->mode.apass, t_str, KEYLEN);
+			/* Make it VERY clear to the user that this is a one-time password */
+			if (MyUser(state->sptr)) {
+				send_reply(state->sptr, RPL_APASSWARN_SET, state->chptr->mode.apass);
+				send_reply(state->sptr, RPL_APASSWARN_SECRET, state->chptr->chname,
+					state->chptr->mode.apass);
+			}
+			/* Give the channel manager level 0 ops.
+			   There should not be tested for IsChannelManager here because
+		   on the local server it is impossible to set the apass if one
+		   isn't a channel manager and remote servers might need to sync
+		   the oplevel here: when someone creates a channel (and becomes
+		   channel manager) during a net.break, and only sets the Apass
+		   after the net rejoined, they will have oplevel MAXOPLEVEL on
+		   all remote servers. */
+			if (state->member)
+				SetOpLevel(state->member, 0);
+		}
+		else { /* remove the old apass */
+			*state->chptr->mode.apass = '\0';
+			/* Clear Upass so that there is never a Upass set when a zannel is burst. */
+			*state->chptr->mode.upass = '\0';
+			if (MyUser(state->sptr))
+				send_reply(state->sptr, RPL_APASSWARN_CLEAR);
+			/* Revert everyone to MAXOPLEVEL. */
+			for (memb = state->chptr->members; memb; memb = memb->next_member) {
+				if (memb->status & privileged_modes)
+					SetOpLevel(memb, MAXOPLEVEL);
+			}
+		}
+	}
 }
 
 /** Compare one ban's extent to another.
@@ -2800,33 +3105,33 @@ mode_parse_apass(struct ParseState *state, int *flag_p)
  * @return Zero if \a old_ban is a superset of \a new_ban, non-zero otherwise.
  */
 static int
-bmatch(struct Ban *old_ban, struct Ban *new_ban)
+bmatch(struct Ban* old_ban, struct Ban* new_ban)
 {
-  int res;
-  assert(old_ban != NULL);
-  assert(new_ban != NULL);
-  /* A ban is never treated as a superset of an exception. */
-  if (!(old_ban->flags & BAN_EXCEPTION)
-      && (new_ban->flags & BAN_EXCEPTION))
-    return 1;
-  /* If either is not an address mask, match the text masks. */
-  if ((old_ban->flags & new_ban->flags & BAN_IPMASK) == 0)
-    return mmatch(old_ban->banstr, new_ban->banstr);
-  /* If the old ban has a longer prefix than new, it cannot be a superset. */
-  if (old_ban->addrbits > new_ban->addrbits)
-    return 1;
-  /* Compare the masks before the hostname part.  */
-  old_ban->banstr[old_ban->nu_len] = new_ban->banstr[new_ban->nu_len] = '\0';
-  res = mmatch(old_ban->banstr, new_ban->banstr);
-  old_ban->banstr[old_ban->nu_len] = new_ban->banstr[new_ban->nu_len] = '@';
-  if (res)
-    return res;
-  /* If the old ban's mask mismatches, cannot be a superset. */
-  if (!ipmask_check(&new_ban->address, &old_ban->address, old_ban->addrbits))
-    return 1;
-  /* Otherwise it depends on whether the old ban's text is a superset
-   * of the new. */
-  return mmatch(old_ban->banstr, new_ban->banstr);
+	int res;
+	assert(old_ban != NULL);
+	assert(new_ban != NULL);
+	/* A ban is never treated as a superset of an exception. */
+	if (!(old_ban->flags & BAN_EXCEPTION)
+		&& (new_ban->flags & BAN_EXCEPTION))
+		return 1;
+	/* If either is not an address mask, match the text masks. */
+	if ((old_ban->flags & new_ban->flags & BAN_IPMASK) == 0)
+		return mmatch(old_ban->banstr, new_ban->banstr);
+	/* If the old ban has a longer prefix than new, it cannot be a superset. */
+	if (old_ban->addrbits > new_ban->addrbits)
+		return 1;
+	/* Compare the masks before the hostname part.  */
+	old_ban->banstr[old_ban->nu_len] = new_ban->banstr[new_ban->nu_len] = '\0';
+	res = mmatch(old_ban->banstr, new_ban->banstr);
+	old_ban->banstr[old_ban->nu_len] = new_ban->banstr[new_ban->nu_len] = '@';
+	if (res)
+		return res;
+	/* If the old ban's mask mismatches, cannot be a superset. */
+	if (!ipmask_check(&new_ban->address, &old_ban->address, old_ban->addrbits))
+		return 1;
+	/* Otherwise it depends on whether the old ban's text is a superset
+	 * of the new. */
+	return mmatch(old_ban->banstr, new_ban->banstr);
 }
 
 /** Add a ban from a ban list and mark bans that should be removed
@@ -2842,929 +3147,1041 @@ bmatch(struct Ban *old_ban, struct Ban *new_ban)
  * @param[in] do_free If non-zero, free \a newban on failure.
  * @return Zero if \a newban could be applied, non-zero if not.
  */
-int apply_ban(struct Ban **banlist, struct Ban *newban, int do_free)
+int apply_ban(struct Ban** banlist, struct Ban* newban, int do_free)
 {
-  struct Ban *ban;
-  size_t count = 0;
+	struct Ban* ban;
+	struct Ban* prev = NULL;
+	int matched = 0;
+	int is_exception = (newban->flags & BAN_EXCEPTION);
 
-  assert(newban->flags & (BAN_ADD|BAN_DEL));
-  if (newban->flags & BAN_ADD) {
-    size_t totlen = 0;
-    /* If a less specific *active* entry is found, fail.  */
-    for (ban = *banlist; ban; ban = ban->next) {
-      if (!bmatch(ban, newban) && !(ban->flags & BAN_DEL)) {
-        if (do_free)
-          free_ban(newban);
-        return 1;
-      }
-      if (!(ban->flags & (BAN_OVERLAPPED|BAN_DEL))) {
-        count++;
-        totlen += strlen(ban->banstr);
-      }
-    }
-    /* Mark more specific entries and add this one to the end of the list. */
-    while ((ban = *banlist) != NULL) {
-      if (!bmatch(newban, ban)) {
-        ban->flags |= BAN_OVERLAPPED | BAN_DEL;
-      }
-      banlist = &ban->next;
-    }
-    *banlist = newban;
-    return 0;
-  } else if (newban->flags & BAN_DEL) {
-    size_t remove_count = 0;
-    /* Mark more specific entries. */
-    for (ban = *banlist; ban; ban = ban->next) {
-      if (!bmatch(newban, ban)) {
-        ban->flags |= BAN_OVERLAPPED | BAN_DEL;
-        remove_count++;
-      }
-    }
-    if (remove_count)
-        return 0;
-    /* If no matches were found, fail. */
-    if (do_free)
-      free_ban(newban);
-    return 3;
-  }
-  if (do_free)
-    free_ban(newban);
-  return 4;
+	if (newban->flags & BAN_ADD) {
+		// Duplikate verhindern
+		for (ban = *banlist; ban; ban = ban->next) {
+			if (((ban->flags & BAN_EXCEPTION) == is_exception) &&
+				!strcmp(ban->banstr, newban->banstr)) {
+				if (do_free) free_ban(newban);
+				return 1;
+			}
+		}
+		// Am Ende einfügen
+		if (*banlist == NULL) {
+			*banlist = newban;
+		}
+		else {
+			ban = *banlist;
+			while (ban->next) ban = ban->next;
+			ban->next = newban;
+		}
+		newban->next = NULL;
+		return 0;
+	}
+
+	if (newban->flags & BAN_DEL) {
+		prev = NULL;
+		ban = *banlist;
+		while (ban) {
+			if (((ban->flags & BAN_EXCEPTION) == is_exception) &&
+				!strcmp(ban->banstr, newban->banstr)) {
+				// Entferne aus Liste
+				if (prev)
+					prev->next = ban->next;
+				else
+					*banlist = ban->next;
+				free_ban(ban);
+				matched = 1;
+				break; // Nur das erste passende löschen
+			}
+			prev = ban;
+			ban = ban->next;
+		}
+		if (do_free) free_ban(newban);
+		return matched ? 0 : 3;
+	}
+
+	if (do_free) free_ban(newban);
+	return 4;
 }
 
 /*
  * Helper function to convert bans
  */
 static void
-mode_parse_ban(struct ParseState *state, int *flag_p)
+mode_parse_ban(struct ParseState* state, int* flag_p)
 {
-  char *t_str, *s;
-  struct Ban *ban, *newban;
+	char* t_str, * s;
+	struct Ban* ban, * newban;
 
-  if (state->parc <= 0) { /* Not enough args, send ban list */
-    if (MyUser(state->sptr) && !(state->done & DONE_BANLIST)) {
-      send_ban_list(state->sptr, state->chptr);
-      state->done |= DONE_BANLIST;
-    }
+	if (state->parc <= 0) { /* Not enough args, send ban list */
+		if (MyUser(state->sptr) && !(state->done & DONE_BANLIST)) {
+			send_ban_list(state->sptr, state->chptr);
+			state->done |= DONE_BANLIST;
+		}
 
-    return;
-  }
+		return;
+	}
 
-  if (MyUser(state->sptr) && state->max_args <= 0) /* drop if too many args */
-    return;
+	if (MyUser(state->sptr) && state->max_args <= 0) /* drop if too many args */
+		return;
 
-  t_str = state->parv[state->args_used++]; /* grab arg */
-  state->parc--;
-  state->max_args--;
+	t_str = state->parv[state->args_used++]; /* grab arg */
+	state->parc--;
+	state->max_args--;
 
-  /* If they're not an oper, they can't change modes */
-  if (state->flags & (MODE_PARSE_NOTOPER | MODE_PARSE_NOTMEMBER)) {
-    send_notoper(state);
-    return;
-  }
+	/* If they're not an oper, they can't change modes */
+	if (!(state->flags & (MODE_CHANSERVICE|MODE_OWNER|MODE_ADMIN|MODE_CHANOP|MODE_HALFOP))) {
+		send_notoper(state, flag_p[0]);
+		return;
+	}
 
-  if ((s = strchr(t_str, ' ')))
-    *s = '\0';
+	if ((s = strchr(t_str, ' ')))
+		*s = '\0';
 
-  if (!*t_str || *t_str == ':') { /* warn if empty */
-    if (MyUser(state->sptr))
-      need_more_params(state->sptr, state->dir == MODE_ADD ? "MODE +b" :
-		       "MODE -b");
-    return;
-  }
+	if (!*t_str || *t_str == ':') { /* warn if empty */
+		if (MyUser(state->sptr))
+			need_more_params(state->sptr, state->dir == MODE_ADD ? "MODE +b" :
+				"MODE -b");
+		return;
+	}
 
-  /* Clear all ADD/DEL/OVERLAPPED flags from ban list. */
-  if (!(state->done & DONE_BANCLEAN)) {
-    for (ban = state->chptr->banlist; ban; ban = ban->next)
-      ban->flags &= ~(BAN_ADD | BAN_DEL | BAN_OVERLAPPED);
-    state->done |= DONE_BANCLEAN;
-  }
+	/* Clear all ADD/DEL/OVERLAPPED flags from ban list. */
+	if (!(state->done & DONE_BANCLEAN)) {
+		for (ban = state->chptr->banlist; ban; ban = ban->next)
+			ban->flags &= ~(BAN_ADD | BAN_DEL | BAN_OVERLAPPED);
+		state->done |= DONE_BANCLEAN;
+	}
 
-  /* remember the ban for the moment... */
-  newban = state->banlist + (state->numbans++);
-  newban->next = 0;
-  newban->flags = ((state->dir == MODE_ADD) ? BAN_ADD : BAN_DEL)
-      | (*flag_p == MODE_BAN ? 0 : BAN_EXCEPTION);
-  set_ban_mask(newban, collapse(pretty_mask(t_str)));
-  ircd_strncpy(newban->who, IsUser(state->sptr) ? cli_name(state->sptr) : "*", NICKLEN);
-  newban->when = TStime();
-  apply_ban(&state->chptr->banlist, newban, 0);
+	/* remember the ban for the moment... */
+	newban = state->banlist + (state->numbans++);
+	newban->next = 0;
+	newban->flags = ((state->dir == MODE_ADD) ? BAN_ADD : BAN_DEL)
+		| (*flag_p == MODE_BAN | MODE_BANEXCEPTION ? 0 : BAN_EXCEPTION);
+	set_ban_mask(newban, collapse(pretty_mask(t_str)));
+	ircd_strncpy(newban->who, IsUser(state->sptr) ? cli_name(state->sptr) : "*", NICKLEN);
+	newban->when = TStime();
+	apply_ban(&state->chptr->banlist, newban, 0);
 }
 
 /*
  * This is the bottom half of the ban processor
  */
 static void
-mode_process_bans(struct ParseState *state)
+mode_process_bans(struct ParseState* state)
 {
-  struct Ban *ban, *newban, *prevban, *nextban;
-  int count = 0;
-  int len = 0;
-  int banlen;
-  int changed = 0;
+	struct Ban* ban, * newban, * prevban, * nextban;
+	int count = 0;
+	int len = 0;
+	int banlen;
+	int changed = 0;
 
-  for (prevban = 0, ban = state->chptr->banlist; ban; ban = nextban) {
-    count++;
-    banlen = strlen(ban->banstr);
-    len += banlen;
-    nextban = ban->next;
+	for (prevban = 0, ban = state->chptr->banlist; ban; ban = nextban) {
+		count++;
+		banlen = strlen(ban->banstr);
+		len += banlen;
+		nextban = ban->next;
 
-    if ((ban->flags & (BAN_DEL | BAN_ADD)) == (BAN_DEL | BAN_ADD)) {
-      if (prevban)
-	prevban->next = 0; /* Break the list; ban isn't a real ban */
-      else
-	state->chptr->banlist = 0;
+		if ((ban->flags & (BAN_DEL | BAN_ADD)) == (BAN_DEL | BAN_ADD)) {
+			if (prevban)
+				prevban->next = 0; /* Break the list; ban isn't a real ban */
+			else
+				state->chptr->banlist = 0;
 
-      count--;
-      len -= banlen;
+			count--;
+			len -= banlen;
 
-      continue;
-    } else if (ban->flags & BAN_DEL) { /* Deleted a ban? */
-      char *bandup;
-      DupString(bandup, ban->banstr);
-      modebuf_mode_string(state->mbuf, MODE_DEL | MODE_BAN,
-			  bandup, 1);
+			continue;
+		}
+		else if (ban->flags & BAN_DEL) { /* Deleted a ban? */
+			char* bandup;
+			DupString(bandup, ban->banstr);
+			modebuf_mode_string(state->mbuf, MODE_DEL | MODE_BAN,
+				bandup, 1);
 
-      if (state->flags & MODE_PARSE_SET) { /* Ok, make it take effect */
-	if (prevban) /* clip it out of the list... */
-	  prevban->next = ban->next;
-	else
-	  state->chptr->banlist = ban->next;
+			if (state->flags & MODE_PARSE_SET) { /* Ok, make it take effect */
+				if (prevban) /* clip it out of the list... */
+					prevban->next = ban->next;
+				else
+					state->chptr->banlist = ban->next;
 
-	count--;
-	len -= banlen;
-        free_ban(ban);
+				count--;
+				len -= banlen;
+				free_ban(ban);
 
-	changed++;
-	continue; /* next ban; keep prevban like it is */
-      } else
-	ban->flags &= BAN_IPMASK; /* unset other flags */
-    } else if (ban->flags & BAN_ADD) { /* adding a ban? */
-      if (prevban)
-	prevban->next = 0; /* Break the list; ban isn't a real ban */
-      else
-	state->chptr->banlist = 0;
+				changed++;
+				continue; /* next ban; keep prevban like it is */
+			}
+			else
+				ban->flags &= BAN_IPMASK; /* unset other flags */
+		}
+		else if (ban->flags & BAN_ADD) { /* adding a ban? */
+			if (prevban)
+				prevban->next = 0; /* Break the list; ban isn't a real ban */
+			else
+				state->chptr->banlist = 0;
 
-      /* If we're supposed to ignore it, do so. */
-      if (ban->flags & BAN_OVERLAPPED &&
-	  !(state->flags & MODE_PARSE_BOUNCE)) {
-	count--;
-	len -= banlen;
-      } else {
-	if (state->flags & MODE_PARSE_SET && MyUser(state->sptr) &&
-	    (len > (feature_int(FEAT_AVBANLEN) * feature_int(FEAT_MAXBANS)) ||
-	     count > feature_int(FEAT_MAXBANS))) {
-	  send_reply(state->sptr, ERR_BANLISTFULL, state->chptr->chname,
-		     ban->banstr);
-	  count--;
-	  len -= banlen;
-	} else {
-          char *bandup;
-	  /* add the ban to the buffer */
-          DupString(bandup, ban->banstr);
-	  modebuf_mode_string(state->mbuf, MODE_ADD | MODE_BAN,
-			      bandup, 1);
+			/* If we're supposed to ignore it, do so. */
+			if (ban->flags & BAN_OVERLAPPED &&
+				!(state->flags & MODE_PARSE_BOUNCE)) {
+				count--;
+				len -= banlen;
+			}
+			else {
+				if (state->flags & MODE_PARSE_SET && MyUser(state->sptr) &&
+					(len > (feature_int(FEAT_AVBANLEN) * feature_int(FEAT_MAXBANS)) ||
+						count > feature_int(FEAT_MAXBANS))) {
+					send_reply(state->sptr, ERR_BANLISTFULL, state->chptr->chname,
+						ban->banstr);
+					count--;
+					len -= banlen;
+				}
+				else {
+					char* bandup;
+					/* add the ban to the buffer */
+					DupString(bandup, ban->banstr);
+					modebuf_mode_string(state->mbuf, MODE_ADD | MODE_BAN,
+						bandup, 1);
 
-	  if (state->flags & MODE_PARSE_SET) { /* create a new ban */
-	    newban = make_ban(ban->banstr);
-            strcpy(newban->who, ban->who);
-	    newban->when = ban->when;
-	    newban->flags = ban->flags & BAN_IPMASK;
+					if (state->flags & MODE_PARSE_SET) { /* create a new ban */
+						newban = make_ban(ban->banstr);
+						strcpy(newban->who, ban->who);
+						newban->when = ban->when;
+						newban->flags = ban->flags & BAN_IPMASK;
 
-	    newban->next = state->chptr->banlist; /* and link it in */
-	    state->chptr->banlist = newban;
+						newban->next = state->chptr->banlist; /* and link it in */
+						state->chptr->banlist = newban;
 
-	    changed++;
-	  }
-	}
-      }
-    }
+						changed++;
+					}
+				}
+			}
+		}
 
-    prevban = ban;
-  } /* for (prevban = 0, ban = state->chptr->banlist; ban; ban = nextban) { */
+		prevban = ban;
+	} /* for (prevban = 0, ban = state->chptr->banlist; ban; ban = nextban) { */
 
-  if (changed) /* if we changed the ban list, we must invalidate the bans */
-    mode_ban_invalidate(state->chptr);
+	if (changed) /* if we changed the ban list, we must invalidate the bans */
+		mode_ban_invalidate(state->chptr);
 }
 
 /*
- * Helper function to process client changes
- */
+  * Helper function to process client changes
+  */
 static void
-mode_parse_client(struct ParseState *state, int *flag_p)
+mode_parse_client(struct ParseState* state, int* flag_p)
 {
-  char *t_str;
-  char *colon;
-  struct Client *acptr;
-  struct Membership *member;
-  int oplevel = MAXOPLEVEL + 1;
-  int req_oplevel;
-  int i;
+	char* t_str, * colon;
+	struct Client* acptr;
+	struct Membership* member;
+	int oplevel = MAXOPLEVEL + 1;
+	int req_oplevel;
+	int i;
 
-  if (MyUser(state->sptr) && state->max_args <= 0) /* drop if too many args */
-    return;
+	if (MyUser(state->sptr) && state->max_args <= 0)
+		return;
 
-  if (state->parc <= 0) /* return if not enough args */
-    return;
+	if (state->parc <= 0)
+		return;
 
-  t_str = state->parv[state->args_used++]; /* grab arg */
-  state->parc--;
-  state->max_args--;
+	t_str = state->parv[state->args_used++];
+	state->parc--;
+	state->max_args--;
 
-  /* If they're not an oper, they can't change modes */
-  if (state->flags & (MODE_PARSE_NOTOPER | MODE_PARSE_NOTMEMBER)) {
-    send_notoper(state);
-    return;
-  }
+	// Prüfe, ob ein User-Modus gesetzt werden soll (+S, +q, +a, +o, +h)
+	if (!(state->flags & (MODE_CHANSERVICE | MODE_OWNER | MODE_ADMIN | MODE_CHANOP | MODE_HALFOP))) {
+		send_notoper(state, flag_p[0]);
+		return;
+	}
 
-  if (MyUser(state->sptr)) {
-    colon = strchr(t_str, ':');
-    if (colon != NULL) {
-      *colon++ = '\0';
-      req_oplevel = atoi(colon);
-      if (!(state->flags & MODE_PARSE_FORCE)
-          && state->member
-          && (req_oplevel < OpLevel(state->member)
-              || (req_oplevel == OpLevel(state->member)
-                  && OpLevel(state->member) < MAXOPLEVEL)
-              || req_oplevel > MAXOPLEVEL))
-        send_reply(state->sptr, ERR_NOTLOWEROPLEVEL,
-                   t_str, state->chptr->chname,
-                   OpLevel(state->member), req_oplevel, "op",
-                   OpLevel(state->member) == req_oplevel ? "the same" : "a higher");
-      else if (req_oplevel <= MAXOPLEVEL)
-        oplevel = req_oplevel;
-    }
-    /* find client we're manipulating */
-    acptr = find_chasing(state->sptr, t_str, NULL);
-  } else {
-    if (t_str[5] == ':') {
-      t_str[5] = '\0';
-      oplevel = atoi(t_str + 6);
-    }
-    acptr = findNUser(t_str);
-  }
+	// Oplevel für +o, +q, +a, +h, +S auslesen (z.B. nick:level)
+	if (MyUser(state->sptr)) {
+		colon = strchr(t_str, ':');
+		if (colon != NULL) {
+			*colon++ = '\0';
+			req_oplevel = atoi(colon);
+			if (!(state->flags & MODE_PARSE_FORCE)
+				&& state->member
+				&& (req_oplevel < OpLevel(state->member)
+					|| (req_oplevel == OpLevel(state->member)
+						&& OpLevel(state->member) < MAXOPLEVEL)
+					|| req_oplevel > MAXOPLEVEL))
+				send_reply(state->sptr, ERR_NOTLOWEROPLEVEL,
+					t_str, state->chptr->chname,
+					OpLevel(state->member), req_oplevel, "op",
+					OpLevel(state->member) == req_oplevel ? "the same" : "a higher");
+			else if (req_oplevel <= MAXOPLEVEL)
+				oplevel = req_oplevel;
+		}
+		acptr = find_chasing(state->sptr, t_str, NULL);
+	}
+	else {
+		if (t_str[5] == ':') {
+			t_str[5] = '\0';
+			oplevel = atoi(t_str + 6);
+		}
+		acptr = findNUser(t_str);
+	}
 
-  if (!acptr)
-    return; /* find_chasing() already reported an error to the user */
+	if (!acptr)
+		return;
 
-  for (i = 0; i < MAXPARA; i++) /* find an element to stick them in */
-    if (!state->cli_change[i].flag || (state->cli_change[i].client == acptr &&
-				       state->cli_change[i].flag & flag_p[0]))
-      break; /* found a slot */
-
-  /* If we are going to bounce this deop, mark the correct oplevel. */
-  if (state->flags & MODE_PARSE_BOUNCE
-      && state->dir == MODE_DEL
-      && flag_p[0] == MODE_CHANOP
-      && (member = find_member_link(state->chptr, acptr)))
-      oplevel = OpLevel(member);
-
-  /* Store what we're doing to them */
-  state->cli_change[i].flag = state->dir | flag_p[0];
-  state->cli_change[i].oplevel = oplevel;
-  state->cli_change[i].client = acptr;
+	// Für jeden User-Modus einzeln prüfen und setzen
+	for (i = 0; i < MAXPARA; i++) {
+		if (!state->cli_change[i].flag) {
+			state->cli_change[i].flag = state->dir | flag_p[0];
+			state->cli_change[i].oplevel = oplevel;
+			state->cli_change[i].client = acptr;
+			break;
+		}
+		// Deduplizierung: Wenn dieser Modus für diesen User schon gesetzt ist, nicht erneut eintragen
+		if (state->cli_change[i].client == acptr && (state->cli_change[i].flag & flag_p[0]))
+			break;
+	}
 }
 
-/*
- * Helper function to process the changed client list
- */
-static void
-mode_process_clients(struct ParseState *state)
+static void mode_process_clients(struct ParseState* state)
 {
-  int i;
-  struct Membership *member;
+	int i;
+	struct Membership* member;
+	static const struct {
+		unsigned int flag;
+		char modechar;
+	} user_modes[] = {
+		{ CHFL_CHANSERVICE, 'S' },
+		{ CHFL_OWNER,       'q' },
+		{ CHFL_ADMIN,       'a' },
+		{ CHFL_CHANOP,      'o' },
+		{ CHFL_HALFOP,      'h' }
+	};
 
-  for (i = 0; state->cli_change[i].flag; i++) {
-    assert(0 != state->cli_change[i].client);
+	struct {
+		char name[NICKLEN + 1];
+		char modechar;
+	} printed[MAXMODEPARAMS * 5];
+	int printed_count = 0;
 
-    /* look up member link */
-    if (!(member = find_member_link(state->chptr,
-				    state->cli_change[i].client)) ||
-	(MyUser(state->sptr) && IsZombie(member))) {
-      if (MyUser(state->sptr))
-	send_reply(state->sptr, ERR_USERNOTINCHANNEL,
-		   cli_name(state->cli_change[i].client),
-		   state->chptr->chname);
-      continue;
-    }
+	for (i = 0; state->cli_change[i].flag; i++) {
+		assert(0 != state->cli_change[i].client);
+		const char* nick = cli_name(state->cli_change[i].client);
 
-    if ((state->cli_change[i].flag & MODE_ADD &&
-	 (state->cli_change[i].flag & member->status)) ||
-	(state->cli_change[i].flag & MODE_DEL &&
-	 !(state->cli_change[i].flag & member->status)))
-      continue; /* no change made, don't do anything */
+		member = find_member_link(state->chptr, state->cli_change[i].client);
+		if (!member || (MyUser(state->sptr) && IsZombie(member))) {
+			if (MyUser(state->sptr))
+				send_reply(state->sptr, ERR_USERNOTINCHANNEL,
+					nick, state->chptr->chname);
+			continue;
+		}
 
-    /* see if the deop is allowed */
-    if ((state->cli_change[i].flag & (MODE_DEL | MODE_CHANOP)) ==
-	(MODE_DEL | MODE_CHANOP)) {
-      /* prevent +k users from being deopped */
-      /*
-       * ASUKA_X:
-       * Allow +X'ed users to mess with +k'ed.
-       * --Bigfoot
-       */
-      if ((IsChannelService(state->cli_change[i].client) && IsService(cli_user(state->cli_change[i].client)->server)) || (IsChannelService(state->cli_change[i].client) && !IsXtraOp(state->sptr))) {
-	if (state->flags & MODE_PARSE_FORCE) /* it was forced */
-	  sendto_opmask_butone(0, SNO_HACK4, "Deop of +k user on %H by %s",
-			       state->chptr,
-			       (IsServer(state->sptr) ? cli_name(state->sptr) :
-				cli_name((cli_user(state->sptr))->server)));
+		for (int mode_index = 0; mode_index < sizeof(user_modes) / sizeof(user_modes[0]); ++mode_index) {
+			unsigned int modeflag = user_modes[mode_index].flag;
+			char modechar = user_modes[mode_index].modechar;
 
-        else if (MyUser(state->sptr) && state->flags & MODE_PARSE_SET && (state->sptr != state->cli_change[i].client)) {
-          if(IsService(cli_user(state->cli_change[i].client)->server) && IsChannelService(state->cli_change[i].client)){
-            send_reply(state->sptr, ERR_ISREALSERVICE,
-                     cli_name(state->cli_change[i].client),
-                     state->chptr->chname);
-          }else{
-            send_reply(state->sptr, ERR_ISCHANSERVICE,
-                     cli_name(state->cli_change[i].client),
-                     state->chptr->chname);
-          }
+			if (!(state->cli_change[i].flag & modeflag))
+				continue;
 
-	  continue;
+			// Deduplizierung: Prüfe, ob Nick bereits mit anderem Moduschar verarbeitet wurde
+			int duplicate_wrong_mode = 0;
+			for (int j = 0; j < printed_count; ++j) {
+				if (!strcmp(printed[j].name, nick) && printed[j].modechar != modechar) {
+					duplicate_wrong_mode = 1;
+					break;
+				}
+			}
+			if (duplicate_wrong_mode)
+				continue;
+
+			// Deduplizierung: Prüfe, ob Nick+Moduschar schon verarbeitet wurde
+			int already_printed = 0;
+			for (int j = 0; j < printed_count; ++j) {
+				if (!strcmp(printed[j].name, nick) && printed[j].modechar == modechar) {
+					already_printed = 1;
+					break;
+				}
+			}
+			if (already_printed)
+				continue;
+
+			strncpy(printed[printed_count].name, nick, NICKLEN);
+			printed[printed_count].name[NICKLEN] = '\0';
+			printed[printed_count].modechar = modechar;
+			printed_count++;
+
+			// --- Korrektur: Halfops dürfen keine Rechte ändern ---
+			if (state->flags & MODE_PARSE_SET) {
+				struct Membership* setter = state->member;
+				// Nur Chanops und höher dürfen Rechte ändern (Halfops ausgeschlossen)
+				if (!setter || !(setter->status & (CHFL_CHANOP | CHFL_ADMIN | CHFL_OWNER | CHFL_CHANSERVICE))) {
+					if (MyUser(state->sptr)) {
+						send_reply(state->sptr, ERR_CHANOPRIVSNEEDED, state->chptr->chname);
+					}
+					continue;
+				}
+				// Optional: Wenn du weiterhin die Hierarchie beachten willst:
+				// if (!has_channel_permission(setter, member, CHFL_CHANOP)) { ... }
+			}
+
+			if ((state->cli_change[i].flag & MODE_ADD && (modeflag & member->status)) ||
+				(state->cli_change[i].flag & MODE_DEL && !(modeflag & member->status)))
+				continue;
+
+			if ((state->cli_change[i].flag & MODE_ADD) && state->cli_change[i].oplevel <= MAXOPLEVEL) {
+				if ((IsChannelService(state->sptr) && IsService(cli_user(state->sptr)->server)) || (IsService(state->sptr))) {
+					SetOpLevel(member, state->cli_change[i].oplevel);
+				}
+				else {
+					SetOpLevel(member, state->cli_change[i].oplevel > MINOPLEVEL ? state->cli_change[i].oplevel : MINOPLEVEL);
+				}
+			}
+
+			if (state->flags & MODE_PARSE_SET) {
+				if (state->cli_change[i].flag & MODE_ADD) {
+					if (IsDelayedJoin(member) && !IsZombie(member))
+						RevealDelayedJoin(member);
+					member->status |= modeflag;
+					if (modeflag & (CHFL_CHANSERVICE | CHFL_OWNER | CHFL_ADMIN | CHFL_CHANOP | CHFL_HALFOP))
+						ClearDeopped(member);
+				}
+				else {
+					member->status &= ~modeflag;
+				}
+			}
+
+			modebuf_mode_client(state->mbuf, state->cli_change[i].flag & (MODE_ADD | MODE_DEL) | modeflag,
+				state->cli_change[i].client,
+				state->cli_change[i].oplevel);
+		}
 	}
-      }
 
-      /* check deop for local user */
-      if (MyUser(state->sptr)) {
-
-	/* don't allow local opers to be deopped on local channels */
-	if (state->cli_change[i].client != state->sptr &&
-	    IsLocalChannel(state->chptr->chname) &&
-	    HasPriv(state->cli_change[i].client, PRIV_DEOP_LCHAN)) {
-	  send_reply(state->sptr, ERR_ISOPERLCHAN,
-		     cli_name(state->cli_change[i].client),
-		     state->chptr->chname);
-	  continue;
-        }
-
-	/* Forbid deopping other members with an oplevel less than
-         * one's own level, and other members with an oplevel the same
-         * as one's own unless both are at MAXOPLEVEL. */
-	if (state->sptr != state->cli_change[i].client
-            && state->member
-            && ((OpLevel(member) < OpLevel(state->member))
-                || (OpLevel(member) == OpLevel(state->member)
-                    && OpLevel(member) < MAXOPLEVEL))) {
-	    int equal = (OpLevel(member) == OpLevel(state->member));
-	    send_reply(state->sptr, ERR_NOTLOWEROPLEVEL,
-		       cli_name(state->cli_change[i].client),
-		       state->chptr->chname,
-		       OpLevel(state->member), OpLevel(member),
-		       "deop", equal ? "the same" : "a higher");
-	  continue;
-	}
-      }
-    }
-
-    /* set op-level of member being opped */
-    if ((state->cli_change[i].flag & (MODE_ADD | MODE_CHANOP)) ==
-	(MODE_ADD | MODE_CHANOP)) {
-      /* If a valid oplevel was specified, use it.
-       * Otherwise, if being opped by an outsider, get MAXOPLEVEL.
-       * Otherwise, if not an apass channel, or state->member has
-       *   MAXOPLEVEL, get oplevel MAXOPLEVEL.
-       * Otherwise, get state->member's oplevel+1.
-       */
-      if (state->cli_change[i].oplevel <= MAXOPLEVEL) {
-        if ((IsChannelService(state->sptr) && IsService(cli_user(state->sptr)->server)) || (IsService(state->sptr))) {
-          SetOpLevel(member, state->cli_change[i].oplevel);
-        } else {
-          SetOpLevel(member, state->cli_change[i].oplevel > MINOPLEVEL ? state->cli_change[i].oplevel : MINOPLEVEL);
-        }
-      }
-      else if (!state->member)
-        SetOpLevel(member, MAXOPLEVEL);
-      else if (OpLevel(state->member) >= MAXOPLEVEL)
-          SetOpLevel(member, OpLevel(state->member));
-      else
-        SetOpLevel(member, OpLevel(state->member) >= MINOPLEVEL ? OpLevel(state->member) + 1 : MINOPLEVEL);
-    }
-
-    /* actually effect the change */
-    if (state->flags & MODE_PARSE_SET) {
-      if (state->cli_change[i].flag & MODE_ADD) {
-        if (IsDelayedJoin(member) && !IsZombie(member))
-          RevealDelayedJoin(member);
-	member->status |= (state->cli_change[i].flag &
-			   (MODE_CHANOP | MODE_VOICE));
-	if (state->cli_change[i].flag & MODE_CHANOP)
-	  ClearDeopped(member);
-      } else
-	member->status &= ~(state->cli_change[i].flag &
-			    (MODE_CHANOP | MODE_VOICE));
-    }
-
-    /* accumulate the change */
-    modebuf_mode_client(state->mbuf, state->cli_change[i].flag,
-			state->cli_change[i].client,
-                        state->cli_change[i].oplevel);
-  } /* for (i = 0; state->cli_change[i].flags; i++) */
+	if (state->mbuf)
+		modebuf_flush(state->mbuf);
 }
 
 /*
  * Helper function to process the simple modes
  */
 static void
-mode_parse_mode(struct ParseState *state, int *flag_p)
+mode_parse_mode(struct ParseState* state, int* flag_p)
 {
-  /* If they're not an oper, they can't change modes */
-  if (state->flags & (MODE_PARSE_NOTOPER | MODE_PARSE_NOTMEMBER)) {
-    send_notoper(state);
-    return;
-  }
+	/* If they're not an oper, they can't change modes */
+	if (!(state->flags & (MODE_CHANSERVICE|MODE_OWNER|MODE_ADMIN|MODE_CHANOP|MODE_HALFOP))) {
+		send_notoper(state, flag_p[0]);
+		return;
+	}
 
-  if (!state->mbuf)
-    return;
+	if (!state->mbuf)
+		return;
 
-  if (state->dir == MODE_ADD) {
-    state->add |= flag_p[0];
-    state->del &= ~flag_p[0];
+	if (state->dir == MODE_ADD) {
+		state->add |= flag_p[0];
+		state->del &= ~flag_p[0];
 
-    if (flag_p[0] & MODE_SECRET) {
-      state->add &= ~MODE_PRIVATE;
-      state->del |= MODE_PRIVATE;
-    } else if (flag_p[0] & MODE_PRIVATE) {
-      state->add &= ~MODE_SECRET;
-      state->del |= MODE_SECRET;
-    }
-  } else {
-    state->add &= ~flag_p[0];
-    state->del |= flag_p[0];
-  }
+		if (flag_p[0] & MODE_SECRET) {
+			state->add &= ~MODE_PRIVATE;
+			state->del |= MODE_PRIVATE;
+		}
+		else if (flag_p[0] & MODE_PRIVATE) {
+			state->add &= ~MODE_SECRET;
+			state->del |= MODE_SECRET;
+		}
+	}
+	else {
+		state->add &= ~flag_p[0];
+		state->del |= flag_p[0];
+	}
 
-  assert(0 == (state->add & state->del));
-  assert((MODE_SECRET | MODE_PRIVATE) !=
-	 (state->add & (MODE_SECRET | MODE_PRIVATE)));
+	assert(0 == (state->add & state->del));
+	assert((MODE_SECRET | MODE_PRIVATE) !=
+		(state->add & (MODE_SECRET | MODE_PRIVATE)));
 }
 
-/*
- * This routine is intended to parse MODE or OPMODE commands and effect the
- * changes (or just build the bounce buffer).  We pass the starting offset
- * as a 
+static void handle_user_mode(struct ParseState* state, int* flag_p, char modechar) {
+	mode_parse_client(state, flag_p);
+}
+
+static void handle_simple_mode(struct ParseState* state, int* flag_p) {
+	mode_parse_mode(state, flag_p);
+}
+
+/**
+ * Handles +e/-e (ban exception) mode changes.
+ * Ensures that each add/remove is only processed once per MODE command.
+ * Propagates changes via ModeBuf for visible channel updates.
  */
-int
-mode_parse(struct ModeBuf *mbuf, struct Client *cptr, struct Client *sptr,
-	   struct Channel *chptr, int parc, char *parv[], unsigned int flags,
-	   struct Membership* member)
+static void mode_parse_ban_exception(struct ParseState* state, int* flag_p)
 {
-  static int chan_flags[] = {
-    MODE_CHANOP,	'o',
-    MODE_VOICE,		'v',
-    MODE_PRIVATE,	'p',
-    MODE_SECRET,	's',
-    MODE_MODERATED,	'm',
-    MODE_TOPICLIMIT,	't',
-    MODE_INVITEONLY,	'i',
-    MODE_NOPRIVMSGS,	'n',
-    MODE_KEY,		'k',
-    MODE_APASS,		'A',
-    MODE_UPASS,		'U',
-    MODE_BAN,		'b',
-    MODE_LIMIT,		'l',
-    MODE_REGONLY,	'r',
-    MODE_DELJOINS,      'D',
-    MODE_NOQUITPARTS,   'u',
-    MODE_NOCOLOUR,      'c',
-    MODE_NOCTCP,        'C',
-    MODE_NONOTICE,      'N',
-    MODE_NOMULTITARGET, 'T',
-    MODE_MODERATENOREG, 'M',
-    MODE_TLSONLY,       'Z',
-    MODE_ADD,		'+',
-    MODE_DEL,		'-',
-    0x0, 0x0
-  };
-  int i;
-  int *flag_p;
-  unsigned int t_mode;
-  char *modestr;
-  struct ParseState state;
+	char* t_str;
+	struct Ban* newex;
 
-  assert(0 != cptr);
-  assert(0 != sptr);
-  assert(0 != chptr);
-  assert(0 != parc);
-  assert(0 != parv);
+	// List all exceptions if no parameter is given
+	if (state->parc <= 0) {
+		struct Ban* ex;
+		for (ex = state->chptr->ban_exceptions; ex; ex = ex->next)
+			send_reply(state->sptr, RPL_EXCEPTLIST, state->chptr->chname, ex->banstr, ex->who, ex->when);
+		send_reply(state->sptr, RPL_ENDOFEXCEPTLIST, state->chptr->chname);
+		return;
+	}
 
-  state.mbuf = mbuf;
-  state.cptr = cptr;
-  state.sptr = sptr;
-  state.chptr = chptr;
-  state.member = member;
-  state.parc = parc;
-  state.parv = parv;
-  state.flags = flags;
-  state.dir = MODE_ADD;
-  state.done = 0;
-  state.add = 0;
-  state.del = 0;
-  state.args_used = 0;
-  state.max_args = MAXMODEPARAMS;
-  state.numbans = 0;
+	t_str = state->parv[state->args_used++];
+	state->parc--;
+	state->max_args--;
 
-  for (i = 0; i < MAXPARA; i++) { /* initialize ops/voices arrays */
-    state.banlist[i].next = 0;
-    state.banlist[i].who[0] = '\0';
-    state.banlist[i].when = 0;
-    state.banlist[i].flags = 0;
-    state.cli_change[i].flag = 0;
-    state.cli_change[i].client = 0;
-  }
+	// Only privileged users may set/remove the mode
+	if (!(state->flags & (MODE_CHANSERVICE | MODE_OWNER | MODE_ADMIN | MODE_CHANOP | MODE_HALFOP))) {
+		send_notoper(state, flag_p[0]);
+		return;
+	}
 
-  modestr = state.parv[state.args_used++];
-  state.parc--;
+	if (!*t_str || *t_str == ':') {
+		need_more_params(state->sptr, state->dir == MODE_ADD ? "MODE +e" : "MODE -e");
+		return;
+	}
 
-  while (*modestr) {
-    for (; *modestr; modestr++) {
-      for (flag_p = chan_flags; flag_p[0]; flag_p += 2) /* look up flag */
-	if (flag_p[1] == *modestr)
-	  break;
+	// Normalize mask for consistent add/remove
+	char* mask = collapse(pretty_mask(t_str));
 
-      if (!flag_p[0]) { /* didn't find it?  complain and continue */
-	if (MyUser(state.sptr))
-	  send_reply(state.sptr, ERR_UNKNOWNMODE, *modestr);
-	continue;
-      }
+	if (state->dir == MODE_ADD) {
+		if (state->done & DONE_BANEXCEPTION_ADD)
+			return; // Already set in this MODE command
+		struct Ban* ex;
+		for (ex = state->chptr->ban_exceptions; ex; ex = ex->next) {
+			if (strcmp(ex->banstr, mask) == 0)
+				return; // Already exists, do not add again
+		}
+		// Create exception entry
+		newex = make_ban(mask);
+		newex->flags = BAN_ADD | BAN_EXCEPTION;
+		ircd_strncpy(newex->who, IsUser(state->sptr) ? cli_name(state->sptr) : "*", NICKLEN);
+		newex->when = TStime();
 
-      switch (*modestr) {
-      case '+': /* switch direction to MODE_ADD */
-      case '-': /* switch direction to MODE_DEL */
-	state.dir = flag_p[0];
-	break;
+		// Add to exception list
+		apply_ban(&state->chptr->ban_exceptions, newex, 0);
+		if (state->mbuf) {
+			modebuf_mode_string(state->mbuf, MODE_ADD | MODE_BANEXCEPTION, newex->banstr, 0);
+		}
+		state->done |= DONE_BANEXCEPTION_ADD;
+	}
+	else {
+		if (state->done & DONE_BANEXCEPTION_DEL)
+			return; // Already removed in this MODE command
 
-      case 'l': /* deal with limits */
-	mode_parse_limit(&state, flag_p);
-	break;
+		// Remove from exception list by mask
+		struct Ban** ex_ptr = &state->chptr->ban_exceptions;
+		while (*ex_ptr) {
+			if (strcmp((*ex_ptr)->banstr, mask) == 0) {
+				struct Ban* to_free = *ex_ptr;
+				*ex_ptr = (*ex_ptr)->next;
+				if (state->mbuf) {
+					modebuf_mode_string(state->mbuf, MODE_DEL | MODE_BANEXCEPTION, mask, 0);
+				}
+				MyFree(to_free);
+				break;
+			}
+			ex_ptr = &(*ex_ptr)->next;
+		}
+		state->done |= DONE_BANEXCEPTION_DEL;
+	}
+}
 
-      case 'k': /* deal with keys */
-	mode_parse_key(&state, flag_p);
-	break;
+static void mode_parse_joinflood(struct ParseState* state, int* flag_p)
+{
+	// Only privileged users may set/remove the mode
+	if (!(state->flags & (MODE_CHANSERVICE | MODE_OWNER | MODE_ADMIN | MODE_CHANOP | MODE_HALFOP))) {
+		send_notoper(state, MODE_ANTIJOINFLOOD);
+		return;
+	}
 
-      case 'A': /* deal with Admin passes */
-        if (IsServer(cptr) || feature_bool(FEAT_OPLEVELS))
-	mode_parse_apass(&state, flag_p);
-	break;
+	if (state->dir == MODE_ADD) {
+		if (state->done & DONE_ANTIJOINFLOOD_ADD)
+			return; // Already set in this MODE command
+		if (state->parc <= 0 || state->max_args <= 0) {
+			if (MyUser(state->sptr))
+				need_more_params(state->sptr, "MODE +j");
+			return;
+		}
+		char* param = state->parv[state->args_used++];
+		state->parc--;
+		state->max_args--;
 
-      case 'U': /* deal with user passes */
-        if (IsServer(cptr) || feature_bool(FEAT_OPLEVELS))
-	mode_parse_upass(&state, flag_p);
-	break;
+		int limit = 0, period = 0;
+		if (sscanf(param, "%d:%d", &limit, &period) < 2) {
+			period = limit;
+			limit = 0;
+		}
+		if (limit <= 0 || period <= 0)
+			return;
 
-      case 'b': /* deal with bans */
-	mode_parse_ban(&state, flag_p);
-	break;
+		if (!(state->chptr->mode.mode & MODE_ANTIJOINFLOOD) ||
+			state->chptr->joinflood_limit != limit ||
+			state->chptr->joinflood_period != period)
+		{
+			state->chptr->mode.mode |= MODE_ANTIJOINFLOOD;
+			state->chptr->joinflood_limit = limit;
+			state->chptr->joinflood_period = period;
+			state->chptr->joinflood_count = 0;
+			state->chptr->joinflood_time = 0;
 
-      case 'Z': /* deal with TLS */
-		if(IsTLS(state.sptr))
-	mode_parse_mode(&state, flag_p);
-	else
-  send_reply(state.sptr, ERR_TLSMODE, state.chptr->chname);		
-	break;
+			char buf[32];
+			snprintf(buf, sizeof(buf), "%d:%d", limit, period);
+			modebuf_mode_string(state->mbuf, MODE_ADD | MODE_ANTIJOINFLOOD, buf, 0);
 
-      case 'o': /* deal with ops/voice */
-      case 'v':
-	mode_parse_client(&state, flag_p);
-	break;
+		}
+		state->done |= DONE_ANTIJOINFLOOD_ADD;
+	}
+	else {
+		if (state->done & DONE_ANTIJOINFLOOD_DEL)
+			return; // Already removed in this MODE command
+		if (state->chptr->mode.mode & MODE_ANTIJOINFLOOD) {
+			state->chptr->mode.mode &= ~MODE_ANTIJOINFLOOD;
+			state->chptr->joinflood_limit = 0;
+			state->chptr->joinflood_period = 0;
+			state->chptr->joinflood_count = 0;
+			state->chptr->joinflood_time = 0;
 
-      default: /* deal with other modes */
-	mode_parse_mode(&state, flag_p);
-	break;
-      } /* switch (*modestr) */
-    } /* for (; *modestr; modestr++) */
+			modebuf_mode_string(state->mbuf, MODE_DEL | MODE_ANTIJOINFLOOD, NULL, 0);
+		}
+		state->done |= DONE_ANTIJOINFLOOD_DEL;
+	}
+} 
 
-    if (state.flags & MODE_PARSE_BURST)
-      break; /* don't interpret any more arguments */
+/**
+ * Parse the +L/-L (link) channel mode.
+ * Handles setting and removing the link mode for a channel.
+ *
+ * @param state   ParseState object containing all relevant information for mode changes
+ * @param flag_p  Pointer to the flag for the link mode (MODE_LINK)
+ *
+ * Uses: DONE_LINK_ADD (for +L), DONE_LINK_DEL (for -L)
+ */
+static void mode_parse_link(struct ParseState* state, int* flag_p)
+{
+	// Only privileged users may set/remove this mode
+	if (!(state->flags & (MODE_CHANSERVICE | MODE_OWNER | MODE_ADMIN))) {
+		send_notoper(state, flag_p[0]);
+		return;
+	}
 
-    if (state.parc > 0) { /* process next argument in string */
-      modestr = state.parv[state.args_used++];
-      state.parc--;
+	if (state->dir == MODE_ADD) {
+		if (state->done & DONE_LINK_ADD)
+			return; // Already set in this MODE command
 
-      /* is it a TS? */
-      if (IsServer(state.cptr) && !state.parc && IsDigit(*modestr)) {
-	time_t recv_ts;
+		if (state->parc <= 0 || state->max_args <= 0) {
+			if (MyUser(state->sptr))
+				need_more_params(state->sptr, "MODE +L");
+			return;
+		}
 
-	if (!(state.flags & MODE_PARSE_SET))	  /* don't set earlier TS if */
-	  break;		     /* we're then going to bounce the mode! */
+		char* param = state->parv[state->args_used++];
+		state->parc--;
+		state->max_args--;
 
-	recv_ts = atoi(modestr);
+		// Prevent empty or invalid parameters
+		if (!param || !*param || *param == ':')
+			return;
 
-	if (recv_ts && recv_ts < state.chptr->creationtime)
-	  state.chptr->creationtime = recv_ts; /* respect earlier TS */
-        else if (recv_ts > state.chptr->creationtime) {
-          struct Client *sserv;
+		if (get_renamed_channel(param) != NULL) {
+			if (MyUser(state->sptr)) {
+				send_reply(state->sptr, ERR_NOSUCHCHANNEL, param);
+			}
+			return;
+		}
+		// Check if the channel is global
+		if (!IsGlobalChannel(param)) {
+			if (MyUser(state->sptr)) {
+				send_reply(state->sptr, ERR_NOSUCHCHANNEL, param);
+			}
+			return;
+		}
+		// Only change if the target is different
+		if (!(state->chptr->mode.mode & MODE_LINK) ||
+			strcmp(state->chptr->mode.linktarget, param) != 0)
+		{
+			state->chptr->mode.mode |= MODE_LINK;
+			ircd_strncpy(state->chptr->mode.linktarget, param, CHANNELLEN);
 
-          /* Check whether the originating server has fully processed
-           * the burst to it. */
-          sserv = state.cptr;
-          if (!IsServer(sserv))
-              sserv = cli_user(sserv)->server;
-          if (IsBurstOrBurstAck(sserv)) {
-            /* This is a legal but unusual case; the source server
-             * probably just has not processed the BURST for this
-             * channel.  It SHOULD wipe out all its modes soon, so
-             * silently ignore the mode change rather than send a
-             * bounce that could desync modes from our side (that
-             * have already been sent).
-             */
-            state.mbuf->mb_add = 0;
-            state.mbuf->mb_rem = 0;
-            state.mbuf->mb_count = 0;
-            return state.args_used;
-          } else {
-            /* Server is desynced; bounce the mode and deop the source
-             * to fix it. */
-            state.mbuf->mb_dest &= ~MODEBUF_DEST_CHANNEL;
-            state.mbuf->mb_dest |= MODEBUF_DEST_BOUNCE | MODEBUF_DEST_HACK2;
-            if (!IsServer(state.cptr))
-              state.mbuf->mb_dest |= MODEBUF_DEST_DEOP;
-          }
-        }
+			if (state->mbuf)
+				modebuf_mode_string(state->mbuf, MODE_ADD | MODE_LINK, param, 0);
+		}
+		state->done |= DONE_LINK_ADD;
+	}
+	else {
+		if (state->done & DONE_LINK_DEL)
+			return; // Already removed in this MODE command
 
-	break; /* break out of while loop */
-      } else if (state.flags & MODE_PARSE_STRICT ||
-		 (MyUser(state.sptr) && state.max_args <= 0)) {
-	state.parc++; /* we didn't actually gobble the argument */
-	state.args_used--;
-	break; /* break out of while loop */
-      }
-    }
-  } /* while (*modestr) */
+		if (state->chptr->mode.mode & MODE_LINK) {
+			state->chptr->mode.mode &= ~MODE_LINK;
+			*state->chptr->mode.linktarget = '\0';
 
-  /*
-   * the rest of the function finishes building resultant MODEs; if the
-   * origin isn't a member or an oper, skip it.
-   */
-  if (!state.mbuf || state.flags & (MODE_PARSE_NOTOPER | MODE_PARSE_NOTMEMBER))
-    return state.args_used; /* tell our parent how many args we gobbled */
+			if (state->mbuf)
+				modebuf_mode_string(state->mbuf, MODE_DEL | MODE_LINK, "", 0);
+		}
+		state->done |= DONE_LINK_DEL;
+	}
+}
 
-  t_mode = state.chptr->mode.mode;
+static void handle_param_mode(struct ParseState* state, int* flag_p, char modechar) {
+	switch (modechar) {
+	case 'l': mode_parse_limit(state, flag_p); break;
+	case 'k': mode_parse_key(state, flag_p); break;
+	case 'A': if (IsServer(state->cptr) || feature_bool(FEAT_OPLEVELS)) mode_parse_apass(state, flag_p); break;
+	case 'U': if (IsServer(state->cptr) || feature_bool(FEAT_OPLEVELS)) mode_parse_upass(state, flag_p); break;
+	case 'b': mode_parse_ban(state, flag_p); break;
+	case 'e': mode_parse_ban_exception(state, flag_p); break;
+	case 'j': mode_parse_joinflood(state, flag_p); break;
+	case 'L': mode_parse_link(state, flag_p); break;
+	default: break;
+	}
 
-  if (state.del & t_mode) { /* delete any modes to be deleted... */
-    modebuf_mode(state.mbuf, MODE_DEL | (state.del & t_mode));
+}
 
-    t_mode &= ~state.del;
-  }
-  if (state.add & ~t_mode) { /* add any modes to be added... */
-    modebuf_mode(state.mbuf, MODE_ADD | (state.add & ~t_mode));
+int mode_parse(struct ModeBuf* mbuf, struct Client* cptr, struct Client* sptr,
+	struct Channel* chptr, int parc, char* parv[], unsigned int flags,
+	struct Membership* member)
+{
+	static int chan_flags[] = {
+		MODE_CHANOP,      'o', MODE_VOICE, 'v', MODE_OWNER, 'q', MODE_ADMIN, 'a', MODE_HALFOP, 'h', MODE_CHANSERVICE, 'S',
+		MODE_PRIVATE,     'p', MODE_SECRET, 's', MODE_MODERATED, 'm', MODE_TOPICLIMIT, 't', MODE_INVITEONLY, 'i',
+		MODE_NOPRIVMSGS,  'n', MODE_KEY, 'k', MODE_APASS, 'A', MODE_UPASS, 'U', MODE_BAN, 'b', MODE_LIMIT, 'l',
+		MODE_REGONLY,     'r', MODE_DELJOINS, 'D', MODE_NOQUITPARTS, 'u', MODE_NOCOLOUR, 'c', MODE_NOCTCP, 'C',
+		MODE_NONOTICE,    'N', MODE_NOMULTITARGET, 'T', MODE_MODERATENOREG, 'M', MODE_TLSONLY, 'Z', MODE_BANEXCEPTION, 'e',
+		MODE_ANTIJOINFLOOD, 'j', MODE_LINK,	'L',
+		/* NOTE: BANEXCEPTION (+e) wird jetzt separat behandelt */
+		MODE_ADD, '+', MODE_DEL, '-', 0x0, 0x0
+	};
+	int i, * flag_p;
+	unsigned int t_mode;
+	char* modestr;
+	struct ParseState state;
 
-    t_mode |= state.add;
-  }
+	assert(cptr && sptr && chptr && parc && parv);
 
-  if (state.flags & MODE_PARSE_SET) { /* set the channel modes */
-    if ((state.chptr->mode.mode & MODE_INVITEONLY) &&
-	!(t_mode & MODE_INVITEONLY))
-      mode_invite_clear(state.chptr);
+	memset(&state, 0, sizeof(state));
+	state.mbuf = mbuf;
+	state.cptr = cptr;
+	state.sptr = sptr;
+	state.chptr = chptr;
+	state.member = member;
+	state.parc = parc;
+	state.parv = parv;
+	state.flags = flags;
+	state.dir = MODE_ADD;
+	state.max_args = MAXMODEPARAMS;
 
-    state.chptr->mode.mode = t_mode;
-  }
+	modestr = state.parv[state.args_used++];
+	state.parc--;
 
-  if (state.flags & MODE_PARSE_WIPEOUT) {
-    if (state.chptr->mode.limit && !(state.done & DONE_LIMIT))
-      modebuf_mode_uint(state.mbuf, MODE_DEL | MODE_LIMIT,
-			state.chptr->mode.limit);
-    if (*state.chptr->mode.key && !(state.done & DONE_KEY_DEL))
-      modebuf_mode_string(state.mbuf, MODE_DEL | MODE_KEY,
-			  state.chptr->mode.key, 0);
-    if (*state.chptr->mode.upass && !(state.done & DONE_UPASS_DEL))
-      modebuf_mode_string(state.mbuf, MODE_DEL | MODE_UPASS,
-			  state.chptr->mode.upass, 0);
-    if (*state.chptr->mode.apass && !(state.done & DONE_APASS_DEL))
-      modebuf_mode_string(state.mbuf, MODE_DEL | MODE_APASS,
-			  state.chptr->mode.apass, 0);
-  }
+	while (*modestr) {
+		for (; *modestr; modestr++) {
+			for (flag_p = chan_flags; flag_p[0]; flag_p += 2)
+				if (flag_p[1] == *modestr)
+					break;
+			if (!flag_p[0]) {
+				if (MyUser(state.sptr))
+					send_reply(state.sptr, ERR_UNKNOWNMODE, *modestr);
+				continue;
+			}
+			switch (*modestr) {
+			case '+': case '-': state.dir = flag_p[0]; break;
+			case 'l': case 'k': case 'A': case 'U': case 'b':
+			case 'e': case 'j': case 'L':
+				handle_param_mode(&state, flag_p, *modestr); break;
+			case 'S': case 'q': case 'a': case 'h': case 'o': case 'v':
+				handle_user_mode(&state, flag_p, *modestr); break;
+			default:
+				handle_simple_mode(&state, flag_p); break;
+			}
+		}
+		if (state.flags & MODE_PARSE_BURST) break;
+		if (state.parc > 0) {
+			modestr = state.parv[state.args_used++];
+			state.parc--;
+			if (IsServer(state.cptr) && !state.parc && IsDigit(*modestr)) {
+				time_t recv_ts = atoi(modestr);
+				if (!(state.flags & MODE_PARSE_SET)) break;
+				if (recv_ts && recv_ts < state.chptr->creationtime)
+					state.chptr->creationtime = recv_ts;
+				else if (recv_ts > state.chptr->creationtime) {
+					struct Client* sserv = IsServer(state.cptr) ? state.cptr : cli_user(state.cptr)->server;
+					if (IsBurstOrBurstAck(sserv)) {
+						state.mbuf->mb_add = 0;
+						state.mbuf->mb_rem = 0;
+						state.mbuf->mb_count = 0;
+						return state.args_used;
+					}
+					else {
+						state.mbuf->mb_dest &= ~MODEBUF_DEST_CHANNEL;
+						state.mbuf->mb_dest |= MODEBUF_DEST_BOUNCE | MODEBUF_DEST_HACK2;
+						if (!IsServer(state.cptr))
+							state.mbuf->mb_dest |= MODEBUF_DEST_DEOP;
+					}
+				}
+				break;
+			}
+			else if (state.flags & MODE_PARSE_STRICT ||
+				(MyUser(state.sptr) && state.max_args <= 0)) {
+				state.parc++;
+				state.args_used--;
+				break;
+			}
+		}
+	}
 
-  if (state.done & DONE_BANCLEAN) /* process bans */
-    mode_process_bans(&state);
+	if (!state.mbuf || state.flags & (MODE_PARSE_NOTOPER | MODE_PARSE_NOTMEMBER))
+		return state.args_used;
 
-  /* process client changes */
-  if (state.cli_change[0].flag)
-    mode_process_clients(&state);
+	t_mode = state.chptr->mode.mode;
+	if (state.del & t_mode) {
+		modebuf_mode(state.mbuf, MODE_DEL | (state.del & t_mode));
+		t_mode &= ~state.del;
+	}
+	if (state.add & ~t_mode) {
+		modebuf_mode(state.mbuf, MODE_ADD | (state.add & ~t_mode));
+		t_mode |= state.add;
+	}
+	if (state.flags & MODE_PARSE_SET) {
+		if ((state.chptr->mode.mode & MODE_INVITEONLY) && !(t_mode & MODE_INVITEONLY))
+			mode_invite_clear(state.chptr);
+		state.chptr->mode.mode = t_mode;
+	}
+	if (state.flags & MODE_PARSE_WIPEOUT) {
+		if (state.chptr->mode.limit && !(state.done & DONE_LIMIT))
+			modebuf_mode_uint(state.mbuf, MODE_DEL | MODE_LIMIT, state.chptr->mode.limit);
+		if (*state.chptr->mode.key && !(state.done & DONE_KEY_DEL))
+			modebuf_mode_string(state.mbuf, MODE_DEL | MODE_KEY, state.chptr->mode.key, 0);
+		if (*state.chptr->mode.upass && !(state.done & DONE_UPASS_DEL))
+			modebuf_mode_string(state.mbuf, MODE_DEL | MODE_UPASS, state.chptr->mode.upass, 0);
+		if (*state.chptr->mode.apass && !(state.done & DONE_APASS_DEL))
+			modebuf_mode_string(state.mbuf, MODE_DEL | MODE_APASS, state.chptr->mode.apass, 0);
 
-  return state.args_used; /* tell our parent how many args we gobbled */
+
+	}
+	if (state.done & DONE_BANCLEAN)
+		mode_process_bans(&state);
+	if (state.cli_change[0].flag)
+		mode_process_clients(&state);
+
+	return state.args_used;
 }
 
 /*
  * Initialize a join buffer
  */
 void
-joinbuf_init(struct JoinBuf *jbuf, struct Client *source,
-	     struct Client *connect, unsigned int type, char *comment,
-	     time_t create)
+joinbuf_init(struct JoinBuf* jbuf, struct Client* source,
+	struct Client* connect, unsigned int type, char* comment,
+	time_t create)
 {
-  int i;
+	int i;
 
-  assert(0 != jbuf);
-  assert(0 != source);
-  assert(0 != connect);
+	assert(0 != jbuf);
+	assert(0 != source);
+	assert(0 != connect);
 
-  jbuf->jb_source = source; /* just initialize struct JoinBuf */
-  jbuf->jb_connect = connect;
-  jbuf->jb_type = type;
-  jbuf->jb_comment = comment;
-  jbuf->jb_create = create;
-  jbuf->jb_count = 0;
-  jbuf->jb_strlen = (((type == JOINBUF_TYPE_JOIN ||
-		       type == JOINBUF_TYPE_PART ||
-		       type == JOINBUF_TYPE_PARTALL) ?
-		      STARTJOINLEN : STARTCREATELEN) +
-		     (comment ? strlen(comment) + 2 : 0));
+	jbuf->jb_source = source; /* just initialize struct JoinBuf */
+	jbuf->jb_connect = connect;
+	jbuf->jb_type = type;
+	jbuf->jb_comment = comment;
+	jbuf->jb_create = create;
+	jbuf->jb_count = 0;
+	jbuf->jb_strlen = (((type == JOINBUF_TYPE_JOIN ||
+		type == JOINBUF_TYPE_PART ||
+		type == JOINBUF_TYPE_PARTALL) ?
+		STARTJOINLEN : STARTCREATELEN) +
+		(comment ? strlen(comment) + 2 : 0));
 
-  for (i = 0; i < MAXJOINARGS; i++)
-    jbuf->jb_channels[i] = 0;
+	for (i = 0; i < MAXJOINARGS; i++)
+		jbuf->jb_channels[i] = 0;
 }
 
 /*
  * Add a channel to the join buffer
  */
 void
-joinbuf_join(struct JoinBuf *jbuf, struct Channel *chan, unsigned int flags)
+joinbuf_join(struct JoinBuf* jbuf, struct Channel* chan, unsigned int flags)
 {
-  unsigned int len;
-  int is_local;
+	unsigned int len;
+	int is_local;
 
-  assert(0 != jbuf);
+	assert(0 != jbuf);
 
-  if (!chan) {
-    sendcmdto_serv_butone(jbuf->jb_source, CMD_JOIN, jbuf->jb_connect, "0");
-    return;
-  }
+	if (!chan) {
+		sendcmdto_serv_butone(jbuf->jb_source, CMD_JOIN, jbuf->jb_connect, "0");
+		return;
+	}
 
-  is_local = IsLocalChannel(chan->chname);
+	is_local = IsLocalChannel(chan->chname);
 
-  if (jbuf->jb_type == JOINBUF_TYPE_PART ||
-      jbuf->jb_type == JOINBUF_TYPE_PARTALL) {
-    struct Membership *member = find_member_link(chan, jbuf->jb_source);
-    if (IsUserParting(member))
-      return;
-    SetUserParting(member);
+	if (jbuf->jb_type == JOINBUF_TYPE_PART ||
+		jbuf->jb_type == JOINBUF_TYPE_PARTALL) {
+		struct Membership* member = find_member_link(chan, jbuf->jb_source);
+		if (IsUserParting(member))
+			return;
+		SetUserParting(member);
 
-    /* Send notification to channel */
-    if (!(flags & (CHFL_ZOMBIE | CHFL_DELAYED)))
-      sendcmdto_channel_butserv_butone(jbuf->jb_source, CMD_PART, chan, NULL, 0,
-		    ((flags & CHFL_BANNED) || ((chan->mode.mode & MODE_NOQUITPARTS)
-		     && !IsChannelService(member->user)) || !jbuf->jb_comment) ?
-		    "%H" : "%H :%s", chan, jbuf->jb_comment);
-    else if (MyUser(jbuf->jb_source))
-      sendcmdto_one(jbuf->jb_source, CMD_PART, jbuf->jb_source,
-		    ((flags & CHFL_BANNED) || (chan->mode.mode & MODE_NOQUITPARTS)
-		     || !jbuf->jb_comment) ?
-		    ":%H" : "%H :%s", chan, jbuf->jb_comment);
-    /* XXX: Shouldn't we send a PART here anyway? */
-    /* to users on the channel?  Why?  From their POV, the user isn't on
-     * the channel anymore anyway.  We don't send to servers until below,
-     * when we gang all the channel parts together.  Note that this is
-     * exactly the same logic, albeit somewhat more concise, as was in
-     * the original m_part.c */
+		/* Send notification to channel */
+		if (!(flags & (CHFL_ZOMBIE | CHFL_DELAYED)))
+			sendcmdto_channel_butserv_butone(jbuf->jb_source, CMD_PART, chan, NULL, 0,
+				((flags & CHFL_BANNED) || ((chan->mode.mode & MODE_NOQUITPARTS)
+					&& !IsChannelService(member->user)) || !jbuf->jb_comment) ?
+				"%H" : "%H :%s", chan, jbuf->jb_comment);
+		else if (MyUser(jbuf->jb_source))
+			sendcmdto_one(jbuf->jb_source, CMD_PART, jbuf->jb_source,
+				((flags & CHFL_BANNED) || (chan->mode.mode & MODE_NOQUITPARTS)
+					|| !jbuf->jb_comment) ?
+				":%H" : "%H :%s", chan, jbuf->jb_comment);
+		/* XXX: Shouldn't we send a PART here anyway? */
+		/* to users on the channel?  Why?  From their POV, the user isn't on
+		 * the channel anymore anyway.  We don't send to servers until below,
+		 * when we gang all the channel parts together.  Note that this is
+		 * exactly the same logic, albeit somewhat more concise, as was in
+		 * the original m_part.c */
 
-    if (jbuf->jb_type == JOINBUF_TYPE_PARTALL ||
-	is_local) /* got to remove user here */
-      remove_user_from_channel(jbuf->jb_source, chan);
-  } else {
-    int oplevel = !chan->mode.apass[0] ? MAXOPLEVEL
-        : (flags & CHFL_CHANNEL_MANAGER) ? 0
-        : 1;
-    /* Add user to channel */
-    if ((chan->mode.mode & MODE_DELJOINS) && !(flags & CHFL_VOICED_OR_OPPED))
-      add_user_to_channel(chan, jbuf->jb_source, flags | CHFL_DELAYED, oplevel);
-    else
-      add_user_to_channel(chan, jbuf->jb_source, flags, oplevel);
+		if (jbuf->jb_type == JOINBUF_TYPE_PARTALL ||
+			is_local) /* got to remove user here */
+			remove_user_from_channel(jbuf->jb_source, chan);
+	}
+	else {
+		int oplevel = !chan->mode.apass[0] ? MAXOPLEVEL
+			: (flags & CHFL_CHANNEL_MANAGER) ? 0
+			: 1;
+		/* Add user to channel */
+		if ((chan->mode.mode & MODE_DELJOINS) && !(flags & CHFL_VOICED_OR_OPPED))
+			add_user_to_channel(chan, jbuf->jb_source, flags | CHFL_DELAYED, oplevel);
+		else
+			add_user_to_channel(chan, jbuf->jb_source, flags, oplevel);
 
-    /* send JOIN notification to all servers (CREATE is sent later). */
-    if (jbuf->jb_type != JOINBUF_TYPE_CREATE && !is_local)
-      sendcmdto_serv_butone(jbuf->jb_source, CMD_JOIN, jbuf->jb_connect,
-			    "%H %Tu", chan, chan->creationtime);
+		/* send JOIN notification to all servers (CREATE is sent later). */
+		if (jbuf->jb_type != JOINBUF_TYPE_CREATE && !is_local)
+			sendcmdto_serv_butone(jbuf->jb_source, CMD_JOIN, jbuf->jb_connect,
+				"%H %Tu", chan, chan->creationtime);
 
-    if (!((chan->mode.mode & MODE_DELJOINS) && !(flags & CHFL_VOICED_OR_OPPED))) {
-      /* Send the notification to the channel */
-      sendjointo_channel_butserv(jbuf->jb_source, chan, 0, 0);
-      if (cli_user(jbuf->jb_source)->away)
-        sendcmdto_capflag_common_channels_butone(jbuf->jb_source, CMD_AWAY, jbuf->jb_connect,
-          CAP_AWAYNOTIFY, 0, ":%s", cli_user(jbuf->jb_source)->away);
+		if (!((chan->mode.mode & MODE_DELJOINS) && !(flags & CHFL_VOICED_OR_OPPED))) {
+			/* Send the notification to the channel */
+			sendjointo_channel_butserv(jbuf->jb_source, chan, 0, 0);
+			if (cli_user(jbuf->jb_source)->away)
+				sendcmdto_capflag_common_channels_butone(jbuf->jb_source, CMD_AWAY, jbuf->jb_connect,
+					CAP_AWAYNOTIFY, 0, ":%s", cli_user(jbuf->jb_source)->away);
 
-      /* send an op, too, if needed */
-      if (flags & CHFL_CHANOP && (oplevel < MAXOPLEVEL || !MyUser(jbuf->jb_source)))
-	sendcmdto_channel_butserv_butone((chan->mode.apass[0] ? &his : jbuf->jb_source),
-                                         CMD_MODE, chan, NULL, 0, "%H +o %C",
-					 chan, jbuf->jb_source);
-    } else if (MyUser(jbuf->jb_source))
-      sendjointo_one(jbuf->jb_source, chan, jbuf->jb_source);
-  }
+			/* send an op, too, if needed */
+			if (flags & ((CHFL_CHANSERVICE|CHFL_OWNER|CHFL_ADMIN|CHFL_CHANOP|CHFL_HALFOP) && (oplevel < MAXOPLEVEL || !MyUser(jbuf->jb_source))))
+				sendcmdto_channel_butserv_butone((chan->mode.apass[0] ? &his : jbuf->jb_source),
+					CMD_MODE, chan, NULL, 0, "%H +o %C",
+					chan, jbuf->jb_source);
+		}
+		else if (MyUser(jbuf->jb_source))
+			sendjointo_one(jbuf->jb_source, chan, jbuf->jb_source);
+	}
 
-  if (jbuf->jb_type == JOINBUF_TYPE_PARTALL ||
-      jbuf->jb_type == JOINBUF_TYPE_JOIN || is_local)
-    return; /* don't send to remote */
+	if (jbuf->jb_type == JOINBUF_TYPE_PARTALL ||
+		jbuf->jb_type == JOINBUF_TYPE_JOIN || is_local)
+		return; /* don't send to remote */
 
-  /* figure out if channel name will cause buffer to be overflowed */
-  len = chan ? strlen(chan->chname) + 1 : 2;
-  if (jbuf->jb_strlen + len > BUFSIZE)
-    joinbuf_flush(jbuf);
+	/* figure out if channel name will cause buffer to be overflowed */
+	len = chan ? strlen(chan->chname) + 1 : 2;
+	if (jbuf->jb_strlen + len > BUFSIZE)
+		joinbuf_flush(jbuf);
 
-  /* add channel to list of channels to send and update counts */
-  jbuf->jb_channels[jbuf->jb_count++] = chan;
-  jbuf->jb_strlen += len;
+	/* add channel to list of channels to send and update counts */
+	jbuf->jb_channels[jbuf->jb_count++] = chan;
+	jbuf->jb_strlen += len;
 
-  /* if we've used up all slots, flush */
-  if (jbuf->jb_count >= MAXJOINARGS)
-    joinbuf_flush(jbuf);
+	/* if we've used up all slots, flush */
+	if (jbuf->jb_count >= MAXJOINARGS)
+		joinbuf_flush(jbuf);
 }
 
 /*
  * Flush the channel list to remote servers
  */
 int
-joinbuf_flush(struct JoinBuf *jbuf)
+joinbuf_flush(struct JoinBuf* jbuf)
 {
-  char chanlist[BUFSIZE];
-  int chanlist_i = 0;
-  int i;
+	char chanlist[BUFSIZE];
+	int chanlist_i = 0;
+	int i;
 
-  if (!jbuf->jb_count || jbuf->jb_type == JOINBUF_TYPE_PARTALL ||
-      jbuf->jb_type == JOINBUF_TYPE_JOIN)
-    return 0; /* no joins to process */
+	if (!jbuf->jb_count || jbuf->jb_type == JOINBUF_TYPE_PARTALL ||
+		jbuf->jb_type == JOINBUF_TYPE_JOIN)
+		return 0; /* no joins to process */
 
-  for (i = 0; i < jbuf->jb_count; i++) { /* build channel list */
-    build_string(chanlist, &chanlist_i,
-		 jbuf->jb_channels[i] ? jbuf->jb_channels[i]->chname : "0", 0,
-		 i == 0 ? '\0' : ',');
-    if (JOINBUF_TYPE_PART == jbuf->jb_type)
-      /* Remove user from channel */
-      remove_user_from_channel(jbuf->jb_source, jbuf->jb_channels[i]);
+	for (i = 0; i < jbuf->jb_count; i++) { /* build channel list */
+		build_string(chanlist, &chanlist_i,
+			jbuf->jb_channels[i] ? jbuf->jb_channels[i]->chname : "0", 0,
+			i == 0 ? '\0' : ',');
+		if (JOINBUF_TYPE_PART == jbuf->jb_type)
+			/* Remove user from channel */
+			remove_user_from_channel(jbuf->jb_source, jbuf->jb_channels[i]);
 
-    jbuf->jb_channels[i] = 0; /* mark slot empty */
-  }
+		jbuf->jb_channels[i] = 0; /* mark slot empty */
+	}
 
-  jbuf->jb_count = 0; /* reset base counters */
-  jbuf->jb_strlen = ((jbuf->jb_type == JOINBUF_TYPE_PART ?
-		      STARTJOINLEN : STARTCREATELEN) +
-		     (jbuf->jb_comment ? strlen(jbuf->jb_comment) + 2 : 0));
+	jbuf->jb_count = 0; /* reset base counters */
+	jbuf->jb_strlen = ((jbuf->jb_type == JOINBUF_TYPE_PART ?
+		STARTJOINLEN : STARTCREATELEN) +
+		(jbuf->jb_comment ? strlen(jbuf->jb_comment) + 2 : 0));
 
-  /* and send the appropriate command */
-  switch (jbuf->jb_type) {
-  case JOINBUF_TYPE_CREATE:
-    sendcmdto_serv_butone(jbuf->jb_source, CMD_CREATE, jbuf->jb_connect,
-			  "%s %Tu", chanlist, jbuf->jb_create);
-    if (MyUser(jbuf->jb_source) && (feature_bool(FEAT_AUTOCHANMODES) && 
-    		  feature_str(FEAT_AUTOCHANMODES_LIST) && (strlen(feature_str(FEAT_AUTOCHANMODES_LIST)) > 0))) {
-      char *name;
-      char *p = 0;
-      for (name = ircd_strtok(&p, chanlist, ","); name; name = ircd_strtok(&p, 0, ",")) {
-        sendcmdto_serv_butone(jbuf->jb_source, CMD_MODE, jbuf->jb_connect,
-        		  "%s %s%s", name, "+", feature_str(FEAT_AUTOCHANMODES_LIST));
-      }
-    }
-    break;
+	/* and send the appropriate command */
+	switch (jbuf->jb_type) {
+	case JOINBUF_TYPE_CREATE:
+		sendcmdto_serv_butone(jbuf->jb_source, CMD_CREATE, jbuf->jb_connect,
+			"%s %Tu", chanlist, jbuf->jb_create);
+		if (MyUser(jbuf->jb_source) && (feature_bool(FEAT_AUTOCHANMODES) &&
+			feature_str(FEAT_AUTOCHANMODES_LIST) && (strlen(feature_str(FEAT_AUTOCHANMODES_LIST)) > 0))) {
+			char* name;
+			char* p = 0;
+			for (name = ircd_strtok(&p, chanlist, ","); name; name = ircd_strtok(&p, 0, ",")) {
+				sendcmdto_serv_butone(jbuf->jb_source, CMD_MODE, jbuf->jb_connect,
+					"%s %s%s", name, "+", feature_str(FEAT_AUTOCHANMODES_LIST));
+			}
+		}
+		break;
 
-  case JOINBUF_TYPE_PART:
-    sendcmdto_serv_butone(jbuf->jb_source, CMD_PART, jbuf->jb_connect,
-			  jbuf->jb_comment ? "%s :%s" : "%s", chanlist,
-			  jbuf->jb_comment);
-    break;
-  }
+	case JOINBUF_TYPE_PART:
+		sendcmdto_serv_butone(jbuf->jb_source, CMD_PART, jbuf->jb_connect,
+			jbuf->jb_comment ? "%s :%s" : "%s", chanlist,
+			jbuf->jb_comment);
+		break;
+	}
 
-  return 0;
+	return 0;
 }
 
 /* Returns TRUE (1) if client is invited, FALSE (0) if not */
 int IsInvited(struct Client* cptr, const void* chptr)
 {
-  struct SLink *lp;
+	struct SLink* lp;
 
-  for (lp = (cli_user(cptr))->invited; lp; lp = lp->next)
-    if (lp->value.chptr == chptr)
-      return 1;
-  return 0;
+	for (lp = (cli_user(cptr))->invited; lp; lp = lp->next)
+		if (lp->value.chptr == chptr)
+			return 1;
+	return 0;
 }
 
 /* RevealDelayedJoin: sends a join for a hidden user */
 
-void RevealDelayedJoin(struct Membership *member)
+void RevealDelayedJoin(struct Membership* member)
 {
-  ClearDelayedJoin(member);
-  sendjointo_channel_butserv(member->user, member->channel, 0, 0);
-  if (cli_user(member->user)->away)
-    sendcmdto_capflag_channel_butserv_butone(member->user, CMD_AWAY, member->channel,
-      NULL, 0, CAP_AWAYNOTIFY, 0, ":%s", cli_user(member->user)->away);
-  CheckDelayedJoins(member->channel);
+	ClearDelayedJoin(member);
+	sendjointo_channel_butserv(member->user, member->channel, 0, 0);
+	if (cli_user(member->user)->away)
+		sendcmdto_capflag_channel_butserv_butone(member->user, CMD_AWAY, member->channel,
+			NULL, 0, CAP_AWAYNOTIFY, 0, ":%s", cli_user(member->user)->away);
+	CheckDelayedJoins(member->channel);
 }
 
 /* CheckDelayedJoins: checks and clear +d if necessary */
 
-void CheckDelayedJoins(struct Channel *chan)
+void CheckDelayedJoins(struct Channel* chan)
 {
-  if ((chan->mode.mode & MODE_WASDELJOINS) && !find_delayed_joins(chan)) {
-    chan->mode.mode &= ~MODE_WASDELJOINS;
-    sendcmdto_channel_butserv_butone(&his, CMD_MODE, chan, NULL, 0,
-                                     "%H -d", chan);
-  }
+	if ((chan->mode.mode & MODE_WASDELJOINS) && !find_delayed_joins(chan)) {
+		chan->mode.mode &= ~MODE_WASDELJOINS;
+		sendcmdto_channel_butserv_butone(&his, CMD_MODE, chan, NULL, 0,
+			"%H -d", chan);
+	}
 }
 
 /** Send a join for the user if (s)he is a hidden member of the channel.
  */
-void RevealDelayedJoinIfNeeded(struct Client *sptr, struct Channel *chptr)
+void RevealDelayedJoinIfNeeded(struct Client* sptr, struct Channel* chptr)
 {
-  struct Membership *member = find_member_link(chptr, sptr);
-  if (member && IsDelayedJoin(member))
-    RevealDelayedJoin(member);
+	struct Membership* member = find_member_link(chptr, sptr);
+	if (member && IsDelayedJoin(member))
+		RevealDelayedJoin(member);
 }

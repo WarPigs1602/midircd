@@ -99,6 +99,76 @@ static void dead_link(struct Client *to, char *notice)
   Debug((DEBUG_ERROR, cli_info(to)));
 }
 
+#include <stdarg.h>
+
+// IRCv3 standard reply with pattern support
+void send_standard_reply(struct Client* from, struct Client* to, const char* reply_type, const char* reply_code, const char* target_nick, const char* pattern, ...)
+{
+    va_list args;
+    char buf[512];
+
+    va_start(args, pattern);
+    ircd_vsnprintf(to, buf, sizeof(buf), pattern, args);
+    va_end(args);
+
+    // Compose the reply according to IRCv3 standard
+    if (reply_code && *reply_code) {
+        if (target_nick && *target_nick) {
+            sendrawto_one(to, "%s %s %s :%s", reply_type, reply_code, target_nick, buf);
+        }
+        else {
+            sendrawto_one(to, "%s %s :%s", reply_type, reply_code, buf);
+        }
+    }
+    else {
+        if (target_nick && *target_nick) {
+            sendrawto_one(to, "%s %s :%s", reply_type, target_nick, buf);
+        }
+        else {
+            sendrawto_one(to, "%s :%s", reply_type, buf);
+        }
+    }
+}
+
+// IRCv3 FAIL reply with pattern support
+void send_fail_reply(struct Client* from, struct Client* to, const char* reply_code, const char* target_nick, const char* pattern, ...)
+{
+    va_list args;
+    char buf[512];
+
+    va_start(args, pattern);
+    ircd_vsnprintf(to, buf, sizeof(buf), pattern, args);
+    va_end(args);
+
+    send_standard_reply(from, to, "FAIL", reply_code, target_nick, "%s", buf);
+}
+
+// IRCv3 WARN reply with pattern support
+void send_warn_reply(struct Client* from, struct Client* to, const char* reply_code, const char* target_nick, const char* pattern, ...)
+{
+    va_list args;
+    char buf[512];
+
+    va_start(args, pattern);
+    ircd_vsnprintf(to, buf, sizeof(buf), pattern, args);
+    va_end(args);
+
+    send_standard_reply(from, to, "WARN", reply_code, target_nick, "%s", buf);
+}
+
+// IRCv3 NOTE reply with pattern support
+void send_note_reply(struct Client* from, struct Client* to, const char* reply_code, const char* target_nick, const char* pattern, ...)
+{
+    va_list args;
+    char buf[512];
+
+    va_start(args, pattern);
+    ircd_vsnprintf(to, buf, sizeof(buf), pattern, args);
+    va_end(args);
+
+    send_standard_reply(from, to, "NOTE", reply_code, target_nick, "%s", buf);
+}
+
 /** Test whether we can send to a client.
  * @param[in] to Client we want to send to.
  * @return Non-zero if we can send to the client.
@@ -607,8 +677,8 @@ void sendcmdto_channel_butserv_butone(struct Client *from, const char *cmd,
         || member->user == one 
         || IsZombie(member)
         || (skip & SKIP_DEAF && IsDeaf(member->user))
-        || (skip & SKIP_NONOPS && !IsChanOp(member))
-        || (skip & SKIP_NONVOICES && !IsChanOp(member) && !HasVoice(member)))
+        || (skip & SKIP_NONOPS && !IsChanOp(member) && !IsAdmin(member) && !IsOwner(member))
+        || (skip & SKIP_NONVOICES && !IsChanOp(member) && !IsAdmin(member) && !IsOwner(member) && !IsHalfOp(member)  && !HasVoice(member)))
         continue;
       send_buffer(member->user, mb, 0);
   }
@@ -649,8 +719,8 @@ void sendcmdto_channel_servers_butone(struct Client *from, const char *cmd,
         || IsZombie(member)
         || cli_fd(cli_from(member->user)) < 0
         || cli_sentalong(member->user) == sentalong_marker
-        || (skip & SKIP_NONOPS && !IsChanOp(member))
-        || (skip & SKIP_NONVOICES && !IsChanOp(member) && !HasVoice(member)))
+        || (skip & SKIP_NONOPS && !IsChanOp(member) && !IsAdmin(member) && !IsOwner(member))
+        || (skip & SKIP_NONVOICES && !IsChanOp(member) && !IsAdmin(member) && !IsOwner(member) && !IsHalfOp(member) && !HasVoice(member)))
       continue;
     cli_sentalong(member->user) = sentalong_marker;
     send_buffer(member->user, serv_mb, 0);
@@ -698,9 +768,9 @@ void sendcmdto_channel_butone(struct Client *from, const char *cmd,
   for (member = to->members; member; member = member->next_member) {
     /* skip one, zombies, and deaf users... */
     if (IsZombie(member) ||
-        (skip & SKIP_DEAF && IsDeaf(member->user)) ||
-        (skip & SKIP_NONOPS && !IsChanOp(member)) ||
-        (skip & SKIP_NONVOICES && !IsChanOp(member) && !HasVoice(member)) ||
+        (skip & SKIP_DEAF && IsDeaf(member->user))
+        || (skip & SKIP_NONOPS && !IsChanOp(member) && !IsAdmin(member) && !IsOwner(member))
+        || (skip & SKIP_NONVOICES && !IsChanOp(member) && !IsAdmin(member) && !IsOwner(member) && !IsHalfOp(member) && !HasVoice(member)) ||
         (skip & SKIP_BURST && IsBurstOrBurstAck(cli_from(member->user))) ||
         cli_fd(cli_from(member->user)) < 0 ||
         cli_sentalong(member->user) == sentalong_marker)
@@ -1089,8 +1159,8 @@ void sendcmdto_capflag_channel_butserv_butone(struct Client *from, const char *c
         || member->user == one
         || IsZombie(member)
         || (skip & SKIP_DEAF && IsDeaf(member->user))
-        || (skip & SKIP_NONOPS && !IsChanOp(member))
-        || (skip & SKIP_NONVOICES && !IsChanOp(member) && !HasVoice(member))
+        || (skip & SKIP_NONOPS && !IsChanOp(member) && !IsAdmin(member) && !IsOwner(member))
+        || (skip & SKIP_NONVOICES && !IsChanOp(member) && !IsAdmin(member) && !IsOwner(member) && !IsHalfOp(member) && !HasVoice(member))
         || (require && !CapHas(cli_active(member->user), require))
         || (forbid && CapHas(cli_active(member->user), forbid)))
         continue;

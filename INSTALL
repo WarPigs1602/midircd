@@ -1,61 +1,50 @@
+midircd - INSTALL
+==========================
+Last updated: July 2025
 
-ircu - INSTALL
-  Original by Run <carlo@runaway.xs4all.nl>,
-  Isomer <isomer@coders.net>, and Kev <klmitch@mit.edu>
-  Rewritten by Sengaia <sengaia@undernet.org> 
-  Updated by Entrope <entrope@undernet.org>
+Requirements:
+-------------
+- GNU make
+- gcc (or a compatible C compiler)
+- Standard Unix build tools (sh, sed, etc.)
+- A TLS/SSL library such as OpenSSL is required for encrypted client/server connections.
 
-Compiling and installing ircu should be a fairly straightforward process,
-if you have obtained this software as a (.tar.gz) package, please consider
-using CVS (described below). Using CVS will make updating your installation
-much easier. 
+Build instructions:
+-------------------
+1. Change to the source directory:
+   cd midircd
 
-After obtaining the latest version of the ircu source code, change into the
-source directory (ircu2.10.xx.yy), and run "./configure". To see the various
-ways in which you can customize your installation, run "./configure --help".
+2. Configure the build system:
+   ./configure
 
-The configure process will check your environment and prepare itself for
-compiling the source code. If one or more of the prerequisites cannot be
-found, configure will terminate with an error. You will need to resolve
-this and run configure again.
+   For available options, run:
+   ./configure --help
 
-If configure runs without error(s), you are ready to compile. To compile ircu,
-run "make". Please use GNU make and gcc. If the source code does not compile,
-make sure your environment is setup correctly. If you are convinced the source
-of the failure is ircu, gather all relevant information about your system such
-as the Architecture, OS version, the configure statement you used, etc. and
-contact coder-com@undernet.org.
+3. Build the server:
+   make
 
-Once ircu is compiled, install it by running "make install".
+4. Install midircd (as root if necessary):
+   make install
 
-Next, you will have to configure your IRC server by setting up your ircd.conf
-file. Use the included doc/example.conf as a starting point; it is installed
-in $HOME/lib/example.conf by default.
-Setting up ircd.conf can be a bit tricky, so if this is your first time doing
-it, begin with a bare-bones configuration and extend it as you go.
+Configuration:
+--------------
+- Copy and edit the example configuration:
+   cp doc/example.conf $HOME/lib/ircd.conf
+  Adjust the configuration to your network and server needs. Start with a minimal config and expand as needed.
 
-If you are upgrading from ircu2.10.11, use the ircd/convert-conf
-program to convert your existing configuration file(s).  It is
-compiled during "make" and installed to $PREFIX/bin/convert-conf.
+- If upgrading from an older version, use the provided convert-conf tool to migrate your configuration:
+    $PREFIX/bin/convert-conf old.conf > new.conf
 
-Good Luck!
+Running:
+--------
+- Start the server using the installed binary. Make sure your configuration file is in place and permissions are correct.
 
-RETRIEVING IRCU VIA CVS
+Support:
+--------
+- If you encounter build problems, ensure your environment meets the requirements. For persistent issues, collect system details (OS, architecture, configure options, error logs) and contact the development team.
 
-The recommended way to get the ircu package now is to use CVS.  CVS makes
-upgrades a lot less painful and lets you get the latest package.
+Good luck!
 
-The first thing you need to do is login to the cvs server:
-# cvs -d :pserver:anonymous@cvs.undernet.org:/cvsroot/undernet-ircu login
-
-(we recommend that you cut and paste the above line to use it :)
-When it prompts you for a password hit enter since there isn't one.
-
-To check out the the last development version of ircu, use:
-# cvs -d :pserver:anonymous@cvs.undernet.org:/cvsroot/undernet-ircu co -P ircu2.10
-The latest stable version has a tag name that depends on the version
-number; see doc/readme.cvs for details.
-
-To update your source tree to the latest version, run "cvs update -dP" from within the
-ircu2.10 directory. For more information, see http://coder-com.undernet.org.
+For more information and updates, visit the project website:
+https://github.com/warpigs1602/midircd
 

@@ -44,7 +44,9 @@
 	_CAP(EXTJOIN, FEAT_CAP_EXTJOIN, 0, "extended-join"), \
 	_CAP(INVITENOTIFY, FEAT_CAP_INVITENOTIFY, 0, "invite-notify"), \
 	_CAP(SASL, FEAT_CAP_SASL, 0, "sasl"), \
-	_CAP(MESSAGETAGS, FEAT_CAP_MESSAGETAGS, 0, "message-tags")
+	_CAP(MESSAGETAGS, FEAT_CAP_MESSAGETAGS, 0, "message-tags"), \
+	_CAP(STANDARDREPLIES, FEAT_CAP_STANDARDREPLIES, 0, "standard-replies"), \
+	_CAP(CHANNELRENAME, FEAT_CAP_CHANNELRENAME, 0, "draft/channel-rename")
 
 /** Client capabilities, counting by index. */
 enum Capab {

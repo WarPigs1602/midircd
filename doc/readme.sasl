@@ -1,0 +1,27 @@
+# SASL Support in IRCd
+
+## Overview
+
+This IRCd implements SASL (Simple Authentication and Security Layer) to provide secure authentication for clients. SASL allows the use of various authentication mechanisms such as PLAIN, EXTERNAL, or SCRAM.
+
+## Enabling SASL
+
+1. Ensure that SASL-related modules (`m_sasl.c`, `s_auth.c`, `s_auth.h`) are included in the build.
+2. Check the configuration for SASL-specific options (e.g., enabled mechanisms, authentication backend).
+
+## Usage
+
+- Clients can authenticate using the `AUTHENTICATE` command as described in the [IRCv3 SASL specification](https://ircv3.net/specs/extensions/sasl-3.1.html).
+- Supported mechanisms are advertised during connection registration.
+- Upon successful authentication, the user is marked as verified.
+
+## Developer Notes
+
+- The main SASL logic is implemented in `ircd/m_sasl.c` and `ircd/s_auth.c`.
+- Additional mechanisms can be added by extending these files.
+- Error and status codes are defined in `include/ircd_reply.h` and `ircd/s_err.c`.
+
+## Further Reading
+
+- [IRCv3 SASL Specification](https://ircv3.net/specs/extensions/sasl-3.1.html)
+- [Simple Authentication and Security Layer (RFC 4422)](https://datatracker.ietf.org/doc/html/rfc4422)

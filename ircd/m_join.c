@@ -95,6 +95,20 @@ last0(struct Client *cptr, struct Client *sptr, char *chanlist)
   return chanlist;
 }
 
+static int is_link_loop(const char* start, const char* target) {
+    const int max_depth = 16; // Prevent excessive recursion
+    int depth = 0;
+    struct Channel* chptr = FindChannel(target);
+    while (chptr && (chptr->mode.mode & MODE_LINK) && *chptr->mode.linktarget) {
+        if (strcmp(chptr->chname, start) == 0)
+            return 1; // Loop detected
+        chptr = FindChannel(chptr->mode.linktarget);
+        if (++depth > max_depth)
+            return 1; // Too deep, treat as loop
+    }
+    return 0;
+}
+
 /** Handle a JOIN message from a client connection.
  * See @ref m_functions for discussion of the arguments.
  * @param[in] cptr Client that sent us the message.
@@ -125,6 +139,67 @@ int m_join(struct Client *cptr, struct Client *sptr, int parc, char *parv[])
 
   for (name = ircd_strtok(&p, chanlist, ","); name;
        name = ircd_strtok(&p, 0, ",")) {
+
+      // --- LINK mode check and error ---
+      chptr = FindChannel(name);
+      if (chptr && !IsInvited(sptr, chptr) && IsGlobalChannel(name) && (chptr->mode.mode & MODE_LINK) && *chptr->mode.linktarget) {
+          if (chptr->mode.limit > 0 && chptr->users >= chptr->mode.limit) {
+              // Prevent infinite loop: check for cycles
+              if (is_link_loop(chptr->chname, chptr->mode.linktarget)) {
+                  send_reply(sptr, RPL_INFO, "LINK mode would cause a loop, join denied");
+                  continue;
+              }
+              // Inform the user and do not join
+              send_reply(sptr, ERR_LINKCHANNEL, name, "Channel is full +l", chptr->mode.linktarget);
+              name = chptr->mode.linktarget; // Redirect to the linked channel
+          }
+      }
+
+      if (IsNetworkChannel(name)) {
+          char visible_name[CHANNELLEN + 1];
+          char channel_list[1024];
+          // Extract visible channel name (without ! and ID)
+          strncpy(visible_name, name + 1 + NETWORK_ID_LEN, sizeof(visible_name) - 1);
+          visible_name[sizeof(visible_name) - 1] = '\0';
+
+          // Get all network channels with the same visible name
+          get_network_channel_list(visible_name, channel_list, sizeof(channel_list));
+
+          // Count how many channels exist
+          int count = 0;
+          char* ptr = channel_list;
+          while (*ptr) {
+              count++;
+              ptr = strchr(ptr, ',');
+              if (ptr) ptr++;
+              else break;
+          }
+
+          if (count == 0) {
+              // Create a new network channel name
+              char newname[CHANNELLEN + 1];
+              create_network_channel(name, newname, sizeof(newname));
+              ircd_strncpy(name, newname, CHANNELLEN);
+          } else
+          if (count > 1) {
+              // Inform the user about the available options
+              send_reply(sptr, RPL_INFO, "Multiple network channels with name '%s' exist: %s", visible_name, channel_list);
+              continue; // Skip joining until user selects a channel
+          }
+          if (count == 1) {
+              // Use the first channel name from the list
+              char* comma = strchr(channel_list, ',');
+              if (comma) *comma = '\0';
+              ircd_strncpy(name, channel_list, CHANNELLEN);
+          }
+      }
+      else {
+          const char* redirect = get_renamed_channel(name);
+          if (redirect) {
+              name = (char*)redirect;
+          }
+      }
+    // If no channel exists, proceed as usual (creation logic)
     char *key = 0;
 
     /* If we have any more keys, take the first for this channel. */
@@ -141,6 +216,11 @@ int m_join(struct Client *cptr, struct Client *sptr, int parc, char *parv[])
       /* bad channel name */
       send_reply(sptr, ERR_NOSUCHCHANNEL, name);
       continue;
+    }
+    const char* renamed = get_renamed_channel(name);
+    if (renamed) {
+        send_reply(sptr, RPL_INFO, "Channel %s was renamed to %s, joining new channel.", name, renamed);
+        name = (char*)renamed;
     }
 
     if (cli_user(sptr)->joined >= feature_int(FEAT_MAXCHANNELSPERUSER)
@@ -173,7 +253,7 @@ int m_join(struct Client *cptr, struct Client *sptr, int parc, char *parv[])
         continue;
       }
 
-      joinbuf_join(&create, chptr, CHFL_CHANOP | CHFL_CHANNEL_MANAGER);
+      joinbuf_join(&create, chptr, CHFL_OWNER | CHFL_ADMIN | CHFL_CHANOP | CHFL_CHANNEL_MANAGER);
       if (feature_bool(FEAT_AUTOCHANMODES) && feature_str(FEAT_AUTOCHANMODES_LIST) && strlen(feature_str(FEAT_AUTOCHANMODES_LIST)) > 0)
         SetAutoChanModes(chptr);
     } else if (find_member_link(chptr, sptr)) {
@@ -181,9 +261,15 @@ int m_join(struct Client *cptr, struct Client *sptr, int parc, char *parv[])
     } else if (check_target_limit(sptr, chptr, chptr->chname, 0)) {
       continue;
     } else {
-      int flags = CHFL_DEOPPED;
-      int err = 0;
-
+        int flags = CHFL_DEOPPED;
+        int err = 0;
+        int ignore_restrictions = 0;
+        if (chptr && (chptr->mode.mode & MODE_BURSTADDED))
+            ignore_restrictions = 1;
+        if (IsChannelService(sptr)) {
+            flags |= CHFL_CHANSERVICE;
+            // Services should not get further user modes!
+        }
       /* Check Apass/Upass -- since we only ever look at a single
        * "key" per channel now, this hampers brute force attacks. */
       if (key && !strcmp(key, chptr->mode.apass))
@@ -196,18 +282,21 @@ int m_join(struct Client *cptr, struct Client *sptr, int parc, char *parv[])
         chptr->creationtime++;
       } else if (IsInvited(sptr, chptr)) {
         /* Invites bypass these other checks. */
-      } else if (chptr->mode.mode & MODE_INVITEONLY)
-        err = ERR_INVITEONLYCHAN;
-      else if (chptr->mode.limit && (chptr->users >= chptr->mode.limit))
-        err = ERR_CHANNELISFULL;
-      else if ((chptr->mode.mode & MODE_REGONLY) && !IsAccount(sptr))
-        err = ERR_NEEDREGGEDNICK;
-      else if (find_ban(sptr, chptr->banlist))
-        err = ERR_BANNEDFROMCHAN;
-      else if (*chptr->mode.key && (!key || strcmp(key, chptr->mode.key)))
-        err = ERR_BADCHANNELKEY;
-      else if ((chptr->mode.mode & MODE_TLSONLY) && !IsTLS(sptr))
-        err = ERR_TLSONLYCHAN;
+      }
+      else if (!ignore_restrictions) {
+          if (chptr->mode.mode & MODE_INVITEONLY)
+              err = ERR_INVITEONLYCHAN;
+          else if (chptr->mode.limit && (chptr->users >= chptr->mode.limit))
+              err = ERR_CHANNELISFULL;
+          else if ((chptr->mode.mode & MODE_REGONLY) && !IsAccount(sptr))
+              err = ERR_NEEDREGGEDNICK;
+          else if (find_ban(sptr, chptr->banlist, chptr->ban_exceptions))
+              err = ERR_BANNEDFROMCHAN;
+          else if (*chptr->mode.key && (!key || strcmp(key, chptr->mode.key)))
+              err = ERR_BADCHANNELKEY;
+          else if ((chptr->mode.mode & MODE_TLSONLY) && !IsTLS(sptr))
+              err = ERR_TLSONLYCHAN;
+      }
 
       /*
        * ASUKA_X:
@@ -267,18 +356,33 @@ int m_join(struct Client *cptr, struct Client *sptr, int parc, char *parv[])
       }
 
       joinbuf_join(&join, chptr, flags);
-      if (flags & CHFL_CHANOP) {
-        struct ModeBuf mbuf;
-	/* Always let the server op him: this is needed on a net with older servers
-	   because they 'destruct' channels immediately when they become empty without
-	   sending out a DESTRUCT message. As a result, they would always bounce a mode
-	   (as HACK(2)) when the user ops himself.
-           (There is also no particularly good reason to have the user op himself.)
-        */
-	modebuf_init(&mbuf, &me, cptr, chptr, MODEBUF_DEST_SERVER);
-	modebuf_mode_client(&mbuf, MODE_ADD | MODE_CHANOP, sptr,
-                            chptr->mode.apass[0] ? ((flags & CHFL_CHANNEL_MANAGER) ? 0 : 1) : MAXOPLEVEL);
-	modebuf_flush(&mbuf);
+      // For services: set mode, but avoid duplicate commands!
+      struct Membership* member = find_member_link(chptr, sptr);
+      if (member && (IsChannelService(sptr) || IsService(sptr)) && !(member->status & CHFL_CHANSERVICE)) {
+          member->status |= CHFL_CHANSERVICE;
+          struct ModeBuf mbuf;
+          modebuf_init(&mbuf, &me, cptr, chptr, MODEBUF_DEST_SERVER);
+          modebuf_mode_client(&mbuf, MODE_ADD | MODE_CHANSERVICE, sptr, 0);
+          modebuf_flush(&mbuf);
+      }
+      // For normal users: set Chanop
+      else if (flags & (CHFL_CHANSERVICE | CHFL_OWNER | CHFL_ADMIN | CHFL_CHANOP | CHFL_HALFOP | CHFL_VOICE)) {
+          struct ModeBuf mbuf;
+          modebuf_init(&mbuf, &me, cptr, chptr, MODEBUF_DEST_SERVER);
+          if (flags & CHFL_CHANSERVICE)
+              modebuf_mode_client(&mbuf, MODE_ADD | MODE_CHANSERVICE, sptr, 0);
+          if (flags & CHFL_OWNER)
+              modebuf_mode_client(&mbuf, MODE_ADD | MODE_OWNER, sptr, 0);
+          if (flags & CHFL_ADMIN)
+              modebuf_mode_client(&mbuf, MODE_ADD | MODE_ADMIN, sptr, 0);
+          if (flags & CHFL_CHANOP)
+              modebuf_mode_client(&mbuf, MODE_ADD | MODE_CHANOP, sptr,
+                  chptr->mode.apass[0] ? ((flags & CHFL_CHANNEL_MANAGER) ? 0 : 1) : MAXOPLEVEL);
+          if (flags & CHFL_HALFOP)
+              modebuf_mode_client(&mbuf, MODE_ADD | MODE_HALFOP, sptr, 0);
+          if (flags & CHFL_VOICE)
+              modebuf_mode_client(&mbuf, MODE_ADD | MODE_VOICE, sptr, 0);
+          modebuf_flush(&mbuf);
       }
     }
 
@@ -339,8 +443,24 @@ int ms_join(struct Client *cptr, struct Client *sptr, int parc, char *parv[])
 
   for (name = ircd_strtok(&p, chanlist, ","); name;
        name = ircd_strtok(&p, 0, ",")) {
+      const char* redirect = get_renamed_channel(name);
+      if (redirect) {
+          name = (char*)redirect;
+      }
+      chptr = FindChannel(name);
+      // --- LINK mode check and error for server joins ---
+      if (chptr && (chptr->mode.mode & MODE_LINK) && *chptr->mode.linktarget) {
+          if (chptr->mode.limit > 0 && chptr->users >= chptr->mode.limit) {
+              // Prevent infinite loop: check for cycles
+              if (is_link_loop(chptr->chname, chptr->mode.linktarget)) {
+                  // Option: send error or ignore join
+                  continue;
+              }
+              name = chptr->mode.linktarget; // Redirect to the linked channel
+          }
+      }
 
-    flags = CHFL_DEOPPED;
+      flags = CHFL_DEOPPED;
 
     if (IsLocalChannel(name) || !IsChannelName(name))
     {
@@ -428,20 +548,44 @@ int ms_join(struct Client *cptr, struct Client *sptr, int parc, char *parv[])
 
         for (member = chptr->members; member; member = member->next_member)
         {
-          if (IsChanOp(member)) {
-            modebuf_mode_client(&mbuf, MODE_DEL | MODE_CHANOP, member->user, OpLevel(member));
-	    member->status &= ~CHFL_CHANOP;
-	  }
-          if (HasVoice(member)) {
-            modebuf_mode_client(&mbuf, MODE_DEL | MODE_VOICE, member->user, OpLevel(member));
-	    member->status &= ~CHFL_VOICE;
-          }
+            if (IsChanService(member)) {
+                modebuf_mode_client(&mbuf, MODE_DEL | MODE_CHANSERVICE, member->user, OpLevel(member));
+                member->status &= ~CHFL_CHANSERVICE;
+            }
+            if (IsOwner(member)) {
+                modebuf_mode_client(&mbuf, MODE_DEL | MODE_OWNER, member->user, OpLevel(member));
+                member->status &= ~CHFL_OWNER;
+            }
+            if (IsAdmin(member)) {
+                modebuf_mode_client(&mbuf, MODE_DEL | MODE_ADMIN, member->user, OpLevel(member));
+                member->status &= ~CHFL_ADMIN;
+            }
+            if (IsChanOp(member)) {
+                modebuf_mode_client(&mbuf, MODE_DEL | MODE_CHANOP, member->user, OpLevel(member));
+                member->status &= ~CHFL_CHANOP;
+            }
+            if (IsHalfOp(member)) {
+                modebuf_mode_client(&mbuf, MODE_DEL | MODE_HALFOP, member->user, OpLevel(member));
+                member->status &= ~CHFL_HALFOP;
+            }
+            if (HasVoice(member)) {
+                modebuf_mode_client(&mbuf, MODE_DEL | MODE_VOICE, member->user, OpLevel(member));
+                member->status &= ~CHFL_VOICE;
+            }
         }
         modebuf_flush(&mbuf);
       }
     }
 
     joinbuf_join(&join, chptr, flags);
+    struct Membership* member = find_member_link(chptr, sptr);
+    if (member && (IsChannelService(sptr) || IsService(sptr)) && !(member->status & CHFL_CHANSERVICE)) {
+        member->status |= CHFL_CHANSERVICE;
+        struct ModeBuf mbuf;
+        modebuf_init(&mbuf, &me, cptr, chptr, MODEBUF_DEST_SERVER);
+        modebuf_mode_client(&mbuf, MODE_ADD | MODE_CHANSERVICE, sptr, 0);
+        modebuf_flush(&mbuf);
+    }
   }
 
   joinbuf_flush(&join); /* flush joins... */

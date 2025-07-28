@@ -406,6 +406,8 @@ extern const struct Numeric* get_error_numeric(int err);
 
 #define ERR_BADCHANNAME      479        /* EFNet extension */
                                         /* 479 Undernet extension badchan */
+#define ERR_BADNETWORKCHAN 480
+
 /*	ERR_CANNOTKNOCK	     480	unreal */
 /*	ERR_NOULINE	     480	austnet */
 #define ERR_NOPRIVILEGES     481
@@ -477,10 +479,19 @@ extern const struct Numeric* get_error_numeric(int err);
 #define ERR_UPASSNOTSET      564	/* Undernet extension */
 #define ERR_NOMANAGER        566	/* Undernet extension */
 #define ERR_UPASS_SAME_APASS 567        /* Undernet extension */
+#define ERR_JOINFLOOD        568        /* Undernet extension: Join flood protection (+j) */
 
 #define RPL_STARTTLS         670    /* Nefarious, Undernet */
 
 #define ERR_STARTTLS         691    /* Nefarious, Undernet */
+#define RPL_CHANNELRENAME    710    /* IRCv3: "<oldchan> <newchan> :Channel has been renamed" */
+#define ERR_CHANNELNAMEINUSE 711    /* IRCv3: "<newchan> :Channel name is already in use" */
+#define RPL_KNOCK           710 /* "<channel> :Your knock has been delivered" */
+#define RPL_KNOCKDLVR       711 /* "<channel> <nick> :Knock delivered" */
+#define ERR_TOOMANYKNOCK    712 /* "<channel> :Too many knock requests" */
+#define ERR_KNOCKNOTINVITE  713 /* "<channel> :Channel is not invite only" */
+#define ERR_KNOCKONCHAN     714 /* "<channel> :You are already on that channel" */
+#define ERR_RENAME_LINKED 715 /* "<oldchan> <newchan> :Channel is linked to another channel" */
 #define RPL_LOGGEDIN         900    /* IRCv3 */
 #define RPL_LOGGEDOUT        901    /* IRCv3 */
 #define ERR_NICKLOCKED       902    /* IRCv3 */

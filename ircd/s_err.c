@@ -992,7 +992,7 @@ static Numeric replyTable[] = {
 /* 479 */
   { ERR_BADCHANNAME, "%s :Cannot join channel (G-lined: %s)", "479" },
 /* 480 */
-  { 0 },
+  { ERR_BADNETWORKCHAN, "%s :Invalid network channel name", "480" },
 /* 481 */
   { ERR_NOPRIVILEGES, ":Permission Denied: Insufficient privileges", "481" },
 /* 482 */
@@ -1168,7 +1168,7 @@ static Numeric replyTable[] = {
 /* 567 */
   { ERR_UPASS_SAME_APASS, "%s :Cannot use the same pass for both admin (+A) and user (+U) pass.", "567" },
 /* 568 */
-  { 0 },
+  { ERR_JOINFLOOD, "%s :Cannot join channel, join flood protection (+j) active", "568" },
 /* 569 */
   { 0 },
 /* 570 */
@@ -1452,17 +1452,17 @@ static Numeric replyTable[] = {
 /* 709 */
   { 0 },
 /* 710 */
-  { 0 },
-/* 711 */
-  { 0 },
-/* 712 */
-  { 0 },
-/* 713 */
-  { 0 },
-/* 714 */
-  { 0 },
+  { RPL_KNOCK, "%s :Your knock has been delivered", "710" },
+  /* 711 */
+  { RPL_KNOCKDLVR,     "%s %s :Knock delivered",                           "711" },
+  /* 712 */
+  { ERR_TOOMANYKNOCK,  "%s :Too many knock requests",                      "712" },
+  /* 713 */
+  { ERR_KNOCKNOTINVITE,"%s :Channel is not invite only",                   "713" },
+  /* 714 */
+  { ERR_KNOCKONCHAN,   "%s :You are already on that channel",              "714" },
 /* 715 */
-  { 0 },
+  { ERR_RENAME_LINKED, "%s :Channel is linked (+L) and cannot be renamed" , "715" },
 /* 717 */
   { 0 },
 /* 717 */
@@ -1475,13 +1475,13 @@ static Numeric replyTable[] = {
   { 0 },
 /* 721 */
   { 0 },
-/* 722 */
+  /* 722 */
   { 0 },
-/* 723 */
+  /* 723 */
   { 0 },
-/* 724 */
+  /* 724 */
   { 0 },
-/* 725 */
+  /* 725 */
   { 0 },
 /* 727 */
   { 0 },
