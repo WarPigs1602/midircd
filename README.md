@@ -1,4 +1,4 @@
-# midircd – Modern IRC Server (based on ircu, forked from snircd)
+# midircd ï¿½ Modern IRC Server (based on ircu, forked from snircd)
 
 **midircd** is a modern IRC server based on Undernet's ircu and directly forked from snircd. It extends snircd with additional IRCv3 features, improved channel/user modes, and many enhancements for advanced IRC networks.
 
@@ -141,9 +141,9 @@ See `doc/readme.features` and `doc/readme.snircd` (applies to midircd) for examp
 
 ## Further Documentation
 
-- `doc/readme.snircd` – Detailed feature descriptions and changelog (applies to midircd)
-- `doc/readme.features` – Overview of all configurable features
-- `doc/readme.iauth` – iauth protocol documentation
+- `doc/readme.snircd` ï¿½ Detailed feature descriptions and changelog (applies to midircd)
+- `doc/readme.features` ï¿½ Overview of all configurable features
+- `doc/readme.iauth` ï¿½ iauth protocol documentation
 
 ---
 
@@ -161,4 +161,3 @@ GNU General Public License v2 or later.
 
 **Note:**  
 This README summarizes the most important features and enhancements. For details on individual features and configuration, please consult the referenced documentation.
-
