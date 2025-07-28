@@ -67,7 +67,7 @@
                         feature_int(FEAT_CHANNELLEN), CHANNELLEN, \
                         (feature_bool(FEAT_LOCAL_CHANNELS) ? "!#&" : "!#"), \
                         "(Sqaohv)!~&@%+", "!~&@%+", \
-                        "b,e,j,k,l,imnpstrDducCNMTZ", \
+                        "b,e,j,k,l,L,imnpstrDducCNMTZ", \
                         "rfc1459", feature_str(FEAT_NETWORK)
 
 #endif /* INCLUDED_supported_h */

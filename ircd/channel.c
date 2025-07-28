@@ -1039,6 +1039,7 @@ void channel_modes(struct Client* cptr, char* mbuf, char* pbuf, int buflen,
 		*mbuf++ = 'M';
 	if (chptr->mode.mode & MODE_TLSONLY)
 		*mbuf++ = 'Z';
+
 	else if (MyUser(cptr) && (chptr->mode.mode & MODE_WASDELJOINS))
 		*mbuf++ = 'd';
 	if (chptr->mode.limit) {
@@ -1180,7 +1181,8 @@ void send_channel_modes(struct Client* cptr, struct Channel* chptr)
 				msgq_append(&me, mb, " %s", parabuf);
 		}
 
-		// --- Mitglieder mit allen relevanten Modi ausgeben ---
+
+		// PATCH: User-Modes für alle Mitglieder ausgeben
 		for (member = chptr->members, first = 1; member; member = member->next_member) {
 			char* nick = cli_name(member->user);
 			char modestr[8] = { 0 };
@@ -1190,6 +1192,13 @@ void send_channel_modes(struct Client* cptr, struct Channel* chptr)
 					modestr[m++] = user_modes[mode_index].modechar;
 			}
 			modestr[m] = '\0';
+
+			if (modestr[0]) {
+				msgq_append(&me, mb, " %s:%s", nick, modestr);
+			}
+			else {
+				msgq_append(&me, mb, " %s", nick);
+			}
 
 			len = strlen(nick) + (modestr[0] ? strlen(modestr) + 1 : 0);
 			if (msgq_bufleft(mb) < len + 2) {
@@ -3732,65 +3741,76 @@ static void mode_parse_joinflood(struct ParseState* state, int* flag_p)
 	}
 } 
 
+/**
+ * Parse the +L/-L (link) channel mode.
+ * Handles setting and removing the link mode for a channel.
+ *
+ * @param state   ParseState object containing all relevant information for mode changes
+ * @param flag_p  Pointer to the flag for the link mode (MODE_LINK)
+ *
+ * Uses: DONE_LINK_ADD (for +L), DONE_LINK_DEL (for -L)
+ */
 static void mode_parse_link(struct ParseState* state, int* flag_p)
 {
-	char* t_str = NULL;
-
-	// Only allow LINK mode for global channels
-	if (!IsGlobalChannel(state->chptr->chname)) {
+	// Only privileged users may set/remove this mode
+	if (!(state->flags & (MODE_CHANSERVICE | MODE_OWNER | MODE_ADMIN))) {
+		send_notoper(state, flag_p[0]);
 		return;
 	}
 
-	if (MyUser(state->sptr) && state->max_args <= 0)
-		return;
-
-	// Check DONE flags before processing
 	if (state->dir == MODE_ADD) {
 		if (state->done & DONE_LINK_ADD)
-			return;
-		state->done |= DONE_LINK_ADD;
+			return; // Already set in this MODE command
 
-		if (state->parc <= 0) {
+		if (state->parc <= 0 || state->max_args <= 0) {
 			if (MyUser(state->sptr))
 				need_more_params(state->sptr, "MODE +L");
 			return;
 		}
-		t_str = state->parv[state->args_used++];
+
+		char* param = state->parv[state->args_used++];
 		state->parc--;
 		state->max_args--;
 
-		// Only privileged users may set the mode
-		if (!(state->flags & (MODE_CHANSERVICE | MODE_OWNER | MODE_ADMIN | MODE_CHANOP | MODE_HALFOP))) {
-			send_notoper(state, flag_p[0]);
+		// Prevent empty or invalid parameters
+		if (!param || !*param || *param == ':')
+			return;
+
+		if (get_renamed_channel(param) != NULL) {
+			if (MyUser(state->sptr)) {
+				send_reply(state->sptr, ERR_NOSUCHCHANNEL, param);
+			}
 			return;
 		}
-
-		if (!*t_str || !IsChannelName(t_str)) {
-			send_reply(state->sptr, ERR_NOSUCHCHANNEL, t_str);
+		// Check if the channel is global
+		if (!IsGlobalChannel(param)) {
+			if (MyUser(state->sptr)) {
+				send_reply(state->sptr, ERR_NOSUCHCHANNEL, param);
+			}
 			return;
 		}
-
-		if (state->mbuf)
-			modebuf_mode_string(state->mbuf, MODE_ADD | MODE_LINK, t_str, 0);
-
-		if (state->flags & MODE_PARSE_SET) {
+		// Only change if the target is different
+		if (!(state->chptr->mode.mode & MODE_LINK) ||
+			strcmp(state->chptr->mode.linktarget, param) != 0)
+		{
 			state->chptr->mode.mode |= MODE_LINK;
-			ircd_strncpy(state->chptr->mode.linktarget, t_str, CHANNELLEN);
+			ircd_strncpy(state->chptr->mode.linktarget, param, CHANNELLEN);
+
+			if (state->mbuf)
+				modebuf_mode_string(state->mbuf, MODE_ADD | MODE_LINK, param, 0);
 		}
 		state->done |= DONE_LINK_ADD;
 	}
-	else { // MODE_DEL
+	else {
 		if (state->done & DONE_LINK_DEL)
-			return;
-		state->done |= DONE_LINK_DEL;
+			return; // Already removed in this MODE command
 
-		// -L without parameter: remove LINK mode
-		if (state->mbuf)
-			modebuf_mode_string(state->mbuf, MODE_DEL | MODE_LINK, state->chptr->mode.linktarget, 0);
-
-		if (state->flags & MODE_PARSE_SET) {
+		if (state->chptr->mode.mode & MODE_LINK) {
 			state->chptr->mode.mode &= ~MODE_LINK;
 			*state->chptr->mode.linktarget = '\0';
+
+			if (state->mbuf)
+				modebuf_mode_string(state->mbuf, MODE_DEL | MODE_LINK, "", 0);
 		}
 		state->done |= DONE_LINK_DEL;
 	}

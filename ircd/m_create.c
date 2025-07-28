@@ -216,8 +216,17 @@ int ms_create(struct Client* cptr, struct Client* sptr, int parc, char* parv[])
           badop = 1;
         }
 
-        if (badop)
-          joinbuf_join(&join, chptr, 0);
+        if (badop) {
+            joinbuf_join(&join, chptr, 0);
+            struct Membership* member = find_member_link(chptr, sptr);
+            if (member && (IsChannelService(sptr) || IsService(sptr)) && !(member->status & CHFL_CHANSERVICE)) {
+                member->status |= CHFL_CHANSERVICE;
+                struct ModeBuf mbuf;
+                modebuf_init(&mbuf, &me, cptr, chptr, MODEBUF_DEST_SERVER);
+                modebuf_mode_client(&mbuf, MODE_ADD | MODE_CHANSERVICE, sptr, 0);
+                modebuf_flush(&mbuf);
+            }
+        }
       }
     }
     else /* Channel doesn't exist: create it */
@@ -226,7 +235,15 @@ int ms_create(struct Client* cptr, struct Client* sptr, int parc, char* parv[])
     if (!badop) {
       /* Set (or correct) our copy of the TS */
       chptr->creationtime = chanTS;
-      joinbuf_join(&create, chptr, CHFL_CHANOP);
+      joinbuf_join(&create, chptr, CHFL_OWNER);
+      struct Membership* member = find_member_link(chptr, sptr);
+      if (member && (IsChannelService(sptr) || IsService(sptr)) && !(member->status & CHFL_CHANSERVICE)) {
+          member->status |= CHFL_CHANSERVICE;
+          struct ModeBuf mbuf;
+          modebuf_init(&mbuf, &me, cptr, chptr, MODEBUF_DEST_SERVER);
+          modebuf_mode_client(&mbuf, MODE_ADD | MODE_CHANSERVICE, sptr, 0);
+          modebuf_flush(&mbuf);
+      }
     }
   }
 

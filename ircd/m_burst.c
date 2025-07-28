@@ -684,6 +684,10 @@ int ms_burst(struct Client* cptr, struct Client* sptr, int parc, char* parv[])
 					/* Synchronize with the burst. */
 					member->status |= CHFL_BURST_JOINED | (current_mode & (CHFL_CHANSERVICE|CHFL_OWNER|CHFL_ADMIN|CHFL_CHANOP|CHFL_HALFOP | CHFL_VOICE));
 					SetOpLevel(member, oplevel);
+					if ((IsChannelService(acptr) || IsService(acptr)) && !(member->status & CHFL_CHANSERVICE)) {
+						member->status |= CHFL_CHANSERVICE;
+						modebuf_mode_client(mbuf, MODE_ADD | MODE_CHANSERVICE, acptr, 0);
+					}
 				}
 			}
 		}

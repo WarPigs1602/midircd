@@ -143,14 +143,16 @@ int m_join(struct Client *cptr, struct Client *sptr, int parc, char *parv[])
       // --- LINK mode check and error ---
       chptr = FindChannel(name);
       if (chptr && !IsInvited(sptr, chptr) && IsGlobalChannel(name) && (chptr->mode.mode & MODE_LINK) && *chptr->mode.linktarget) {
-          // Prevent infinite loop: check for cycles
-          if (is_link_loop(chptr->chname, chptr->mode.linktarget)) {
-              send_reply(sptr, RPL_INFO, "LINK mode would cause a loop, join denied");
-              continue;
+          if (chptr->mode.limit > 0 && chptr->users >= chptr->mode.limit) {
+              // Prevent infinite loop: check for cycles
+              if (is_link_loop(chptr->chname, chptr->mode.linktarget)) {
+                  send_reply(sptr, RPL_INFO, "LINK mode would cause a loop, join denied");
+                  continue;
+              }
+              // Inform the user and do not join
+              send_reply(sptr, ERR_LINKCHANNEL, name, "Channel is full +l", chptr->mode.linktarget);
+              name = chptr->mode.linktarget; // Redirect to the linked channel
           }
-          // Inform the user and do not join
-          send_reply(sptr, ERR_LINKCHANNEL, name, "Channel is full +l", chptr->mode.linktarget);
-		  name = chptr->mode.linktarget; // Redirect to the linked channel
       }
 
       if (IsNetworkChannel(name)) {
@@ -355,7 +357,9 @@ int m_join(struct Client *cptr, struct Client *sptr, int parc, char *parv[])
 
       joinbuf_join(&join, chptr, flags);
       // For services: set mode, but avoid duplicate commands!
-      if (IsChannelService(sptr) || IsService(sptr)) {
+      struct Membership* member = find_member_link(chptr, sptr);
+      if (member && (IsChannelService(sptr) || IsService(sptr)) && !(member->status & CHFL_CHANSERVICE)) {
+          member->status |= CHFL_CHANSERVICE;
           struct ModeBuf mbuf;
           modebuf_init(&mbuf, &me, cptr, chptr, MODEBUF_DEST_SERVER);
           modebuf_mode_client(&mbuf, MODE_ADD | MODE_CHANSERVICE, sptr, 0);
@@ -446,12 +450,14 @@ int ms_join(struct Client *cptr, struct Client *sptr, int parc, char *parv[])
       chptr = FindChannel(name);
       // --- LINK mode check and error for server joins ---
       if (chptr && (chptr->mode.mode & MODE_LINK) && *chptr->mode.linktarget) {
-          // Prevent infinite loop: check for cycles
-          if (is_link_loop(chptr->chname, chptr->mode.linktarget)) {
-              // Option: send error or ignore join
-              continue;
+          if (chptr->mode.limit > 0 && chptr->users >= chptr->mode.limit) {
+              // Prevent infinite loop: check for cycles
+              if (is_link_loop(chptr->chname, chptr->mode.linktarget)) {
+                  // Option: send error or ignore join
+                  continue;
+              }
+              name = chptr->mode.linktarget; // Redirect to the linked channel
           }
-		  name = chptr->mode.linktarget; // Redirect to the linked channel
       }
 
       flags = CHFL_DEOPPED;
@@ -572,6 +578,14 @@ int ms_join(struct Client *cptr, struct Client *sptr, int parc, char *parv[])
     }
 
     joinbuf_join(&join, chptr, flags);
+    struct Membership* member = find_member_link(chptr, sptr);
+    if (member && (IsChannelService(sptr) || IsService(sptr)) && !(member->status & CHFL_CHANSERVICE)) {
+        member->status |= CHFL_CHANSERVICE;
+        struct ModeBuf mbuf;
+        modebuf_init(&mbuf, &me, cptr, chptr, MODEBUF_DEST_SERVER);
+        modebuf_mode_client(&mbuf, MODE_ADD | MODE_CHANSERVICE, sptr, 0);
+        modebuf_flush(&mbuf);
+    }
   }
 
   joinbuf_flush(&join); /* flush joins... */

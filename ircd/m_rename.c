@@ -49,6 +49,16 @@ int m_rename(struct Client* cptr, struct Client* sptr, int parc, char* parv[])
         return -1;
     }
 
+	// Prevent /rename if the channel is linked
+    if (chptr->mode.mode & MODE_LINK) {
+        if (CapHas(cli_active(sptr), CAP_STANDARDREPLIES)) {
+            send_fail_reply(&me, sptr, "RENAME", cli_name(sptr), "Cannot rename a linked channel");
+        } else {
+            send_reply(sptr, ERR_RENAME_LINKED, oldname);
+        }
+        return -1;
+	}
+
     // Check if new channel name is already in use
     if (FindChannel(newname)) {
         if (CapHas(cli_active(sptr), CAP_STANDARDREPLIES)) {

@@ -491,6 +491,7 @@ extern const struct Numeric* get_error_numeric(int err);
 #define ERR_TOOMANYKNOCK    712 /* "<channel> :Too many knock requests" */
 #define ERR_KNOCKNOTINVITE  713 /* "<channel> :Channel is not invite only" */
 #define ERR_KNOCKONCHAN     714 /* "<channel> :You are already on that channel" */
+#define ERR_RENAME_LINKED 715 /* "<oldchan> <newchan> :Channel is linked to another channel" */
 #define RPL_LOGGEDIN         900    /* IRCv3 */
 #define RPL_LOGGEDOUT        901    /* IRCv3 */
 #define ERR_NICKLOCKED       902    /* IRCv3 */
