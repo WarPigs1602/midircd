@@ -386,6 +386,8 @@ int ms_burst(struct Client* cptr, struct Client* sptr, int parc, char* parv[])
 
 	param = 3; /* parse parameters */
 	while (param < parc) {
+		if(!chptr)
+			return protocol_violation(sptr, "Channel %s disappeared during BURST", parv[1]);
 		switch (*parv[param]) {
 		case '+': /* parameter introduces a mode string */
 			param += mode_parse(mbuf, cptr, sptr, chptr, parc - param,
