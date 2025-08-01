@@ -1932,11 +1932,11 @@ static Numeric replyTable[] = {
 /* 949 */
   { 0 },
 /* 950 */
-  { 0 },
-/* 951 */
-  { 0 },
+  { RPL_RENAMEOK, "%s %s :Channel successfully renamed", "950" },
+  /* 951 */
+  { ERR_LINKCHANNELLOOP, "%s %s :[Link] Channel link loop detected between %s and %s", "951" },
 /* 952 */
-  { 0 },
+  { ERR_LINKCHANNELREDIRECT, "%s %s :[Link] You are being redirected from %s to %s", "952" },
 /* 953 */
   { 0 },
 /* 954 */

@@ -135,12 +135,13 @@ int m_topic(struct Client* cptr, struct Client* sptr, int parc, char* parv[])
     }
     else if ((chptr->mode.mode & MODE_TOPICLIMIT)) {
         struct Membership* member = find_member_link(chptr, sptr);
-        if (!has_channel_permission(member, NULL, CHFL_HALFOP))
-            send_reply(sptr, ERR_CHANOPRIVSNEEDED, chptr->chname);
-        else if (!client_can_send_to_channel(sptr, chptr, 1))
+        if (!client_can_send_to_channel(sptr, chptr, 1))
             send_reply(sptr, ERR_CANNOTSENDTOCHAN, chptr->chname);
-        else
+        else if (chptr->chname[0] == '+' || is_privileged_user(sptr, chptr))
             do_settopic(sptr, cptr, chptr, topic, 0);
+		else 
+			send_reply(sptr, ERR_CHANOPRIVSNEEDED, chptr->chname);
+
     }
     else if (!client_can_send_to_channel(sptr, chptr, 1))
       send_reply(sptr, ERR_CANNOTSENDTOCHAN, chptr->chname);

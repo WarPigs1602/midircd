@@ -1,211 +1,197 @@
-#include "channel.h"
+/*
+ * IRC - Internet Relay Chat, ircd/m_rename.c
+ * Implements IRCv3 draft/channel-rename capability with standard replies and fallback.
+ * Copyright (C) 2025 GitHub Copilot
+ */
+
+#include "config.h"
 #include "client.h"
+#include "channel.h"
 #include "hash.h"
 #include "ircd.h"
-#include "send.h"
+#include "ircd_log.h"
 #include "ircd_reply.h"
-#include "capab.h"
 #include "ircd_features.h"
-#include "ircd_string.h"
-#include "numeric.h"
+#include "send.h"
 #include "msg.h"
+#include "numeric.h"
+#include "s_conf.h"
 #include "s_user.h"
+#include "capab.h"
+#include <string.h>
+
+static int has_rename_caps(struct Client* c)
+{
+    capset_t caps = cli_active(c);
+    return CapHas(caps, CAP_CHANNELRENAME) && CapHas(caps, CAP_STANDARDREPLIES);
+}
 
 /*
- * Handler for the IRCv3 RENAME command.
- * Usage: RENAME <oldchan> <newchan>
+ * m_rename - handle channel renaming
+ * parv[0] = sender prefix
+ * parv[1] = old channel name
+ * parv[2] = new channel name
  */
 int m_rename(struct Client* cptr, struct Client* sptr, int parc, char* parv[])
 {
+    struct Channel* chptr;
+    struct Channel* newchptr;
+    char* oldname;
+    char* newname;
+
     if (parc < 3) {
-        if (CapHas(cli_active(sptr), CAP_STANDARDREPLIES)) {
-            send_fail_reply(&me, sptr, "RENAME", cli_name(sptr), "Not enough parameters");
+        if (has_rename_caps(sptr)) {
+            send_standard_reply(&me, sptr, "FAIL", "RENAME", cli_name(sptr), "Not enough parameters");
         } else {
             send_reply(sptr, ERR_NEEDMOREPARAMS, "RENAME");
         }
-        return -1;
+        return 0;
     }
 
-    const char* oldname = parv[1];
-    const char* newname = parv[2];
+    oldname = parv[1];
+    newname = parv[2];
 
-    if (!IsGlobalChannel(oldname) || !IsGlobalChannel(newname)) {
-        if (CapHas(cli_active(sptr), CAP_STANDARDREPLIES)) {
-            send_fail_reply(&me, sptr, "RENAME", cli_name(sptr), "Invalid channel name");
-        } else {
-            send_reply(sptr, ERR_NOSUCHCHANNEL, oldname);
-        }
-        return -1;
-	}
-
-    // Find the channel to rename
-    struct Channel* chptr = FindChannel(oldname);
+    chptr = FindChannel(oldname);
     if (!chptr) {
-        if (CapHas(cli_active(sptr), CAP_STANDARDREPLIES)) {
-            send_fail_reply(&me, sptr, "RENAME", cli_name(sptr), "No such channel");
+        if (has_rename_caps(sptr)) {
+            send_standard_reply(&me, sptr, "FAIL", "RENAME", cli_name(sptr), "No such channel: %s", oldname);
         } else {
             send_reply(sptr, ERR_NOSUCHCHANNEL, oldname);
         }
-        return -1;
+        return 0;
     }
 
-	// Prevent /rename if the channel is linked
-    if (chptr->mode.mode & MODE_LINK) {
-        if (CapHas(cli_active(sptr), CAP_STANDARDREPLIES)) {
-            send_fail_reply(&me, sptr, "RENAME", cli_name(sptr), "Cannot rename a linked channel");
+    newchptr = FindChannel(newname);
+    if (newchptr) {
+        if (has_rename_caps(sptr)) {
+            send_standard_reply(&me, sptr, "FAIL", "RENAME", cli_name(sptr), "Channel name is already in use: %s", newname);
         } else {
-            send_reply(sptr, ERR_RENAME_LINKED, oldname);
+            send_reply(sptr, ERR_NICKNAMEINUSE, newname);
         }
-        return -1;
-	}
-
-    // Check if new channel name is already in use
-    if (FindChannel(newname)) {
-        if (CapHas(cli_active(sptr), CAP_STANDARDREPLIES)) {
-            send_fail_reply(&me, sptr, "RENAME", cli_name(sptr), "Channel name is already in use");
-        }
-        else {
-            send_reply(sptr, ERR_CHANNELNAMEINUSE, newname);
-        }
-        return -1;
+        return 0;
     }
 
-    // Permission check: only privileged members may rename
-    struct Membership* member = find_channel_member(sptr, chptr);
-    if (!member || !IsOwner(member)) {
-        if (CapHas(cli_active(sptr), CAP_STANDARDREPLIES)) {
-            send_fail_reply(&me, sptr, "RENAME", cli_name(sptr), "You do not have permission to rename this channel");
-        }
-        else {
+    // Only allow channel owners or servers to rename
+    struct Membership* memb = find_member_link(chptr, sptr);
+    if (!IsServer(cptr) && (!memb || !IsOwner(memb))) {
+        if (has_rename_caps(sptr)) {
+            send_standard_reply(&me, sptr, "FAIL", "RENAME", cli_name(sptr), "You're not a channel owner");
+        } else {
             send_reply(sptr, ERR_CHANOPRIVSNEEDED, oldname);
         }
-        return -1;
+        return 0;
     }
 
-    // Save old name for notification
-    char oldnamebuf[CHANNELLEN + 1];
-    ircd_strncpy(oldnamebuf, chptr->chname, CHANNELLEN);
-
-    // Update channel hash table and name
-    hRemChannel(chptr);
-    ircd_strncpy(chptr->chname, newname, CHANNELLEN);
-    hAddChannel(chptr);
-
-    // Add to rename list for future join redirection
-    add_channel_rename(oldnamebuf, newname);
-    remove_reverse_rename(newname);
-
-    // Notify all channel members individually
-    struct Membership* m;
-    for (m = chptr->members; m; m = m->next_member) {
-        capset_t caps = cli_active(m->user);
-        if (CapHas(caps, CAP_STANDARDREPLIES) && CapHas(caps, CAP_CHANNELRENAME)) {
-            // Both capabilities set: send only standard reply
-            send_note_reply(&me, m->user, "RENAME", cli_name(m->user), "%s", newname);
+    if (!IsChannelName(newname)) {
+        if (has_rename_caps(sptr)) {
+            send_standard_reply(&me, sptr, "FAIL", "RENAME", cli_name(sptr), "Invalid channel name: %s", newname);
         } else {
-            // At least one capability missing: simulate PART and JOIN
-            sendcmdto_one(m->user, CMD_PART, m->user, "%s :Channel renamed to %s", oldnamebuf, newname);
-            sendcmdto_one(m->user, CMD_JOIN, m->user, "%s", newname);
+            send_reply(sptr, ERR_BADCHANNAME, newname);
         }
-        // Always send NAMES and TOPIC
-        do_names(m->user, chptr, NAMES_ALL | NAMES_EON);
-        if (chptr->topic[0]) {
-            // If the channel has a topic, send it 
-            sendcmdto_one(m->user, CMD_TOPIC, &me, "%s :%s", newname, chptr->topic);
-        }
+        return 0;
     }
 
-    // Additionally: send IRCv3 RENAME reply to all channel members (for clients that support it)
-    sendcmdto_channel_butserv_butone(sptr, "RENAME", NULL, chptr, NULL, 0,
-        "%s :Channel renamed to %s", oldnamebuf, newname);
+    // Actually perform the rename in the channel hash table and add to redirect list
+    if (channel_rename(chptr, newname) != 0) {
+        if (has_rename_caps(sptr)) {
+            send_standard_reply(&me, sptr, "FAIL", "RENAME", cli_name(sptr), "Channel rename failed");
+        } else {
+            send_reply(sptr, ERR_UNKNOWNCOMMAND, "RENAME");
+        }
+        return 0;
+    }
 
-    // Confirmation to the user who performed the rename
-    capset_t selfcaps = cli_active(sptr);
-    if (CapHas(selfcaps, CAP_STANDARDREPLIES) && CapHas(selfcaps, CAP_CHANNELRENAME)) {
-        send_note_reply(&me, sptr, "RENAME", cli_name(sptr), "%s", newname);
+    // Add redirect to the list in channel.c
+    add_channel_redirect(oldname, newname);
+
+    // Notify the user who performed the rename
+    if (has_rename_caps(sptr)) {
+        send_standard_reply(&me, sptr, "NOTE", "RENAME", cli_name(sptr), "Channel successfully renamed from %s to %s", oldname, newname);
     } else {
-        sendcmdto_one(sptr, CMD_PART, sptr, "%s :Channel renamed to %s", oldnamebuf, newname);
-        sendcmdto_one(sptr, CMD_JOIN, sptr, "%s", newname);
-        do_names(sptr, chptr, NAMES_ALL | NAMES_EON);
-        sendcmdto_one(sptr, CMD_TOPIC, &me, "%s :%s", newname, chptr->topic);
+        send_reply(sptr, RPL_RENAMEOK, oldname, newname);
     }
 
-    // Forward the rename command to other servers
-    sendcmdto_serv_butone(sptr, CMD_RENAME, NULL, "%s %s", oldnamebuf, newname);
+    // Notify all channel members
+    for (struct Membership* member = chptr->members; member; member = member->next_member) {
+        struct Client* target = member->user;
+        if (has_rename_caps(target)) {
+            send_standard_reply(&me, target, "NOTE", "RENAME", cli_name(target), "Channel renamed from %s to %s", oldname, newname);
+        } else {
+            // Fallback: PART/JOIN for clients without the capability
+            sendcmdto_one(target, CMD_PART, target, "%s :Channel renamed to %s", oldname, newname);
+            sendcmdto_one(target, CMD_JOIN, target, "%s", newname);
+
+            do_names(target, chptr, NAMES_ALL | NAMES_EON);
+
+            if (chptr->topic[0]) {
+                send_reply(target, RPL_TOPIC, chptr->chname, chptr->topic);
+                send_reply(target, RPL_TOPICWHOTIME, chptr->chname, chptr->topic_nick, chptr->topic_time);
+            } else {
+                send_reply(target, RPL_NOTOPIC, chptr->chname);
+            }
+        }
+    }
+
+    // Propagate to other servers
+    sendcmdto_serv_butone(&me, CMD_RENAME, cptr, "%s %s", oldname, newname);
 
     return 0;
 }
 
 /*
- * Handler for the IRCv3 RENAME command received from other servers.
- * Usage: RENAME <oldchan> <newchan>
- * This function is called for remote servers.
+ * ms_rename - handle channel renaming from other servers
+ * parv[0] = sender prefix (server)
+ * parv[1] = old channel name
+ * parv[2] = new channel name
  */
 int ms_rename(struct Client* cptr, struct Client* sptr, int parc, char* parv[])
 {
+    struct Channel* chptr;
+    struct Channel* newchptr;
+    char* oldname;
+    char* newname;
+
     if (parc < 3) {
-        // Not enough parameters, silently ignore
-        return -1;
+        // Protocol violation: too few parameters
+        return protocol_violation(sptr, "Too few parameters for RENAME");
     }
 
-    const char* oldname = parv[1];
-    const char* newname = parv[2];
+    oldname = parv[1];
+    newname = parv[2];
 
-    // Find the channel to rename
-    struct Channel* chptr = FindChannel(oldname);
-    if (!chptr) {
-		chptr = get_channel(sptr, (char*)oldname, CGT_CREATE);
-        if (!chptr) {
-            // Channel does not exist, silently ignore
-            return -1;
-		}
-    }
+    chptr = FindChannel(oldname);
+    if (!chptr)
+        return 0;
 
-    // Check if new channel name is already in use
-    if (FindChannel(newname)) {
-        // New channel name already exists, ignore
-        return -1;
-    }
+    newchptr = FindChannel(newname);
+    if (newchptr)
+        return 0;
 
-    // Save old name for notification
-    char oldnamebuf[CHANNELLEN + 1];
-    ircd_strncpy(oldnamebuf, chptr->chname, CHANNELLEN);
+    if (channel_rename(chptr, newname) != 0)
+        return 0;
 
-    // Update the channel hash table before renaming
-    hRemChannel(chptr);
-    ircd_strncpy(chptr->chname, newname, CHANNELLEN);
-    hAddChannel(chptr);
+    add_channel_redirect(oldname, newname);
 
-    // Add the rename entry for join redirection
-    add_channel_rename(oldnamebuf, newname);
-    remove_reverse_rename(newname);
+    for (struct Membership* member = chptr->members; member; member = member->next_member) {
+        struct Client* target = member->user;
+        if (has_rename_caps(target)) {
+            send_standard_reply(&me, target, "NOTE", "RENAME", cli_name(target), "Channel renamed from %s to %s", oldname, newname);
+        } else {
+            sendcmdto_one(target, CMD_PART, target, "%s :Channel renamed to %s", oldname, newname);
+            sendcmdto_one(target, CMD_JOIN, target, "%s", newname);
 
-    // Notify all channel members:
-    struct Membership* m;
-    for (m = chptr->members; m; m = m->next_member) {
-        capset_t caps = cli_active(m->user);
-        if (CapHas(caps, CAP_STANDARDREPLIES) && CapHas(caps, CAP_CHANNELRENAME)) {
-            // IRCv3: send note reply
-            send_note_reply(&me, sptr, "RENAME", cli_name(sptr), "%s", newname);
-        }
-        else {
-            // Classic: simulate PART and JOIN
-            sendcmdto_one(m->user, CMD_PART, m->user, "%s :Channel renamed to %s", oldnamebuf, newname);
-            sendcmdto_one(m->user, CMD_JOIN, m->user, "%s", newname);
-        }
-        // Always send NAMES and TOPIC
-        do_names(m->user, chptr, NAMES_ALL | NAMES_EON);
-        if (chptr->topic[0]) {
-            sendcmdto_one(m->user, CMD_TOPIC, &me, "%s :%s", newname, chptr->topic);
+            do_names(target, chptr, NAMES_ALL | NAMES_EON);
+
+            if (chptr->topic[0]) {
+                send_reply(target, RPL_TOPIC, chptr->chname, chptr->topic);
+                send_reply(target, RPL_TOPICWHOTIME, chptr->chname, chptr->topic_nick, chptr->topic_time);
+            } else {
+                send_reply(target, RPL_NOTOPIC, chptr->chname);
+            }
         }
     }
 
-    // Additionally: send IRCv3 RENAME reply to all channel members
-    sendcmdto_channel_butserv_butone(sptr, "RENAME", NULL, chptr, NULL, 0,
-        "%s :Channel renamed to %s", oldnamebuf, newname);
-
-    // Forward the rename command to other servers except the source
-    sendcmdto_serv_butone(sptr, CMD_RENAME, NULL, "%s %s", oldnamebuf, newname);
+    sendcmdto_serv_butone(&me, CMD_RENAME, cptr, "%s %s", oldname, newname);
 
     return 0;
 }

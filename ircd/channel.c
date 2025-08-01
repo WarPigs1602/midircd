@@ -57,9 +57,10 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <ctype.h>
 #include <time.h>
 
-  /** Linked list containing the full list of all channels */
+/** Linked list containing the full list of all channels */
 struct Channel* GlobalChannelList = 0;
 
 /** Number of struct Membership*'s allocated */
@@ -72,67 +73,6 @@ static struct Ban* free_bans;
 static size_t bans_alloc;
 /** Number of ban structures in use. */
 static size_t bans_inuse;
-
-struct ChannelRenameEntry* GlobalChannelRenameList = NULL;
-
-void add_channel_rename(const char* oldname, const char* newname) {
-	struct ChannelRenameEntry* entry = (struct ChannelRenameEntry*)MyMalloc(sizeof(struct ChannelRenameEntry));
-	ircd_strncpy(entry->oldname, oldname, CHANNELLEN);
-	ircd_strncpy(entry->newname, newname, CHANNELLEN);
-	entry->renametime = TStime();
-	entry->next = GlobalChannelRenameList;
-	GlobalChannelRenameList = entry;
-}
-
-void remove_reverse_rename(const char* newname) {
-	struct ChannelRenameEntry* entry = GlobalChannelRenameList;
-	struct ChannelRenameEntry* prev = NULL;
-	while (entry) {
-		if (!ircd_strcmp(entry->oldname, newname)) {
-			// Entferne diesen Eintrag
-			if (prev)
-				prev->next = entry->next;
-			else
-				GlobalChannelRenameList = entry->next;
-			struct ChannelRenameEntry* tmp = entry;
-			entry = entry->next;
-			MyFree(tmp);
-			continue;
-		}
-		prev = entry;
-		entry = entry->next;
-	}
-}
-
-const char* get_renamed_channel(const char* oldname) {
-    const char* current = oldname;
-    int max_depth = 16; // Schutz vor Endlosschleifen
-    while (max_depth-- > 0) {
-        struct ChannelRenameEntry* entry = GlobalChannelRenameList;
-        int found = 0;
-        while (entry) {
-            if (!ircd_strcmp(entry->oldname, current)) {
-                current = entry->newname;
-                found = 1;
-                break;
-            }
-            entry = entry->next;
-        }
-        if (!found) break;
-    }
-    // Nur zurückgeben, wenn tatsächlich ein Rename stattfand
-    return (ircd_strcmp(oldname, current) != 0) ? current : NULL;
-}
-
-const char* get_original_channel(const char* newname) {
-	struct ChannelRenameEntry* entry = GlobalChannelRenameList;
-	while (entry) {
-		if (!ircd_strcmp(entry->newname, newname))
-			return entry->oldname;
-		entry = entry->next;
-	}
-	return NULL;
-}
 
 #if !defined(NDEBUG)
 /** return the length (>=0) of a chain of links.
@@ -148,6 +88,7 @@ static int list_length(struct SLink* lp)
 	return count;
 }
 #endif
+
 
 /** Set the mask for a ban, checking for IP masks.
  * @param[in,out] ban Ban structure to modify.
@@ -165,87 +106,6 @@ set_ban_mask(struct Ban* ban, const char* banstr)
 		if (ipmask_parse(sep + 1, &ban->address, &ban->addrbits))
 			ban->flags |= BAN_IPMASK;
 	}
-}
-
-/**
- * Returns the visible channel name (without the network ID).
- * For example: "!abcdeTest" -> "Test"
- */
-static const char* extract_network_channel_name(const char* chname) {
-	if (!chname)
-		return "";
-	if (chname[0] == '!')
-		return chname + 1 + NETWORK_ID_LEN; // skip '!' and 5 chars ID
-	return chname;
-}
-
-/**
- * Generates a random network channel ID of length NETWORK_ID_LEN.
- */
-static void generate_channel_id(char* buf, size_t len) {
-	const char charset[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
-	// Seed the random number generator with current time (only once per process)
-	static int seeded = 0;
-	if (!seeded) {
-		srand((unsigned int)time(NULL));
-		seeded = 1;
-	}
-	for (size_t i = 0; i < len; i++)
-		buf[i] = charset[rand() % (sizeof(charset) - 1)];
-	buf[len] = '\0';
-}
-
-// Returns a comma-separated list of all network channels with the same visible name
-void get_network_channel_list(const char* visible_name, char* out_list, size_t out_size) {
-	struct Channel* chptr = GlobalChannelList;
-	size_t used = 0;
-	out_list[0] = '\0';
-	while (chptr) {
-		if (IsNetworkChannel(chptr->chname) &&
-			strcmp(chptr->chname + 1 + NETWORK_ID_LEN, visible_name) == 0) {
-			size_t len = strlen(chptr->chname);
-			if (used + len + 2 < out_size) { // +2 for comma and null terminator
-				if (used > 0) {
-					out_list[used++] = ',';
-				}
-				strcpy(out_list + used, chptr->chname);
-				used += len;
-			}
-		}
-		chptr = chptr->next;
-	}
-	out_list[used] = '\0';
-}
-
-/**
- * Finds or creates a network channel with a unique ID.
- * If a channel with the same visible name exists, returns its full name.
- * Otherwise, creates a new name with a random ID and returns it.
- *
- * @param base_name The visible channel name (without '!' and ID)
- * @param out_name Buffer to store the full channel name (!IDbase_name)
- * @param out_size Size of the buffer
- */
-void create_network_channel(const char* base_name, char* out_name, size_t out_size) {
-	// Remove leading '!' from base_name if present
-	const char* clean_name = base_name;
-	if (clean_name[0] == '!')
-		clean_name++;
-
-	struct Channel* chptr = GlobalChannelList;
-	while (chptr) {
-		if (IsNetworkChannel(chptr->chname) &&
-			strcmp(extract_network_channel_name(chptr->chname), clean_name) == 0) {
-			// Channel exists, return its full name (with ID)
-			snprintf(out_name, out_size, "%s", chptr->chname);
-			return;
-		}
-		chptr = chptr->next;
-	}
-	// Channel does not exist, generate a new name with random ID
-	char id[NETWORK_ID_LEN + 1];
-	generate_channel_id(id, NETWORK_ID_LEN);
-	snprintf(out_name, out_size, "!%s%s", id, clean_name);
 }
 
 /** Allocate a new Ban structure.
@@ -523,63 +383,57 @@ int is_privileged_user(struct Client* cptr, struct Channel* chptr)
  * @param[in] banlist The list of bans to test.
  * @return Pointer to a matching ban, or NULL if none exit.
  */
-struct Ban* find_ban(struct Client* cptr, struct Ban* banlist, struct Ban* exceptionlist)
+struct Ban* find_ban(struct Client* cptr, struct Ban* banlist)
 {
-	char nu[NICKLEN + USERLEN + 2];
-	char tmphost[HOSTLEN + 1];
-	char iphost[SOCKIPLEN + 1];
+	char        nu[NICKLEN + USERLEN + 2];
+	char        tmphost[HOSTLEN + 1];
+	char        iphost[SOCKIPLEN + 1];
 	char* hostmask;
 	char* sr;
-	struct Ban* ban;
+	struct Ban* found;
 
-	// Build nick!user and alternate host names
-	ircd_snprintf(0, nu, sizeof(nu), "%s!%s", cli_name(cptr), cli_user(cptr)->username);
+	/* Build nick!user and alternate host names. */
+	ircd_snprintf(0, nu, sizeof(nu), "%s!%s",
+		cli_name(cptr), cli_user(cptr)->username);
 	ircd_ntoa_r(iphost, &cli_ip(cptr));
 	if (!IsAccount(cptr))
 		sr = NULL;
 	else if (HasHiddenHost(cptr) || HasSetHost(cptr))
 		sr = cli_user(cptr)->realhost;
-	else {
-		ircd_snprintf(0, tmphost, HOSTLEN, "%s.%s", cli_user(cptr)->account, feature_str(FEAT_HIDDEN_HOST));
+	else
+	{
+		ircd_snprintf(0, tmphost, HOSTLEN, "%s.%s",
+			cli_user(cptr)->account, feature_str(FEAT_HIDDEN_HOST));
 		sr = tmphost;
 	}
 
-	// 1. Check exception list first
-	for (ban = exceptionlist; ban; ban = ban->next) {
-		if (!(ban->flags & BAN_EXCEPTION)) continue;
-		ban->banstr[ban->nu_len] = '\0';
-		if (match(ban->banstr, nu) == 0) {
-			ban->banstr[ban->nu_len] = '@';
-			hostmask = ban->banstr + ban->nu_len + 1;
-			if (match(hostmask, cli_user(cptr)->host) == 0 ||
-				(sr && match(hostmask, sr) == 0) ||
-				((ban->flags & BAN_IPMASK) && ipmask_check(&cli_ip(cptr), &ban->address, ban->addrbits))) {
-				// Exception matches: user is NOT banned
-				return NULL;
-			}
-			ban->banstr[ban->nu_len] = '@';
-		}
+	/* Walk through ban list. */
+	for (found = NULL; banlist; banlist = banlist->next) {
+		int res;
+		/* If we have found a positive ban already, only consider exceptions. */
+		if (found && !(banlist->flags & BAN_EXCEPTION))
+			continue;
+		/* Compare nick!user portion of ban. */
+		banlist->banstr[banlist->nu_len] = '\0';
+		res = match(banlist->banstr, nu);
+		banlist->banstr[banlist->nu_len] = '@';
+		if (res)
+			continue;
+		/* Compare host portion of ban. */
+		hostmask = banlist->banstr + banlist->nu_len + 1;
+		if (!((banlist->flags & BAN_IPMASK)
+			&& ipmask_check(&cli_ip(cptr), &banlist->address, banlist->addrbits))
+			&& match(hostmask, cli_user(cptr)->host)
+			&& !(sr && !match(hostmask, sr)))
+			continue;
+		/* If an exception matches, no ban can match. */
+		if (banlist->flags & BAN_EXCEPTION)
+			return NULL;
+		/* Otherwise, remember this ban but keep searching for an exception. */
+		found = banlist;
 	}
-
-	// 2. Check ban list
-	for (ban = banlist; ban; ban = ban->next) {
-		if (ban->flags & BAN_EXCEPTION) continue;
-		ban->banstr[ban->nu_len] = '\0';
-		if (match(ban->banstr, nu) == 0) {
-			ban->banstr[ban->nu_len] = '@';
-			hostmask = ban->banstr + ban->nu_len + 1;
-			if (match(hostmask, cli_user(cptr)->host) == 0 ||
-				(sr && match(hostmask, sr) == 0) ||
-				((ban->flags & BAN_IPMASK) && ipmask_check(&cli_ip(cptr), &ban->address, ban->addrbits))) {
-				// Ban matches: user IS banned
-				return ban;
-			}
-			ban->banstr[ban->nu_len] = '@';
-		}
-	}
-	return NULL;
+	return found;
 }
-
 
 /**
  * This function returns true if the user is banned on the said channel.
@@ -591,11 +445,16 @@ struct Ban* find_ban(struct Client* cptr, struct Ban* banlist, struct Ban* excep
  */
 static int is_banned(struct Membership* member)
 {
+	struct Ban* e;
+	for (e = member->channel->exceptlist; e; e = e->next) {
+		if (match(e->banstr, cli_name(member->user)))
+			return 0; /* Exception matches, not banned */
+	}
 	if (IsBanValid(member))
 		return IsBanned(member);
 
 	SetBanValid(member);
-	if (find_ban(member->user, member->channel->banlist, member->channel->ban_exceptions)) {
+	if (find_ban(member->user, member->channel->banlist)) {
 		SetBanned(member);
 		return 1;
 	}
@@ -603,6 +462,43 @@ static int is_banned(struct Membership* member)
 		ClearBanned(member);
 		return 0;
 	}
+}
+
+static struct ChannelRedirect* redirect_list = NULL;
+
+void add_channel_redirect(const char* oldname, const char* newname) {
+	struct ChannelRedirect* entry = (struct ChannelRedirect*)MyMalloc(sizeof(struct ChannelRedirect));
+	ircd_strncpy(entry->oldname, oldname, CHANNELLEN);
+	ircd_strncpy(entry->newname, newname, CHANNELLEN);
+	entry->next = redirect_list;
+	redirect_list = entry;
+}
+
+const char* find_channel_redirect(const char* oldname) {
+	struct ChannelRedirect* entry = redirect_list;
+	while (entry) {
+		if (!ircd_strncmp(entry->oldname, oldname, sizeof(oldname)))
+			return entry->newname;
+		entry = entry->next;
+	}
+	return NULL;
+}
+
+int channel_rename(struct Channel* chptr, const char* newname) {
+	if (!chptr || !newname)
+		return -1;
+	// Remove from hash
+	hRemChannel(chptr);
+	// Save old name for redirect
+	char oldname[CHANNELLEN + 1];
+	ircd_strncpy(oldname, chptr->chname, CHANNELLEN);
+	// Set new name
+	ircd_strncpy(chptr->chname, newname, CHANNELLEN);
+	// Add to hash
+	hAddChannel(chptr);
+	// Add redirect
+	add_channel_redirect(oldname, newname);
+	return 0;
 }
 
 /** add a user to a channel.
@@ -619,25 +515,6 @@ void add_user_to_channel(struct Channel* chptr, struct Client* who,
 {
 	assert(0 != chptr);
 	assert(0 != who);
-
-	// --- Anti-Join-Flood check (Mode +j) ---
-	if (!IsInvited(who, chptr) && chptr->mode.mode & MODE_ANTIJOINFLOOD) {
-		time_t now = TStime();
-		if (chptr->joinflood_time == 0 || now - chptr->joinflood_time > chptr->joinflood_period) {
-			// Reset window
-			chptr->joinflood_time = now;
-			chptr->joinflood_count = 1;
-		}
-		else {
-			chptr->joinflood_count++;
-			if (chptr->joinflood_count > chptr->joinflood_limit) {
-				// Deny join due to flood
-				if (MyUser(who))
-					send_reply(who, ERR_JOINFLOOD, chptr->chname, "Channel join flood protection (+j) active");
-				return;
-			}
-		}
-	}
 
 	if (cli_user(who)) {
 		struct Membership* member = membershipFreeList;
@@ -661,6 +538,9 @@ void add_user_to_channel(struct Channel* chptr, struct Client* who,
 		/* Owner beim Join eines leeren Channels */
 		else if (chptr->users == 0) {
 			member->status |= CHFL_OWNER;
+		}
+		if (chptr->chname[0] == '+') {
+			member->status &= ~(CHFL_CHANSERVICE | CHFL_OWNER | CHFL_ADMIN | CHFL_CHANOP | CHFL_HALFOP | CHFL_VOICE);
 		}
 
 		member->next_member = chptr->members;
@@ -952,7 +832,7 @@ int client_can_send_to_channel(struct Client* cptr, struct Channel* chptr, int r
 			((chptr->mode.mode & MODE_TLSONLY) && !IsTLS(cptr)))
 			return 0;
 		else
-			return !find_ban(cptr, chptr->banlist, chptr->ban_exceptions);
+			return !find_ban(cptr, chptr->banlist);
 	}
 	return member_can_send_to_channel(member, reveal);
 }
@@ -1039,13 +919,41 @@ void channel_modes(struct Client* cptr, char* mbuf, char* pbuf, int buflen,
 		*mbuf++ = 'M';
 	if (chptr->mode.mode & MODE_TLSONLY)
 		*mbuf++ = 'Z';
-
 	else if (MyUser(cptr) && (chptr->mode.mode & MODE_WASDELJOINS))
 		*mbuf++ = 'd';
 	if (chptr->mode.limit) {
 		*mbuf++ = 'l';
 		ircd_snprintf(0, pbuf, buflen, "%u", chptr->mode.limit);
 		previous_parameter = 1;
+	}
+	if (chptr->mode.mode & MODE_EXCEPT) {
+		struct Ban* e;
+		for (e = chptr->exceptlist; e; e = e->next) {
+			*mbuf++ = 'e';
+			if (previous_parameter)
+				strcat(pbuf, " ");
+			strcat(pbuf, e->banstr);
+			previous_parameter = 1;
+		}
+	}
+	if (chptr->mode.mode & MODE_LINK) {
+		*mbuf++ = 'L';
+		if (*chptr->mode.linkchan) {
+			if (previous_parameter)
+				strcat(pbuf, " ");
+			strcat(pbuf, chptr->mode.linkchan);
+			previous_parameter = 1;
+		}
+	}
+
+	if (chptr->mode.mode & MODE_JOINFLOOD) {
+		*mbuf++ = 'j';
+		if (*chptr->mode.joinflood) {
+			if (previous_parameter)
+				strcat(pbuf, " ");
+			strcat(pbuf, chptr->mode.joinflood);
+			previous_parameter = 1;
+		}
 	}
 
 	if (*chptr->mode.key) {
@@ -1080,25 +988,6 @@ void channel_modes(struct Client* cptr, char* mbuf, char* pbuf, int buflen,
 		else
 			strcat(pbuf, "*");
 	}
-
-	if (chptr->mode.mode & MODE_ANTIJOINFLOOD) {
-		*mbuf++ = 'j';
-		if (chptr->joinflood_limit > 0 && chptr->joinflood_period > 0) {
-			if (previous_parameter)
-				strcat(pbuf, " ");
-			char tmp[32];
-			snprintf(tmp, sizeof(tmp), "%d:%d", chptr->joinflood_limit, chptr->joinflood_period);
-			strcat(pbuf, tmp);
-			previous_parameter = 1;
-		}
-	}
-	if (chptr->mode.mode & MODE_LINK) {
-		*mbuf++ = 'L';
-		if (previous_parameter)
-			strcat(pbuf, " ");
-		strcat(pbuf, chptr->mode.linktarget);
-		previous_parameter = 1;
-	}
 	*mbuf = '\0';
 }
 
@@ -1120,15 +1009,48 @@ int compare_member_oplevel(const void* mp1, const void* mp2)
 	return (member1->oplevel < member2->oplevel) ? -1 : 1;
 }
 
-// Add function to check for ban exception
-int is_ban_exception(struct Channel* chptr, struct Client* sptr)
-{
-	struct Ban* banex;
-	for (banex = chptr->ban_exceptions; banex; banex = banex->next) {
-		if (match(banex->banstr, cli_name(sptr)) == 0)
-			return 1; // Exception found
+/* Extracts the 5-char ID from a network-secure channel name (!ABCDEfoo) */
+const char* NetSecureChannelID(const char* name) {
+	static char id[6];
+	if (!IsNetSecureChannelName(name))
+		return NULL;
+	strncpy(id, name + 1, 5);
+	id[5] = '\0';
+	return id;
+}
+
+/* Checks if a network-secure channel ID is already in use */
+int NetSecureChannelIDExists(const char* id) {
+	struct Channel* ch;
+	for (ch = GlobalChannelList; ch; ch = ch->next) {
+		if (IsNetSecureChannelName(ch->chname) && strcmp(NetSecureChannelID(ch->chname), id) == 0)
+			return 1;
 	}
-	return 0; // No exception
+	return 0;
+}
+
+const char* get_channel_redirect(const char* newname)
+{
+	struct ChannelRedirect* r;
+	for (r = redirect_list; r; r = r->next) {
+		if (strcmp(r->newname, newname) == 0)
+			return r->oldname;
+	}
+	return NULL;
+}
+
+/* Validation for network-secure channel names */
+int IsNetSecureChannelName(const char* name)
+{
+	// Format: !ABCDEname (at least 6 characters after !, ID = 5 alphanumeric)
+	if (!name || name[0] != '!')
+		return 0;
+	for (int i = 1; i <= 5; ++i)
+		if (!isalnum((unsigned char)name[i]))
+			return 0;
+	if (!name[6] || !IsChannelChar(name[6]))
+		return 0;
+	return 1;
 }
 
 /* send "cptr" a full list of the modes for channel chptr.
@@ -1153,10 +1075,8 @@ void send_channel_modes(struct Client* cptr, struct Channel* chptr)
 	};
 	char modebuf[MODEBUFLEN], parabuf[MODEBUFLEN];
 	struct Membership* member;
-	struct Ban* ban;
-	struct Ban* exban;
 	struct MsgBuf* mb;
-	int first, full;
+	int i, first, full, mode_index;
 	size_t len;
 
 	assert(cptr);
@@ -1171,6 +1091,10 @@ void send_channel_modes(struct Client* cptr, struct Channel* chptr)
 	first = 1;
 	full = 1;
 
+	// --- NEU: Array für bereits ausgegebene User ---
+	char printed_nicks[512][NICKLEN + 1];
+	int printed_count = 0;
+
 	while (full) {
 		full = 0;
 		mb = msgq_make(&me, "%C " TOK_BURST " %H %Tu", &me, chptr, chptr->creationtime);
@@ -1181,24 +1105,26 @@ void send_channel_modes(struct Client* cptr, struct Channel* chptr)
 				msgq_append(&me, mb, " %s", parabuf);
 		}
 
-
-		// PATCH: User-Modes für alle Mitglieder ausgeben
+		// Sende alle Mitglieder mit ihren Status-Modi, aber nur einmal pro Nick
 		for (member = chptr->members, first = 1; member; member = member->next_member) {
 			char* nick = cli_name(member->user);
+			int already_printed = 0;
+			for (i = 0; i < printed_count; ++i) {
+				if (!strcmp(printed_nicks[i], nick)) {
+					already_printed = 1;
+					break;
+				}
+			}
+			if (already_printed)
+				continue;
+
 			char modestr[8] = { 0 };
 			int m = 0;
-			for (int mode_index = 0; mode_index < sizeof(user_modes) / sizeof(user_modes[0]); ++mode_index) {
+			for (mode_index = 0; mode_index < sizeof(user_modes) / sizeof(user_modes[0]); ++mode_index) {
 				if (member->status & user_modes[mode_index].flag)
 					modestr[m++] = user_modes[mode_index].modechar;
 			}
 			modestr[m] = '\0';
-
-			if (modestr[0]) {
-				msgq_append(&me, mb, " %s:%s", nick, modestr);
-			}
-			else {
-				msgq_append(&me, mb, " %s", nick);
-			}
 
 			len = strlen(nick) + (modestr[0] ? strlen(modestr) + 1 : 0);
 			if (msgq_bufleft(mb) < len + 2) {
@@ -1208,35 +1134,49 @@ void send_channel_modes(struct Client* cptr, struct Channel* chptr)
 			msgq_append(&me, mb, "%c%C%s%s", first ? ' ' : ',', member->user,
 				modestr[0] ? ":" : "", modestr);
 			first = 0;
+
+			// Nick als ausgegeben markieren
+			strncpy(printed_nicks[printed_count++], nick, NICKLEN);
+			printed_nicks[printed_count - 1][NICKLEN] = '\0';
 		}
 
-		// --- Bans ausgeben ---
+		// Sende Ban-Liste
 		if (!full) {
-			for (ban = chptr->banlist, first = 2; ban; ban = ban->next) {
-				len = strlen(ban->banstr);
+			struct Ban* lp2;
+			for (lp2 = chptr->banlist, first = 2; lp2; lp2 = lp2->next) {
+				len = strlen(lp2->banstr);
 				if (msgq_bufleft(mb) < len + 1 + first) {
 					full = 1;
 					break;
 				}
-				msgq_append(&me, mb, " %s%s", first ? ":%" : "", ban->banstr);
+				msgq_append(&me, mb, " %s%s", first ? ":%" : "", lp2->banstr);
 				first = 0;
 			}
 		}
-
-		// --- Ban-Exceptions (+e) ausgeben ---
+		// ... nach dem Block für die Ban-Liste:
 		if (!full) {
-			for (exban = chptr->ban_exceptions, first = 1; exban; exban = exban->next) {
-				len = strlen(exban->banstr);
-				if (msgq_bufleft(mb) < len + 4 + first) {
+			struct Ban* ex2;
+			for (ex2 = chptr->exceptlist, first = 2; ex2; ex2 = ex2->next) {
+				len = strlen(ex2->banstr);
+				if (msgq_bufleft(mb) < len + 3 + first) { // +3 für " :%e"
 					full = 1;
 					break;
 				}
-				// Format: " :%+e:mask"
-				msgq_append(&me, mb, " %s+e:%s", first ? ":%" : "", exban->banstr);
+				msgq_append(&me, mb, " %s%%e%s", first ? ":" : "", ex2->banstr);
 				first = 0;
 			}
 		}
-
+		// --- NEW: Send channel rename info if present ---
+		const char* oldname = get_channel_redirect(chptr->chname);
+		if (!full && oldname && oldname[0]) {
+			size_t rlen = strlen(oldname);
+			if (msgq_bufleft(mb) < rlen + 5) { // " :%r " + oldname + null
+				full = 1;
+			}
+			else {
+				msgq_append(&me, mb, " :%%r %s", oldname);
+			}
+		}
 		send_buffer(cptr, mb, 0);
 		msgq_clean(mb);
 	}
@@ -1395,6 +1335,33 @@ void clean_channelname(char* cn)
 	}
 }
 
+/* Generates a unique 5-character alphanumeric ID for network-secure channels */
+void GenerateNetSecureChannelID(char* out_id, size_t out_size) {
+	static const char charset[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+	int charset_len = (int)(sizeof(charset) - 1);
+	int i;
+	int max_attempts = 1000;
+
+	if (out_size < 6) { // 5 chars + null terminator
+		if (out_size > 0) out_id[0] = '\0';
+		return;
+	}
+
+	srand((unsigned int)time(NULL) ^ (unsigned int)rand());
+
+	for (int attempt = 0; attempt < max_attempts; ++attempt) {
+		for (i = 0; i < 5; ++i) {
+			out_id[i] = charset[rand() % charset_len];
+		}
+		out_id[5] = '\0';
+
+		if (!NetSecureChannelIDExists(out_id))
+			return;
+	}
+	// If all attempts fail, return an empty string
+	out_id[0] = '\0';
+}
+
 /** Get a channel block, creating if necessary.
  *  Get Channel block for chname (and allocate a new channel
  *  block, if it didn't exists before).
@@ -1421,6 +1388,8 @@ struct Channel* get_channel(struct Client* cptr, char* chname, ChannelGetType fl
 		len = CHANNELLEN;
 		*(chname + CHANNELLEN) = '\0';
 	}
+	if (!IsChannelName(chname))
+		return NULL;
 	if ((chptr = FindChannel(chname)))
 		return (chptr);
 	if (flag == CGT_CREATE)
@@ -1796,8 +1765,7 @@ modebuf_flush_int(struct ModeBuf* mbuf, int all)
 					MODE_NOMULTITARGET, 'T',
 					MODE_MODERATENOREG, 'M',
 					MODE_TLSONLY,       'Z',
-					MODE_ANTIJOINFLOOD, 'j', // Added joinflood mode (+j)
-					MODE_LINK,          'L',
+
 					0x0, 0x0
 	};
 	static int local_flags[] = {
@@ -1882,8 +1850,9 @@ modebuf_flush_int(struct ModeBuf* mbuf, int all)
 
 		if (MB_TYPE(mbuf, i) & (MODE_CHANSERVICE | MODE_OWNER | MODE_ADMIN | MODE_CHANOP | MODE_HALFOP | MODE_VOICE)) {
 			tmp = strlen(cli_name(MB_CLIENT(mbuf, i)));
-			if ((totalbuflen - IRCD_MAX(9, tmp)) <= 0)
-				MB_TYPE(mbuf, i) |= MODE_SAVE;
+
+			if ((totalbuflen - IRCD_MAX(9, tmp)) <= 0) // don't overflow buffer
+				MB_TYPE(mbuf, i) |= MODE_SAVE; // save for later
 			else {
 				char modechar = 0;
 				if (MB_TYPE(mbuf, i) & MODE_CHANSERVICE) modechar = 'S';
@@ -1898,13 +1867,14 @@ modebuf_flush_int(struct ModeBuf* mbuf, int all)
 				totalbuflen -= IRCD_MAX(9, tmp) + 1;
 			}
 		}
-		else if (MB_TYPE(mbuf, i) & (MODE_BAN | MODE_BANEXCEPTION | MODE_APASS | MODE_UPASS)) {
+		else if (MB_TYPE(mbuf, i) & (MODE_BAN | MODE_APASS | MODE_UPASS | MODE_EXCEPT)) {
 			tmp = strlen(MB_STRING(mbuf, i));
-			if ((totalbuflen - tmp) <= 0)
-				MB_TYPE(mbuf, i) |= MODE_SAVE;
+
+			if ((totalbuflen - tmp) <= 0) /* don't overflow buffer */
+				MB_TYPE(mbuf, i) |= MODE_SAVE; /* save for later */
 			else {
 				char mode_char;
-				switch (MB_TYPE(mbuf, i) & (MODE_BAN | MODE_BANEXCEPTION | MODE_APASS | MODE_UPASS))
+				switch (MB_TYPE(mbuf, i) & (MODE_BAN | MODE_APASS | MODE_UPASS | MODE_EXCEPT))
 				{
 				case MODE_APASS:
 					mode_char = 'A';
@@ -1912,14 +1882,8 @@ modebuf_flush_int(struct ModeBuf* mbuf, int all)
 				case MODE_UPASS:
 					mode_char = 'U';
 					break;
-				case MODE_BANEXCEPTION:
-					mode_char = 'e'; // Ban-Exception (+e)
-					break;
-				case MODE_ANTIJOINFLOOD:
-					mode_char = 'j'; // Joinflood (+j)
-					break;
-				case MODE_LINK:
-					mode_char = 'L'; // Link (+L)
+				case MODE_EXCEPT:
+					mode_char = 'e';
 					break;
 				default:
 					mode_char = 'b';
@@ -1929,7 +1893,17 @@ modebuf_flush_int(struct ModeBuf* mbuf, int all)
 				totalbuflen -= tmp + 1;
 			}
 		}
+		else if (MB_TYPE(mbuf, i) & MODE_KEY) {
+			tmp = (mbuf->mb_dest & MODEBUF_DEST_NOKEY ? 1 :
+				strlen(MB_STRING(mbuf, i)));
 
+			if ((totalbuflen - tmp) <= 0) /* don't overflow buffer */
+				MB_TYPE(mbuf, i) |= MODE_SAVE; /* save for later */
+			else {
+				bufptr[(*bufptr_i)++] = 'k';
+				totalbuflen -= tmp + 1;
+			}
+		}
 		else if (MB_TYPE(mbuf, i) & MODE_LIMIT) {
 			/* if it's a limit, we also format the number */
 			ircd_snprintf(0, limitbuf, sizeof(limitbuf), "%u", MB_UINT(mbuf, i));
@@ -1943,23 +1917,27 @@ modebuf_flush_int(struct ModeBuf* mbuf, int all)
 				totalbuflen -= tmp + 1;
 			}
 		}
-		else if (MB_TYPE(mbuf, i) & MODE_ANTIJOINFLOOD) {
-			char joinfloodbuf[32];
-			snprintf(joinfloodbuf, sizeof(joinfloodbuf), "%d:%d",
-				mbuf->mb_channel->joinflood_limit,
-				mbuf->mb_channel->joinflood_period);
-			bufptr[(*bufptr_i)++] = 'j';
-			totalbuflen -= strlen(joinfloodbuf) + 1;
-		}
 		else if (MB_TYPE(mbuf, i) & MODE_LINK) {
-			/* Link mode (+L) */
 			tmp = strlen(MB_STRING(mbuf, i));
 			if ((totalbuflen - tmp) <= 0)
-				MB_TYPE(mbuf, i) |= MODE_SAVE; /* save for later */
+				MB_TYPE(mbuf, i) |= MODE_SAVE;
 			else {
 				bufptr[(*bufptr_i)++] = 'L';
 				totalbuflen -= tmp + 1;
 			}
+		}
+		else if (MB_TYPE(mbuf, i) & MODE_JOINFLOOD) {
+			tmp = strlen(MB_STRING(mbuf, i));
+			if ((totalbuflen - tmp) <= 0)
+				MB_TYPE(mbuf, i) |= MODE_SAVE;
+			else {
+				bufptr[(*bufptr_i)++] = 'j';
+				totalbuflen -= tmp + 1;
+			}
+		}
+		else {
+			/* unknown mode; skip it */
+			continue;
 		}
 	}
 
@@ -1995,8 +1973,11 @@ modebuf_flush_int(struct ModeBuf* mbuf, int all)
 			/* deal with clients... */
 			if (MB_TYPE(mbuf, i) & (MODE_CHANSERVICE|MODE_OWNER|MODE_ADMIN|MODE_CHANOP | MODE_HALFOP | MODE_VOICE))
 				build_string(strptr, strptr_i, cli_name(MB_CLIENT(mbuf, i)), 0, ' ');
+
 			/* deal with bans... */
-			else if (MB_TYPE(mbuf, i) & (MODE_BAN|MODE_BANEXCEPTION))
+			else if (MB_TYPE(mbuf, i) & MODE_BAN)
+				build_string(strptr, strptr_i, MB_STRING(mbuf, i), 0, ' ');
+			else if (MB_TYPE(mbuf, i) & MODE_EXCEPT)
 				build_string(strptr, strptr_i, MB_STRING(mbuf, i), 0, ' ');
 
 			/* deal with keys... */
@@ -2015,15 +1996,23 @@ modebuf_flush_int(struct ModeBuf* mbuf, int all)
 			else if ((MB_TYPE(mbuf, i) & (MODE_ADD | MODE_LIMIT)) ==
 				(MODE_ADD | MODE_LIMIT))
 				build_string(strptr, strptr_i, limitbuf, 0, ' ');
-			else if ((MB_TYPE(mbuf, i) & (MODE_ADD | MODE_ANTIJOINFLOOD)) == (MODE_ADD | MODE_ANTIJOINFLOOD)) {
-				char joinfloodbuf[32];
-				snprintf(joinfloodbuf, sizeof(joinfloodbuf), "%d:%d",
-					mbuf->mb_channel->joinflood_limit,
-					mbuf->mb_channel->joinflood_period);
-				build_string(strptr, strptr_i, joinfloodbuf, 0, ' ');
-			}
 			else if ((MB_TYPE(mbuf, i) & (MODE_ADD | MODE_LINK)) == (MODE_ADD | MODE_LINK)) {
-				build_string(strptr, strptr_i, MB_STRING(mbuf, i), 0, ' ');
+				// Only add parameter if not empty, else do not send +L at all
+				if (MB_STRING(mbuf, i) && *MB_STRING(mbuf, i))
+					build_string(strptr, strptr_i, MB_STRING(mbuf, i), 0, ' ');
+				else
+					; // skip, do not send +L without parameter
+			}
+			else if ((MB_TYPE(mbuf, i) & (MODE_ADD | MODE_JOINFLOOD)) == (MODE_ADD | MODE_JOINFLOOD)) {
+				// Only add parameter if not empty, else do not send +j at all
+				if (MB_STRING(mbuf, i) && *MB_STRING(mbuf, i))
+					build_string(strptr, strptr_i, MB_STRING(mbuf, i), 0, ' ');
+				else
+					; // skip, do not send +j without parameter
+			}
+			else {
+				/* unknown mode; skip it */
+				continue;
 			}
 		}
 
@@ -2113,7 +2102,7 @@ modebuf_flush_int(struct ModeBuf* mbuf, int all)
 				build_string(strptr, strptr_i, NumNick(MB_CLIENT(mbuf, i)), ' ');
 
 			/* deal with modes that take strings */
-			else if (MB_TYPE(mbuf, i) & (MODE_KEY | MODE_BAN | MODE_BANEXCEPTION | MODE_APASS | MODE_UPASS))
+			else if (MB_TYPE(mbuf, i) & (MODE_KEY | MODE_BAN | MODE_APASS | MODE_UPASS | MODE_LINK | MODE_JOINFLOOD | MODE_EXCEPT))
 				build_string(strptr, strptr_i, MB_STRING(mbuf, i), 0, ' ');
 
 			/*
@@ -2123,16 +2112,6 @@ modebuf_flush_int(struct ModeBuf* mbuf, int all)
 			 */
 			else if ((MB_TYPE(mbuf, i) & limitdel) == limitdel)
 				build_string(strptr, strptr_i, limitbuf, 0, ' ');
-			else if ((MB_TYPE(mbuf, i) & (MODE_ADD | MODE_ANTIJOINFLOOD)) == (MODE_ADD | MODE_ANTIJOINFLOOD)) {
-				char joinfloodbuf[32];
-				snprintf(joinfloodbuf, sizeof(joinfloodbuf), "%d:%d",
-					mbuf->mb_channel->joinflood_limit,
-					mbuf->mb_channel->joinflood_period);
-				build_string(strptr, strptr_i, joinfloodbuf, 0, ' ');
-			}
-			else if ((MB_TYPE(mbuf, i) & (MODE_ADD | MODE_LINK)) == (MODE_ADD | MODE_LINK)) {
-				build_string(strptr, strptr_i, MB_STRING(mbuf, i), 0, ' ');
-			}
 		}
 
 		/* we were told to deop the source */
@@ -2260,7 +2239,7 @@ modebuf_mode(struct ModeBuf* mbuf, unsigned int mode)
 	mode &= (MODE_ADD | MODE_DEL | MODE_PRIVATE | MODE_SECRET | MODE_MODERATED |
 		MODE_TOPICLIMIT | MODE_INVITEONLY | MODE_NOPRIVMSGS | MODE_REGONLY |
 		MODE_DELJOINS | MODE_WASDELJOINS | MODE_NOQUITPARTS | MODE_NOCOLOUR |
-		MODE_NOCTCP | MODE_NONOTICE | MODE_NOMULTITARGET | MODE_MODERATENOREG | MODE_TLSONLY);
+		MODE_NOCTCP | MODE_NONOTICE | MODE_NOMULTITARGET | MODE_MODERATENOREG | MODE_TLSONLY | MODE_LINK );
 
 	if (!(mode & ~(MODE_ADD | MODE_DEL))) /* don't add empty modes... */
 		return;
@@ -2449,8 +2428,6 @@ modebuf_extract(struct ModeBuf* mbuf, char* buf)
 			MODE_UPASS,		'U',
 			/*  MODE_BAN,		'b', */
 				MODE_LIMIT,		'l',
-				MODE_ANTIJOINFLOOD, 'j', // +j: Joinflood mode
-				MODE_LINK,		'L', // +L: Link mode
 				MODE_REGONLY,	'r',
 				MODE_DELJOINS,      'D',
 				MODE_NOQUITPARTS,   'u',
@@ -2460,14 +2437,14 @@ modebuf_extract(struct ModeBuf* mbuf, char* buf)
 				MODE_NOMULTITARGET, 'T',
 				MODE_MODERATENOREG, 'M',
 				MODE_TLSONLY,       'Z',
+				MODE_LINK, 	 'L',
 				0x0, 0x0
 	};
 	unsigned int add;
 	int i, bufpos = 0, len;
 	int* flag_p;
 	char* key = 0, limitbuf[20];
-	char* apass = 0, * upass = 0;
-	char joinfloodbuf[32] = { 0 }; // Buffer for +j parameter
+	char* apass = 0, * upass = 0, * link = 0;
 
 	assert(0 != mbuf);
 	assert(0 != buf);
@@ -2478,7 +2455,7 @@ modebuf_extract(struct ModeBuf* mbuf, char* buf)
 
 	for (i = 0; i < mbuf->mb_count; i++) { /* find keys and limits */
 		if (MB_TYPE(mbuf, i) & MODE_ADD) {
-			add |= MB_TYPE(mbuf, i) & (MODE_KEY | MODE_LIMIT | MODE_APASS | MODE_UPASS | MODE_ANTIJOINFLOOD | MODE_LINK);
+			add |= MB_TYPE(mbuf, i) & (MODE_KEY | MODE_LIMIT | MODE_APASS | MODE_UPASS | MODE_LINK);
 
 			if (MB_TYPE(mbuf, i) & MODE_KEY) /* keep strings */
 				key = MB_STRING(mbuf, i);
@@ -2488,17 +2465,8 @@ modebuf_extract(struct ModeBuf* mbuf, char* buf)
 				upass = MB_STRING(mbuf, i);
 			else if (MB_TYPE(mbuf, i) & MODE_APASS)
 				apass = MB_STRING(mbuf, i);
-			else if (MB_TYPE(mbuf, i) & MODE_ANTIJOINFLOOD)
-				ircd_snprintf(0, joinfloodbuf, sizeof(joinfloodbuf), "%d:%d",
-					mbuf->mb_channel->joinflood_limit,
-					mbuf->mb_channel->joinflood_period);
-			else if (MB_TYPE(mbuf, i) & MODE_LINK) {
-				// Link mode (+L)
-				if (MB_STRING(mbuf, i) && *MB_STRING(mbuf, i))
-					ircd_snprintf(0, limitbuf, sizeof(limitbuf), "%s", MB_STRING(mbuf, i));
-				else
-					limitbuf[0] = '\0'; // No link set
-			}
+			else if (MB_TYPE(mbuf, i) & MODE_LINK)
+				link = MB_STRING(mbuf, i);
 		}
 	}
 
@@ -2520,8 +2488,8 @@ modebuf_extract(struct ModeBuf* mbuf, char* buf)
 			build_string(buf, &bufpos, upass, 0, ' ');
 		else if (buf[i] == 'A')
 			build_string(buf, &bufpos, apass, 0, ' ');
-		else if (buf[i] == 'j')
-			build_string(buf, &bufpos, joinfloodbuf, 0, ' ');
+		else if (buf[i] == 'L')
+			build_string(buf, &bufpos, link, 0, ' ');
 	}
 
 	buf[bufpos] = '\0';
@@ -2570,14 +2538,9 @@ mode_invite_clear(struct Channel* chan)
 #define DONE_KEY_DEL    0x80    /**< We've removed the key */
 #define DONE_UPASS_DEL  0x100   /**< We've removed the user pass */
 #define DONE_APASS_DEL  0x200   /**< We've removed the admin pass */
-#define DONE_ANTIJOINFLOOD 0x400 /**< We've set the joinflood mode */
-#define DONE_BANEXCEPTION 0x800 /**< We've set a ban exception */
-#define DONE_BANEXCEPTION_DEL 0x1000 /**< We've removed a ban exception */
-#define DONE_BANEXCEPTION_ADD 0x2000 /**< We've added a ban exception */
-#define DONE_ANTIJOINFLOOD_DEL 0x4000 /**< We've removed the joinflood mode */
-#define DONE_ANTIJOINFLOOD_ADD 0x8000 /**< We've added the joinflood mode */
-#define DONE_LINK_ADD 0x10000 /**< We've added a link mode */
-#define DONE_LINK_DEL 0x20000 /**< We've removed a link mode */
+#define DONE_LINK_ADD   0x400   /**< We've set the link */
+#define DONE_LINK_DEL   0x800   /**< We've removed the link */
+#define DONE_EXCEPTCLEAN 0x1000 /**< We've cleaned exceptions */
 
 struct ParseState {
 	struct ModeBuf* mbuf;
@@ -3150,55 +3113,51 @@ bmatch(struct Ban* old_ban, struct Ban* new_ban)
 int apply_ban(struct Ban** banlist, struct Ban* newban, int do_free)
 {
 	struct Ban* ban;
-	struct Ban* prev = NULL;
-	int matched = 0;
-	int is_exception = (newban->flags & BAN_EXCEPTION);
+	size_t count = 0;
 
+	assert(newban->flags & (BAN_ADD | BAN_DEL));
 	if (newban->flags & BAN_ADD) {
-		// Duplikate verhindern
+		size_t totlen = 0;
+		/* If a less specific *active* entry is found, fail.  */
 		for (ban = *banlist; ban; ban = ban->next) {
-			if (((ban->flags & BAN_EXCEPTION) == is_exception) &&
-				!strcmp(ban->banstr, newban->banstr)) {
-				if (do_free) free_ban(newban);
+			if (!bmatch(ban, newban) && !(ban->flags & BAN_DEL)) {
+				if (do_free)
+					free_ban(newban);
 				return 1;
 			}
+			if (!(ban->flags & (BAN_OVERLAPPED | BAN_DEL))) {
+				count++;
+				totlen += strlen(ban->banstr);
+			}
 		}
-		// Am Ende einfügen
-		if (*banlist == NULL) {
-			*banlist = newban;
+		/* Mark more specific entries and add this one to the end of the list. */
+		while ((ban = *banlist) != NULL) {
+			if (!bmatch(newban, ban)) {
+				ban->flags |= BAN_OVERLAPPED | BAN_DEL;
+			}
+			banlist = &ban->next;
 		}
-		else {
-			ban = *banlist;
-			while (ban->next) ban = ban->next;
-			ban->next = newban;
-		}
-		newban->next = NULL;
+		*banlist = newban;
 		return 0;
 	}
-
-	if (newban->flags & BAN_DEL) {
-		prev = NULL;
-		ban = *banlist;
-		while (ban) {
-			if (((ban->flags & BAN_EXCEPTION) == is_exception) &&
-				!strcmp(ban->banstr, newban->banstr)) {
-				// Entferne aus Liste
-				if (prev)
-					prev->next = ban->next;
-				else
-					*banlist = ban->next;
-				free_ban(ban);
-				matched = 1;
-				break; // Nur das erste passende löschen
+	else if (newban->flags & BAN_DEL) {
+		size_t remove_count = 0;
+		/* Mark more specific entries. */
+		for (ban = *banlist; ban; ban = ban->next) {
+			if (!bmatch(newban, ban)) {
+				ban->flags |= BAN_OVERLAPPED | BAN_DEL;
+				remove_count++;
 			}
-			prev = ban;
-			ban = ban->next;
 		}
-		if (do_free) free_ban(newban);
-		return matched ? 0 : 3;
+		if (remove_count)
+			return 0;
+		/* If no matches were found, fail. */
+		if (do_free)
+			free_ban(newban);
+		return 3;
 	}
-
-	if (do_free) free_ban(newban);
+	if (do_free)
+		free_ban(newban);
 	return 4;
 }
 
@@ -3254,7 +3213,7 @@ mode_parse_ban(struct ParseState* state, int* flag_p)
 	newban = state->banlist + (state->numbans++);
 	newban->next = 0;
 	newban->flags = ((state->dir == MODE_ADD) ? BAN_ADD : BAN_DEL)
-		| (*flag_p == MODE_BAN | MODE_BANEXCEPTION ? 0 : BAN_EXCEPTION);
+		| (*flag_p == MODE_BAN ? 0 : BAN_EXCEPTION);
 	set_ban_mask(newban, collapse(pretty_mask(t_str)));
 	ircd_strncpy(newban->who, IsUser(state->sptr) ? cli_name(state->sptr) : "*", NICKLEN);
 	newban->when = TStime();
@@ -3386,7 +3345,8 @@ mode_parse_client(struct ParseState* state, int* flag_p)
 	state->max_args--;
 
 	// Prüfe, ob ein User-Modus gesetzt werden soll (+S, +q, +a, +o, +h)
-	if (!(state->flags & (MODE_CHANSERVICE | MODE_OWNER | MODE_ADMIN | MODE_CHANOP | MODE_HALFOP))) {
+	unsigned int user_mode_flags = MODE_CHANSERVICE | MODE_OWNER | MODE_ADMIN | MODE_CHANOP | MODE_HALFOP;
+	if (!(state->flags & user_mode_flags)) {
 		send_notoper(state, flag_p[0]);
 		return;
 	}
@@ -3477,7 +3437,7 @@ static void mode_process_clients(struct ParseState* state)
 			if (!(state->cli_change[i].flag & modeflag))
 				continue;
 
-			// Deduplizierung: Prüfe, ob Nick bereits mit anderem Moduschar verarbeitet wurde
+			// Deduplication: Check if this nick with a different modechar was already processed
 			int duplicate_wrong_mode = 0;
 			for (int j = 0; j < printed_count; ++j) {
 				if (!strcmp(printed[j].name, nick) && printed[j].modechar != modechar) {
@@ -3488,7 +3448,7 @@ static void mode_process_clients(struct ParseState* state)
 			if (duplicate_wrong_mode)
 				continue;
 
-			// Deduplizierung: Prüfe, ob Nick+Moduschar schon verarbeitet wurde
+			// Deduplication: Check if this nick+modechar was already processed
 			int already_printed = 0;
 			for (int j = 0; j < printed_count; ++j) {
 				if (!strcmp(printed[j].name, nick) && printed[j].modechar == modechar) {
@@ -3504,18 +3464,23 @@ static void mode_process_clients(struct ParseState* state)
 			printed[printed_count].modechar = modechar;
 			printed_count++;
 
-			// --- Korrektur: Halfops dürfen keine Rechte ändern ---
+			// --- NEW: Rank check ---
 			if (state->flags & MODE_PARSE_SET) {
 				struct Membership* setter = state->member;
-				// Nur Chanops und höher dürfen Rechte ändern (Halfops ausgeschlossen)
-				if (!setter || !(setter->status & (CHFL_CHANOP | CHFL_ADMIN | CHFL_OWNER | CHFL_CHANSERVICE))) {
-					if (MyUser(state->sptr)) {
-						send_reply(state->sptr, ERR_CHANOPRIVSNEEDED, state->chptr->chname);
+				int setter_rank = setter ? get_mode_rank(setter->status) : 0;
+				int target_rank = get_mode_rank(member->status);
+				int mode_rank = get_mode_rank(modeflag);
+
+				// ChanService can do everything
+				if (!(setter && (setter->status & CHFL_CHANSERVICE))) {
+					// Only allow if setter has a higher rank than the target and at least the mode's rank
+					if (setter_rank < mode_rank || setter_rank < target_rank) {
+						if (MyUser(state->sptr)) {
+							send_reply(state->sptr, ERR_CHANOPRIVSNEEDED, state->chptr->chname);
+						}
+						continue;
 					}
-					continue;
 				}
-				// Optional: Wenn du weiterhin die Hierarchie beachten willst:
-				// if (!has_channel_permission(setter, member, CHFL_CHANOP)) { ... }
 			}
 
 			if ((state->cli_change[i].flag & MODE_ADD && (modeflag & member->status)) ||
@@ -3600,219 +3565,244 @@ static void handle_simple_mode(struct ParseState* state, int* flag_p) {
 	mode_parse_mode(state, flag_p);
 }
 
-/**
- * Handles +e/-e (ban exception) mode changes.
- * Ensures that each add/remove is only processed once per MODE command.
- * Propagates changes via ModeBuf for visible channel updates.
- */
-static void mode_parse_ban_exception(struct ParseState* state, int* flag_p)
+static void mode_parse_link(struct ParseState* state, int* flag_p)
 {
-	char* t_str;
-	struct Ban* newex;
+	char* t_str = NULL;
 
-	// List all exceptions if no parameter is given
+	// Only check privileges for local users, not for BURST or server
+	if (!(state->flags & MODE_PARSE_BURST) && !IsServer(state->cptr)) {
+		unsigned int allowed = CHFL_CHANSERVICE | CHFL_OWNER | CHFL_ADMIN;
+		if (!state->member || !(state->member->status & allowed)) {
+			send_reply(state->sptr, ERR_CHANOPRIVSNEEDED, state->chptr->chname);
+			return;
+		}
+	}
+
+	if (state->dir == MODE_ADD) {
+		if (state->parc <= 0) {
+			if (MyUser(state->sptr))
+				need_more_params(state->sptr, "MODE +L");
+			return;
+		}
+		t_str = state->parv[state->args_used++];
+		state->parc--;
+		state->max_args--;
+
+		// Already set and identical? No action needed.
+		if ((state->chptr->mode.mode & MODE_LINK) &&
+			!strcmp(state->chptr->mode.linkchan, t_str)) {
+			return;
+		}
+
+		// Only set if no redirect is active (skip for BURST)
+		if (!(state->flags & MODE_PARSE_BURST) && find_channel_redirect(state->chptr->chname)) {
+			send_reply(state->sptr, ERR_LINKCHANNELREDIRECT, state->chptr->chname, t_str, state->chptr->chname, t_str);
+			return;
+		}
+
+		// Loop protection: check if target channel links back (skip for BURST)
+		if (!(state->flags & MODE_PARSE_BURST)) {
+			struct Channel* target = FindChannel(t_str);
+			if (target && !strcmp(target->mode.linkchan, state->chptr->chname)) {
+				send_reply(state->sptr, ERR_LINKCHANNELLOOP, state->chptr->chname, t_str, state->chptr->chname, t_str);
+				return;
+			}
+		}
+
+		ircd_strncpy(state->chptr->mode.linkchan, t_str, CHANNELLEN);
+		state->chptr->mode.mode |= MODE_LINK;
+	}
+	else if (state->dir == MODE_DEL) {
+		// If +L not active, nothing to do
+		if (!(state->chptr->mode.mode & MODE_LINK))
+			return;
+
+		*state->chptr->mode.linkchan = '\0';
+		state->chptr->mode.mode &= ~MODE_LINK;
+	}
+
+	// Always propagate the link target as parameter when adding +L
+	if (state->mbuf) {
+		const char* param = (state->dir == MODE_ADD && t_str) ? t_str : "";
+		modebuf_mode_string(state->mbuf, state->dir | MODE_LINK, (char*)param, 0);
+	}
+}
+
+/**
+ * Handles the +j (joinflood) channel mode.
+ * Only applies changes if the new value differs from the current one.
+ * @param state   The current mode parse state.
+ * @param flag_p  Pointer to the mode flag.
+ */
+static void mode_parse_joinflood(struct ParseState* state, int* flag_p)
+{
+	char* param = NULL;
+
+	if (state->dir == MODE_ADD) {
+		// Check if a parameter is provided
+		if (state->parc <= 0) {
+			if (MyUser(state->sptr))
+				send_reply(state->sptr, ERR_NEEDMOREPARAMS, "MODE +j");
+			return;
+		}
+		param = state->parv[state->args_used++];
+		state->parc--;
+		state->max_args--;
+
+		// --- NEW: Validate that the format is digits:digits ---
+		int valid = 0;
+		if (param) {
+			char* colon = strchr(param, ':');
+			if (colon && colon != param && *(colon + 1)) {
+				// Check that both sides of ':' are digits
+				*colon = '\0';
+				const char* before = param;
+				const char* after = colon + 1;
+				int only_digits_before = 1, only_digits_after = 1;
+				for (const char* p = before; *p; ++p)
+					if (!isdigit((unsigned char)*p)) only_digits_before = 0;
+				for (const char* p = after; *p; ++p)
+					if (!isdigit((unsigned char)*p)) only_digits_after = 0;
+				if (only_digits_before && only_digits_after)
+					valid = 1;
+				*colon = ':'; // restore
+			}
+		}
+		if (!valid) {
+			if (MyUser(state->sptr))
+				send_reply(state->sptr, ERR_UNKNOWNMODE, 'j');
+			return;
+		}
+
+		// Only set if the value is different from the current one
+		if ((state->chptr->mode.mode & MODE_JOINFLOOD) &&
+			!strcmp(state->chptr->mode.joinflood, param)) {
+			// Already set and identical, no action needed
+			return;
+		}
+
+		// Set the new joinflood parameter and enable the mode
+		ircd_strncpy(state->chptr->mode.joinflood, param, sizeof(state->chptr->mode.joinflood));
+		int max_joins = 0, time_window = 0;
+		sscanf(param, "%d:%d", &max_joins, &time_window);
+		state->chptr->mode.jflood.max_joins = max_joins;
+		state->chptr->mode.jflood.time_window = time_window;
+		state->chptr->mode.jflood.join_count = 0;
+		state->chptr->mode.jflood.window_start = 0;
+		state->chptr->mode.mode |= MODE_JOINFLOOD;
+	}
+	else if (state->dir == MODE_DEL) {
+		// Only remove if currently active
+		if (!(state->chptr->mode.mode & MODE_JOINFLOOD))
+			return;
+		*state->chptr->mode.joinflood = '\0';
+		state->chptr->mode.mode &= ~MODE_JOINFLOOD;
+	}
+
+	// Always propagate the parameter when adding +j
+	if (state->mbuf) {
+		const char* p = (state->dir == MODE_ADD && param) ? param : "";
+		modebuf_mode_string(state->mbuf, state->dir | MODE_JOINFLOOD, (char*)p, 0);
+	}
+}
+
+static void mode_parse_except(struct ParseState* state, int* flag_p)
+{
+	char* t_str, * s;
+	struct Ban* ex, * newex;
+
+	// If not enough args, send exception list
 	if (state->parc <= 0) {
-		struct Ban* ex;
-		for (ex = state->chptr->ban_exceptions; ex; ex = ex->next)
-			send_reply(state->sptr, RPL_EXCEPTLIST, state->chptr->chname, ex->banstr, ex->who, ex->when);
-		send_reply(state->sptr, RPL_ENDOFEXCEPTLIST, state->chptr->chname);
+		if (MyUser(state->sptr)) {
+			struct Ban* e;
+			int index = 1;
+			for (e = state->chptr->exceptlist; e; e = e->next, ++index) {
+				send_reply(state->sptr, RPL_EXCEPTLIST, state->chptr->chname, e->banstr, e->who, e->when, index);
+			}
+			send_reply(state->sptr, RPL_ENDOFEXCEPTLIST, state->chptr->chname);
+		}
 		return;
 	}
+
+	if (MyUser(state->sptr) && state->max_args <= 0)
+		return;
 
 	t_str = state->parv[state->args_used++];
 	state->parc--;
 	state->max_args--;
 
-	// Only privileged users may set/remove the mode
+	// Only allow mode changes for privileged users
 	if (!(state->flags & (MODE_CHANSERVICE | MODE_OWNER | MODE_ADMIN | MODE_CHANOP | MODE_HALFOP))) {
 		send_notoper(state, flag_p[0]);
 		return;
 	}
 
+	// Remove trailing space (compat zu Ban)
+	if ((s = strchr(t_str, ' ')))
+		*s = '\0';
+
+	// Empty or invalid mask
 	if (!*t_str || *t_str == ':') {
-		need_more_params(state->sptr, state->dir == MODE_ADD ? "MODE +e" : "MODE -e");
+		if (MyUser(state->sptr))
+			need_more_params(state->sptr, state->dir == MODE_ADD ? "MODE +e" : "MODE -e");
 		return;
 	}
 
-	// Normalize mask for consistent add/remove
+	// Masken-Parsing und Normalisierung wie bei Ban
 	char* mask = collapse(pretty_mask(t_str));
 
+	// Clear all ADD/DEL/OVERLAPPED flags from exception list
+	if (!(state->done & DONE_EXCEPTCLEAN)) {
+		for (ex = state->chptr->exceptlist; ex; ex = ex->next)
+			ex->flags &= ~(BAN_ADD | BAN_DEL | BAN_OVERLAPPED);
+		state->done |= DONE_EXCEPTCLEAN;
+	}
+
 	if (state->dir == MODE_ADD) {
-		if (state->done & DONE_BANEXCEPTION_ADD)
-			return; // Already set in this MODE command
-		struct Ban* ex;
-		for (ex = state->chptr->ban_exceptions; ex; ex = ex->next) {
-			if (strcmp(ex->banstr, mask) == 0)
-				return; // Already exists, do not add again
+		// Entferne alle existierenden Exceptions, die von der neuen Exception abgedeckt werden (Wildcard-Match)
+		struct Ban** ep = &state->chptr->exceptlist, * next;
+		while ((ex = *ep)) {
+			if (!mmatch(mask, ex->banstr) || !mmatch(ex->banstr, mask)) {
+				// mask überschneidet ex->banstr (beidseitiges Wildcard-Match)
+				if (state->mbuf)
+					modebuf_mode_string(state->mbuf, MODE_DEL | MODE_EXCEPT, ex->banstr, 0);
+				*ep = ex->next;
+				free_ban(ex);
+				continue;
+			}
+			ep = &ex->next;
 		}
-		// Create exception entry
+		// Exception hinzufügen
 		newex = make_ban(mask);
-		newex->flags = BAN_ADD | BAN_EXCEPTION;
 		ircd_strncpy(newex->who, IsUser(state->sptr) ? cli_name(state->sptr) : "*", NICKLEN);
 		newex->when = TStime();
-
-		// Add to exception list
-		apply_ban(&state->chptr->ban_exceptions, newex, 0);
-		if (state->mbuf) {
-			modebuf_mode_string(state->mbuf, MODE_ADD | MODE_BANEXCEPTION, newex->banstr, 0);
-		}
-		state->done |= DONE_BANEXCEPTION_ADD;
+		newex->flags = 0;
+		newex->next = state->chptr->exceptlist;
+		state->chptr->exceptlist = newex;
+		state->chptr->mode.mode |= MODE_EXCEPT;
+		if (state->mbuf)
+			modebuf_mode_string(state->mbuf, MODE_ADD | MODE_EXCEPT, mask, 0);
 	}
-	else {
-		if (state->done & DONE_BANEXCEPTION_DEL)
-			return; // Already removed in this MODE command
-
-		// Remove from exception list by mask
-		struct Ban** ex_ptr = &state->chptr->ban_exceptions;
-		while (*ex_ptr) {
-			if (strcmp((*ex_ptr)->banstr, mask) == 0) {
-				struct Ban* to_free = *ex_ptr;
-				*ex_ptr = (*ex_ptr)->next;
-				if (state->mbuf) {
-					modebuf_mode_string(state->mbuf, MODE_DEL | MODE_BANEXCEPTION, mask, 0);
-				}
-				MyFree(to_free);
-				break;
+	else if (state->dir == MODE_DEL) {
+		// Entferne alle Exceptions, die auf die Maske matchen (Wildcard-Entfernung)
+		struct Ban** ep = &state->chptr->exceptlist;
+		int found = 0;
+		while ((ex = *ep)) {
+			if (!mmatch(mask, ex->banstr)) {
+				if (state->mbuf)
+					modebuf_mode_string(state->mbuf, MODE_DEL | MODE_EXCEPT, ex->banstr, 0);
+				*ep = ex->next;
+				free_ban(ex);
+				found = 1;
+				continue;
 			}
-			ex_ptr = &(*ex_ptr)->next;
+			ep = &ex->next;
 		}
-		state->done |= DONE_BANEXCEPTION_DEL;
-	}
-}
-
-static void mode_parse_joinflood(struct ParseState* state, int* flag_p)
-{
-	// Only privileged users may set/remove the mode
-	if (!(state->flags & (MODE_CHANSERVICE | MODE_OWNER | MODE_ADMIN | MODE_CHANOP | MODE_HALFOP))) {
-		send_notoper(state, MODE_ANTIJOINFLOOD);
-		return;
-	}
-
-	if (state->dir == MODE_ADD) {
-		if (state->done & DONE_ANTIJOINFLOOD_ADD)
-			return; // Already set in this MODE command
-		if (state->parc <= 0 || state->max_args <= 0) {
-			if (MyUser(state->sptr))
-				need_more_params(state->sptr, "MODE +j");
-			return;
-		}
-		char* param = state->parv[state->args_used++];
-		state->parc--;
-		state->max_args--;
-
-		int limit = 0, period = 0;
-		if (sscanf(param, "%d:%d", &limit, &period) < 2) {
-			period = limit;
-			limit = 0;
-		}
-		if (limit <= 0 || period <= 0)
-			return;
-
-		if (!(state->chptr->mode.mode & MODE_ANTIJOINFLOOD) ||
-			state->chptr->joinflood_limit != limit ||
-			state->chptr->joinflood_period != period)
-		{
-			state->chptr->mode.mode |= MODE_ANTIJOINFLOOD;
-			state->chptr->joinflood_limit = limit;
-			state->chptr->joinflood_period = period;
-			state->chptr->joinflood_count = 0;
-			state->chptr->joinflood_time = 0;
-
-			char buf[32];
-			snprintf(buf, sizeof(buf), "%d:%d", limit, period);
-			modebuf_mode_string(state->mbuf, MODE_ADD | MODE_ANTIJOINFLOOD, buf, 0);
-
-		}
-		state->done |= DONE_ANTIJOINFLOOD_ADD;
-	}
-	else {
-		if (state->done & DONE_ANTIJOINFLOOD_DEL)
-			return; // Already removed in this MODE command
-		if (state->chptr->mode.mode & MODE_ANTIJOINFLOOD) {
-			state->chptr->mode.mode &= ~MODE_ANTIJOINFLOOD;
-			state->chptr->joinflood_limit = 0;
-			state->chptr->joinflood_period = 0;
-			state->chptr->joinflood_count = 0;
-			state->chptr->joinflood_time = 0;
-
-			modebuf_mode_string(state->mbuf, MODE_DEL | MODE_ANTIJOINFLOOD, NULL, 0);
-		}
-		state->done |= DONE_ANTIJOINFLOOD_DEL;
-	}
-} 
-
-/**
- * Parse the +L/-L (link) channel mode.
- * Handles setting and removing the link mode for a channel.
- *
- * @param state   ParseState object containing all relevant information for mode changes
- * @param flag_p  Pointer to the flag for the link mode (MODE_LINK)
- *
- * Uses: DONE_LINK_ADD (for +L), DONE_LINK_DEL (for -L)
- */
-static void mode_parse_link(struct ParseState* state, int* flag_p)
-{
-	// Only privileged users may set/remove this mode
-	if (!(state->flags & (MODE_CHANSERVICE | MODE_OWNER | MODE_ADMIN))) {
-		send_notoper(state, flag_p[0]);
-		return;
-	}
-
-	if (state->dir == MODE_ADD) {
-		if (state->done & DONE_LINK_ADD)
-			return; // Already set in this MODE command
-
-		if (state->parc <= 0 || state->max_args <= 0) {
-			if (MyUser(state->sptr))
-				need_more_params(state->sptr, "MODE +L");
-			return;
-		}
-
-		char* param = state->parv[state->args_used++];
-		state->parc--;
-		state->max_args--;
-
-		// Prevent empty or invalid parameters
-		if (!param || !*param || *param == ':')
-			return;
-
-		if (get_renamed_channel(param) != NULL) {
-			if (MyUser(state->sptr)) {
-				send_reply(state->sptr, ERR_NOSUCHCHANNEL, param);
-			}
-			return;
-		}
-		// Check if the channel is global
-		if (!IsGlobalChannel(param)) {
-			if (MyUser(state->sptr)) {
-				send_reply(state->sptr, ERR_NOSUCHCHANNEL, param);
-			}
-			return;
-		}
-		// Only change if the target is different
-		if (!(state->chptr->mode.mode & MODE_LINK) ||
-			strcmp(state->chptr->mode.linktarget, param) != 0)
-		{
-			state->chptr->mode.mode |= MODE_LINK;
-			ircd_strncpy(state->chptr->mode.linktarget, param, CHANNELLEN);
-
-			if (state->mbuf)
-				modebuf_mode_string(state->mbuf, MODE_ADD | MODE_LINK, param, 0);
-		}
-		state->done |= DONE_LINK_ADD;
-	}
-	else {
-		if (state->done & DONE_LINK_DEL)
-			return; // Already removed in this MODE command
-
-		if (state->chptr->mode.mode & MODE_LINK) {
-			state->chptr->mode.mode &= ~MODE_LINK;
-			*state->chptr->mode.linktarget = '\0';
-
-			if (state->mbuf)
-				modebuf_mode_string(state->mbuf, MODE_DEL | MODE_LINK, "", 0);
-		}
-		state->done |= DONE_LINK_DEL;
+		// Remove flag if list is empty
+		if (!state->chptr->exceptlist)
+			state->chptr->mode.mode &= ~MODE_EXCEPT;
+		if (!found)
+			return; // nothing deleted
 	}
 }
 
@@ -3823,12 +3813,9 @@ static void handle_param_mode(struct ParseState* state, int* flag_p, char modech
 	case 'A': if (IsServer(state->cptr) || feature_bool(FEAT_OPLEVELS)) mode_parse_apass(state, flag_p); break;
 	case 'U': if (IsServer(state->cptr) || feature_bool(FEAT_OPLEVELS)) mode_parse_upass(state, flag_p); break;
 	case 'b': mode_parse_ban(state, flag_p); break;
-	case 'e': mode_parse_ban_exception(state, flag_p); break;
-	case 'j': mode_parse_joinflood(state, flag_p); break;
-	case 'L': mode_parse_link(state, flag_p); break;
+	case 'e': mode_parse_except(state, flag_p); break;
 	default: break;
 	}
-
 }
 
 int mode_parse(struct ModeBuf* mbuf, struct Client* cptr, struct Client* sptr,
@@ -3840,9 +3827,8 @@ int mode_parse(struct ModeBuf* mbuf, struct Client* cptr, struct Client* sptr,
 		MODE_PRIVATE,     'p', MODE_SECRET, 's', MODE_MODERATED, 'm', MODE_TOPICLIMIT, 't', MODE_INVITEONLY, 'i',
 		MODE_NOPRIVMSGS,  'n', MODE_KEY, 'k', MODE_APASS, 'A', MODE_UPASS, 'U', MODE_BAN, 'b', MODE_LIMIT, 'l',
 		MODE_REGONLY,     'r', MODE_DELJOINS, 'D', MODE_NOQUITPARTS, 'u', MODE_NOCOLOUR, 'c', MODE_NOCTCP, 'C',
-		MODE_NONOTICE,    'N', MODE_NOMULTITARGET, 'T', MODE_MODERATENOREG, 'M', MODE_TLSONLY, 'Z', MODE_BANEXCEPTION, 'e',
-		MODE_ANTIJOINFLOOD, 'j', MODE_LINK,	'L',
-		/* NOTE: BANEXCEPTION (+e) wird jetzt separat behandelt */
+		MODE_NONOTICE,    'N', MODE_NOMULTITARGET, 'T', MODE_MODERATENOREG, 'M', MODE_TLSONLY, 'Z',
+		MODE_LINK, 'L', MODE_JOINFLOOD, 'j', MODE_EXCEPT, 'e',
 		MODE_ADD, '+', MODE_DEL, '-', 0x0, 0x0
 	};
 	int i, * flag_p;
@@ -3877,11 +3863,30 @@ int mode_parse(struct ModeBuf* mbuf, struct Client* cptr, struct Client* sptr,
 					send_reply(state.sptr, ERR_UNKNOWNMODE, *modestr);
 				continue;
 			}
+			if (state.chptr->chname[0] == '+') {
+				if (*modestr != 't' && *modestr != 'i') {
+					send_reply(state.sptr, ERR_UNKNOWNMODE, *modestr);
+					continue;
+				}
+			}
 			switch (*modestr) {
 			case '+': case '-': state.dir = flag_p[0]; break;
-			case 'l': case 'k': case 'A': case 'U': case 'b':
-			case 'e': case 'j': case 'L':
+			case 'l': case 'k': case 'A': case 'U': case 'b': case 'e':
 				handle_param_mode(&state, flag_p, *modestr); break;
+				break;
+			case 'L':
+				if (state.dir == MODE_ADD) {
+					if (state.parc <= 0) {
+						if (MyUser(state.sptr))
+							send_reply(state.sptr, ERR_NEEDMOREPARAMS, "MODE");
+						break;
+					}
+				}
+				mode_parse_link(&state, flag_p);
+				break;
+			case 'j': /* deal with joinflood */
+				mode_parse_joinflood(&state, flag_p);
+				break;
 			case 'S': case 'q': case 'a': case 'h': case 'o': case 'v':
 				handle_user_mode(&state, flag_p, *modestr); break;
 			default:
@@ -3949,8 +3954,6 @@ int mode_parse(struct ModeBuf* mbuf, struct Client* cptr, struct Client* sptr,
 			modebuf_mode_string(state.mbuf, MODE_DEL | MODE_UPASS, state.chptr->mode.upass, 0);
 		if (*state.chptr->mode.apass && !(state.done & DONE_APASS_DEL))
 			modebuf_mode_string(state.mbuf, MODE_DEL | MODE_APASS, state.chptr->mode.apass, 0);
-
-
 	}
 	if (state.done & DONE_BANCLEAN)
 		mode_process_bans(&state);
@@ -3959,6 +3962,7 @@ int mode_parse(struct ModeBuf* mbuf, struct Client* cptr, struct Client* sptr,
 
 	return state.args_used;
 }
+
 
 /*
  * Initialize a join buffer

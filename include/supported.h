@@ -21,6 +21,11 @@
  * Description: This file has the featureset that ircu announces on connecting
  *              a client.  It's in this .h because it's likely to be appended
  *              to frequently and s_user.h is included by basically everyone.
+ *
+ * RFC 2811 (IRC Channel Management) and RFC 1459 (original IRC) specify
+ * that channel names may begin with '!', which denotes a network-safe channel
+ * with a unique ID. This is signaled to clients via CHANTYPES and other
+ * ISUPPORT tokens.
  */
 #ifndef INCLUDED_supported_h
 #define INCLUDED_supported_h
@@ -30,6 +35,8 @@
 
 /* 
  * 'Features' supported by this ircd
+ * RFC 2811: CHANTYPES must include '!' for network-safe channels.
+ *           CHANID and !CHAN are non-standard but widely used ISUPPORT tokens.
  */
 #define FEATURES1 \
                 "WHOX"\
@@ -43,8 +50,8 @@
                 " MAXCHANNELS=%i" \
                 " MAXBANS=%i" \
                 " NICKLEN=%i" \
-                " EXCEPTS" 
-                
+                " EXCEPTS" \
+                " CHANID"
 
 #define FEATURES2 "MAXNICKLEN=%i" \
                 " TOPICLEN=%i" \
@@ -57,7 +64,8 @@
                 " STATUSMSG=%s" \
                 " CHANMODES=%s" \
                 " CASEMAPPING=%s" \
-                " NETWORK=%s"
+                " NETWORK=%s" \
+                " !CHAN"
 
 #define FEATURESVALUES1 feature_int(FEAT_MAXSILES), MAXMODEPARAMS, \
 			feature_int(FEAT_MAXCHANNELSPERUSER), \
@@ -65,10 +73,10 @@
 
 #define FEATURESVALUES2 NICKLEN, TOPICLEN, AWAYLEN, TOPICLEN, \
                         feature_int(FEAT_CHANNELLEN), CHANNELLEN, \
-                        (feature_bool(FEAT_LOCAL_CHANNELS) ? "!#&" : "!#"), \
+                        (feature_bool(FEAT_LOCAL_CHANNELS) ? "#&!+" : "#!+"), \
                         "(Sqaohv)!~&@%+", "!~&@%+", \
                         "b,e,j,k,l,L,imnpstrDducCNMTZ", \
-                        "rfc1459", feature_str(FEAT_NETWORK)
+                        "rfc2811", feature_str(FEAT_NETWORK)
 
 #endif /* INCLUDED_supported_h */
 

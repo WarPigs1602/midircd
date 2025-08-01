@@ -501,6 +501,9 @@ extern const struct Numeric* get_error_numeric(int err);
 #define ERR_SASLABORTED      906    /* IRCv3 */
 #define ERR_SASLALREADY      907    /* IRCv3 */
 #define RPL_SASLMECHS        908
+#define RPL_RENAMEOK         950    /* IRCv3 */
+#define ERR_LINKCHANNELLOOP  951	/* IRCv3 */
+#define ERR_LINKCHANNELREDIRECT    952    /* IRCv3 */
 #define ERR_CANNOTCHANGECHANMODE 974    /* IRCv3 */
 #define ERR_LASTERROR        999
 

@@ -35,6 +35,7 @@
 #include "ircd_log.h"
 #include "ircd_reply.h"
 #include "ircd_string.h"
+#include "ircd_snprintf.h"
 #include "msg.h"
 #include "numeric.h"
 #include "numnicks.h"
@@ -46,6 +47,7 @@
 /* #include <assert.h> -- Now using assert in ircd_log.h */
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 /** Searches for and handles a 0 in a join list.
  * @param[in] cptr Client that sent us the message.
@@ -95,20 +97,6 @@ last0(struct Client *cptr, struct Client *sptr, char *chanlist)
   return chanlist;
 }
 
-static int is_link_loop(const char* start, const char* target) {
-    const int max_depth = 16; // Prevent excessive recursion
-    int depth = 0;
-    struct Channel* chptr = FindChannel(target);
-    while (chptr && (chptr->mode.mode & MODE_LINK) && *chptr->mode.linktarget) {
-        if (strcmp(chptr->chname, start) == 0)
-            return 1; // Loop detected
-        chptr = FindChannel(chptr->mode.linktarget);
-        if (++depth > max_depth)
-            return 1; // Too deep, treat as loop
-    }
-    return 0;
-}
-
 /** Handle a JOIN message from a client connection.
  * See @ref m_functions for discussion of the arguments.
  * @param[in] cptr Client that sent us the message.
@@ -124,7 +112,7 @@ int m_join(struct Client *cptr, struct Client *sptr, int parc, char *parv[])
   struct Gline *gline;
   char *p = 0;
   char *chanlist;
-  char *name;
+  const char *name;
   char *keys;
 
   if (parc < 2 || *parv[1] == '\0')
@@ -137,71 +125,176 @@ int m_join(struct Client *cptr, struct Client *sptr, int parc, char *parv[])
 
   keys = parv[2]; /* remember where keys are */
 
-  for (name = ircd_strtok(&p, chanlist, ","); name;
-       name = ircd_strtok(&p, 0, ",")) {
+  for (name = ircd_strtok(&p, chanlist, ","); name; name = ircd_strtok(&p, 0, ",")) {
+      char* key = 0;
 
-      // --- LINK mode check and error ---
-      chptr = FindChannel(name);
-      if (chptr && !IsInvited(sptr, chptr) && IsGlobalChannel(name) && (chptr->mode.mode & MODE_LINK) && *chptr->mode.linktarget) {
-          if (chptr->mode.limit > 0 && chptr->users >= chptr->mode.limit) {
-              // Prevent infinite loop: check for cycles
-              if (is_link_loop(chptr->chname, chptr->mode.linktarget)) {
-                  send_reply(sptr, RPL_INFO, "LINK mode would cause a loop, join denied");
-                  continue;
+      /* --- Network-secure channel handling --- */
+      if (name[0] == '!') {
+          if (!IsNetSecureChannelName(name) || strlen(name) < 7) {
+              // No valid ID: check if channels with the same suffix exist
+              struct Channel* ch;
+              struct Channel* found_channels[10];
+              int found_count = 0;
+              for (ch = GlobalChannelList; ch; ch = ch->next) {
+                  if (IsNetSecureChannelName(ch->chname)) {
+                      if (strcmp(ch->chname + 6, name + 1) == 0) {
+                          if (found_count < 10)
+                              found_channels[found_count++] = ch;
+                      }
+                  }
               }
-              // Inform the user and do not join
-              send_reply(sptr, ERR_LINKCHANNEL, name, "Channel is full +l", chptr->mode.linktarget);
-              name = chptr->mode.linktarget; // Redirect to the linked channel
+              if (found_count == 1) {
+                  // Only one match, join it
+                  if (HasCap(sptr, CAP_STANDARDREPLIES)) {
+                      send_note_reply(&me, sptr, "INFO", cli_name(sptr),
+                          "A network-secure channel with this name already exists: %s. Please join this channel.", found_channels[0]->chname);
+                  }
+                  else {
+                      sendrawto_one(sptr, ":%s NOTICE %s :A network-secure channel with this name already exists: %s. Please join this channel.",
+                          cli_name(&me), cli_name(sptr), found_channels[0]->chname);
+                  }
+                  name = found_channels[0]->chname;
+              }
+              else if (found_count > 1) {
+                  // Multiple matches, show all and pick the first
+                  char listbuf[512] = "";
+                  int i;
+                  for (i = 0; i < found_count; ++i) {
+                      if (i > 0) strncat(listbuf, ", ", sizeof(listbuf));
+                      size_t len = strlen(listbuf);
+                      size_t remain = sizeof(listbuf) - len - 1;
+                      if (remain > 0)
+                          strncat(listbuf, found_channels[i]->chname, remain);
+                  }
+                  if (HasCap(sptr, CAP_STANDARDREPLIES)) {
+                      send_note_reply(&me, sptr, "INFO", cli_name(sptr),
+                          "Multiple network-secure channels with this name exist: %s", listbuf);
+                      send_note_reply(&me, sptr, "INFO", cli_name(sptr),
+                          "Joining the first: %s", found_channels[0]->chname);
+                  }
+                  else {
+                      sendrawto_one(sptr, ":%s NOTICE %s :Multiple network-secure channels with this name exist: %s",
+                          cli_name(&me), cli_name(sptr), listbuf);
+                      sendrawto_one(sptr, ":%s NOTICE %s :Joining the first: %s",
+                          cli_name(&me), cli_name(sptr), found_channels[0]->chname);
+                  }
+                  name = found_channels[0]->chname;
+              }
+              else {
+                  // No matching channel, generate a new ID
+                  char idbuf[6];
+                  char newname[CHANNELLEN + 1];
+                  GenerateNetSecureChannelID(idbuf, sizeof(idbuf));
+                  ircd_snprintf(0, newname, sizeof(newname), "!%s%s", idbuf, name + 1);
+                  name = strdup(newname);
+                  if (HasCap(sptr, CAP_STANDARDREPLIES)) {
+                      send_note_reply(&me, sptr, "INFO", cli_name(sptr), "Generated network-secure channel name: %s", name);
+                  }
+                  else {
+                      sendrawto_one(sptr, ":%s NOTICE %s :Generated network-secure channel name: %s",
+                          cli_name(&me), cli_name(sptr), name);
+                  }
+              }
+          }
+          else {
+              // Has ID: check if channel with this ID exists
+              const char* id = NetSecureChannelID(name);
+              struct Channel* ch;
+              int found = 0;
+              for (ch = GlobalChannelList; ch; ch = ch->next) {
+                  if (IsNetSecureChannelName(ch->chname)) {
+                      const char* other_id = NetSecureChannelID(ch->chname);
+                      if (other_id && id && strcmp(id, other_id) == 0 && strcmp(name, ch->chname) != 0) {
+                          if (HasCap(sptr, CAP_STANDARDREPLIES)) {
+                              send_note_reply(&me, sptr, "INFO", cli_name(sptr),
+                                  "Network-secure channel ID collision: %s already exists as %s. Please join that channel.", id, ch->chname);
+                          }
+                          else {
+                              sendrawto_one(sptr, ":%s NOTICE %s :Network-secure channel ID collision: %s already exists as %s. Please join that channel.",
+                                  cli_name(&me), cli_name(sptr), id, ch->chname);
+                          }
+                          name = ch->chname;
+                          found = 1;
+                          break;
+                      }
+                  }
+              }
+              if (!found) {
+                  if (HasCap(sptr, CAP_STANDARDREPLIES)) {
+                      send_note_reply(&me, sptr, "INFO", cli_name(sptr), "Network-secure channel detected: %s", name);
+                  }
+                  else {
+                      sendrawto_one(sptr, ":%s NOTICE %s :Network-secure channel detected: %s",
+                          cli_name(&me), cli_name(sptr), name);
+                  }
+              }
           }
       }
 
-      if (IsNetworkChannel(name)) {
-          char visible_name[CHANNELLEN + 1];
-          char channel_list[1024];
-          // Extract visible channel name (without ! and ID)
-          strncpy(visible_name, name + 1 + NETWORK_ID_LEN, sizeof(visible_name) - 1);
-          visible_name[sizeof(visible_name) - 1] = '\0';
+      // Save the original channel name for invite check
+      const char* orig_name = name;
+      struct Channel* orig_channel = FindChannel(orig_name);
 
-          // Get all network channels with the same visible name
-          get_network_channel_list(visible_name, channel_list, sizeof(channel_list));
+      // If the user is invited to the original channel, allow join there and skip redirect/+L
+      if (orig_channel && IsInvited(sptr, orig_channel)) {
+          // Remove the invite so it can't be reused
+          del_invite(sptr, orig_channel);
 
-          // Count how many channels exist
-          int count = 0;
-          char* ptr = channel_list;
-          while (*ptr) {
-              count++;
-              ptr = strchr(ptr, ',');
-              if (ptr) ptr++;
-              else break;
+          // Usual join logic for invited users
+          if (find_member_link(orig_channel, sptr)) {
+              continue; // already on channel
+          }
+          if (check_target_limit(sptr, orig_channel, orig_channel->chname, 0)) {
+              continue;
           }
 
-          if (count == 0) {
-              // Create a new network channel name
-              char newname[CHANNELLEN + 1];
-              create_network_channel(name, newname, sizeof(newname));
-              ircd_strncpy(name, newname, CHANNELLEN);
-          } else
-          if (count > 1) {
-              // Inform the user about the available options
-              send_reply(sptr, RPL_INFO, "Multiple network channels with name '%s' exist: %s", visible_name, channel_list);
-              continue; // Skip joining until user selects a channel
+          int flags = CHFL_DEOPPED;
+          if (IsChannelService(sptr)) {
+              flags |= CHFL_CHANSERVICE;
           }
-          if (count == 1) {
-              // Use the first channel name from the list
-              char* comma = strchr(channel_list, ',');
-              if (comma) *comma = '\0';
-              ircd_strncpy(name, channel_list, CHANNELLEN);
+
+          joinbuf_join(&join, orig_channel, flags);
+
+          // Send topic and names as usual
+          if (orig_channel->topic[0]) {
+              send_reply(sptr, RPL_TOPIC, orig_channel->chname, orig_channel->topic);
+              send_reply(sptr, RPL_TOPICWHOTIME, orig_channel->chname, orig_channel->topic_nick, orig_channel->topic_time);
+          }
+          do_names(sptr, orig_channel, NAMES_ALL | NAMES_EON);
+
+          continue; // skip redirect/+L logic for this channel
+      }
+
+      /* Channel redirect */
+      const char* redirect = find_channel_redirect(name);
+
+      if (redirect) {
+          // Redirect vorhanden: auf neuen Namen umleiten
+          name = redirect;
+          if (IsLocalChannel(name)) {
+              // Lokale Channels dürfen nicht weitergeleitet werden
+              send_reply(sptr, ERR_BADNETWORKCHAN, name);
+              continue;
           }
       }
       else {
-          const char* redirect = get_renamed_channel(name);
-          if (redirect) {
-              name = (char*)redirect;
+          struct Channel* ch = FindChannel(name);
+          if (ch && (ch->mode.mode & MODE_LINK) && (ch->mode.mode & MODE_LIMIT) && *ch->mode.linkchan) {
+              // Loop-Schutz: Prüfe, ob Zielchannel auf diesen Channel zurücklinkt
+              struct Channel* target = FindChannel(ch->mode.linkchan);
+              if (target && (target->mode.mode & MODE_LINK) && !strcmp(target->mode.linkchan, name)) {
+                  send_reply(sptr, ERR_LINKCHANNELLOOP, name, ch->mode.linkchan, name, ch->mode.linkchan);
+                  continue;
+              }
+              // Prüfe, ob Zielchannel ein lokaler Channel ist
+              if (IsLocalChannel(ch->mode.linkchan)) {
+                  send_reply(sptr, ERR_BADNETWORKCHAN, ch->mode.linkchan);
+                  continue;
+              }
+              // Weiterleitung auf Zielchannel
+              name = ch->mode.linkchan;
           }
       }
-    // If no channel exists, proceed as usual (creation logic)
-    char *key = 0;
-
     /* If we have any more keys, take the first for this channel. */
     if (!BadPtr(keys)
         && (keys = strchr(key = keys, ',')))
@@ -217,11 +310,6 @@ int m_join(struct Client *cptr, struct Client *sptr, int parc, char *parv[])
       send_reply(sptr, ERR_NOSUCHCHANNEL, name);
       continue;
     }
-    const char* renamed = get_renamed_channel(name);
-    if (renamed) {
-        send_reply(sptr, RPL_INFO, "Channel %s was renamed to %s, joining new channel.", name, renamed);
-        name = (char*)renamed;
-    }
 
     if (cli_user(sptr)->joined >= feature_int(FEAT_MAXCHANNELSPERUSER)
 	&& !HasPriv(sptr, PRIV_CHAN_LIMIT)) {
@@ -231,8 +319,8 @@ int m_join(struct Client *cptr, struct Client *sptr, int parc, char *parv[])
 
     /* BADCHANed channel */
     if (!IsAnOper(sptr) 
-        && (gline = gline_lookup_badchan(name, GLINE_BADCHAN))) {
-      send_reply(sptr, ERR_BADCHANNAME, name, gline->gl_reason);
+        && (gline = gline_lookup_badchan((char *)name, GLINE_BADCHAN))) {
+      send_reply(sptr, ERR_BADCHANNAME, (char *)name, gline->gl_reason);
       continue;
     }
 
@@ -243,7 +331,7 @@ int m_join(struct Client *cptr, struct Client *sptr, int parc, char *parv[])
         continue;
       }
 
-      if (!(chptr = get_channel(sptr, name, CGT_CREATE)))
+      if (!(chptr = get_channel(sptr, (char *)name, CGT_CREATE)))
         continue;
 
       /* Try to add the new channel as a recent target for the user. */
@@ -253,7 +341,7 @@ int m_join(struct Client *cptr, struct Client *sptr, int parc, char *parv[])
         continue;
       }
 
-      joinbuf_join(&create, chptr, CHFL_OWNER | CHFL_ADMIN | CHFL_CHANOP | CHFL_CHANNEL_MANAGER);
+      joinbuf_join(&create, chptr, CHFL_CHANOP | CHFL_CHANNEL_MANAGER);
       if (feature_bool(FEAT_AUTOCHANMODES) && feature_str(FEAT_AUTOCHANMODES_LIST) && strlen(feature_str(FEAT_AUTOCHANMODES_LIST)) > 0)
         SetAutoChanModes(chptr);
     } else if (find_member_link(chptr, sptr)) {
@@ -261,14 +349,29 @@ int m_join(struct Client *cptr, struct Client *sptr, int parc, char *parv[])
     } else if (check_target_limit(sptr, chptr, chptr->chname, 0)) {
       continue;
     } else {
+        if ((chptr->mode.mode & MODE_JOINFLOOD) &&
+            chptr->mode.jflood.max_joins > 0 && chptr->mode.jflood.time_window > 0) {
+            time_t now = TStime();
+            struct JoinFloodState* jf = &chptr->mode.jflood;
+
+            if (jf->window_start == 0 || now - jf->window_start >= jf->time_window) {
+                jf->window_start = now;
+                jf->join_count = 1;
+            }
+            else {
+                jf->join_count++;
+            }
+
+            if (jf->join_count > jf->max_joins) {
+                send_reply(sptr, ERR_JOINFLOOD, chptr->chname, jf->max_joins, jf->time_window);
+                continue;
+            }
+        }
         int flags = CHFL_DEOPPED;
         int err = 0;
-        int ignore_restrictions = 0;
-        if (chptr && (chptr->mode.mode & MODE_BURSTADDED))
-            ignore_restrictions = 1;
         if (IsChannelService(sptr)) {
             flags |= CHFL_CHANSERVICE;
-            // Services should not get further user modes!
+            // Services sollten keine weiteren User-Modi bekommen!
         }
       /* Check Apass/Upass -- since we only ever look at a single
        * "key" per channel now, this hampers brute force attacks. */
@@ -282,21 +385,18 @@ int m_join(struct Client *cptr, struct Client *sptr, int parc, char *parv[])
         chptr->creationtime++;
       } else if (IsInvited(sptr, chptr)) {
         /* Invites bypass these other checks. */
-      }
-      else if (!ignore_restrictions) {
-          if (chptr->mode.mode & MODE_INVITEONLY)
-              err = ERR_INVITEONLYCHAN;
-          else if (chptr->mode.limit && (chptr->users >= chptr->mode.limit))
-              err = ERR_CHANNELISFULL;
-          else if ((chptr->mode.mode & MODE_REGONLY) && !IsAccount(sptr))
-              err = ERR_NEEDREGGEDNICK;
-          else if (find_ban(sptr, chptr->banlist, chptr->ban_exceptions))
-              err = ERR_BANNEDFROMCHAN;
-          else if (*chptr->mode.key && (!key || strcmp(key, chptr->mode.key)))
-              err = ERR_BADCHANNELKEY;
-          else if ((chptr->mode.mode & MODE_TLSONLY) && !IsTLS(sptr))
-              err = ERR_TLSONLYCHAN;
-      }
+      } else if (chptr->mode.mode & MODE_INVITEONLY)
+        err = ERR_INVITEONLYCHAN;
+      else if (chptr->mode.limit && (chptr->users >= chptr->mode.limit))
+        err = ERR_CHANNELISFULL;
+      else if ((chptr->mode.mode & MODE_REGONLY) && !IsAccount(sptr))
+        err = ERR_NEEDREGGEDNICK;
+      else if (find_ban(sptr, chptr->exceptlist) == NULL && find_ban(sptr, chptr->banlist))
+        err = ERR_BANNEDFROMCHAN;
+      else if (*chptr->mode.key && (!key || strcmp(key, chptr->mode.key)))
+        err = ERR_BADCHANNELKEY;
+      else if ((chptr->mode.mode & MODE_TLSONLY) && !IsTLS(sptr))
+        err = ERR_TLSONLYCHAN;
 
       /*
        * ASUKA_X:
@@ -356,34 +456,32 @@ int m_join(struct Client *cptr, struct Client *sptr, int parc, char *parv[])
       }
 
       joinbuf_join(&join, chptr, flags);
-      // For services: set mode, but avoid duplicate commands!
-      struct Membership* member = find_member_link(chptr, sptr);
-      if (member && (IsChannelService(sptr) || IsService(sptr)) && !(member->status & CHFL_CHANSERVICE)) {
-          member->status |= CHFL_CHANSERVICE;
+      // Nur für Services: Mode setzen, aber keine doppelten Kommandos!
+      if (IsChannelService(sptr) || IsService(sptr)) {
           struct ModeBuf mbuf;
           modebuf_init(&mbuf, &me, cptr, chptr, MODEBUF_DEST_SERVER);
           modebuf_mode_client(&mbuf, MODE_ADD | MODE_CHANSERVICE, sptr, 0);
           modebuf_flush(&mbuf);
       }
-      // For normal users: set Chanop
-      else if (flags & (CHFL_CHANSERVICE | CHFL_OWNER | CHFL_ADMIN | CHFL_CHANOP | CHFL_HALFOP | CHFL_VOICE)) {
-          struct ModeBuf mbuf;
-          modebuf_init(&mbuf, &me, cptr, chptr, MODEBUF_DEST_SERVER);
-          if (flags & CHFL_CHANSERVICE)
-              modebuf_mode_client(&mbuf, MODE_ADD | MODE_CHANSERVICE, sptr, 0);
-          if (flags & CHFL_OWNER)
-              modebuf_mode_client(&mbuf, MODE_ADD | MODE_OWNER, sptr, 0);
-          if (flags & CHFL_ADMIN)
-              modebuf_mode_client(&mbuf, MODE_ADD | MODE_ADMIN, sptr, 0);
-          if (flags & CHFL_CHANOP)
-              modebuf_mode_client(&mbuf, MODE_ADD | MODE_CHANOP, sptr,
-                  chptr->mode.apass[0] ? ((flags & CHFL_CHANNEL_MANAGER) ? 0 : 1) : MAXOPLEVEL);
-          if (flags & CHFL_HALFOP)
-              modebuf_mode_client(&mbuf, MODE_ADD | MODE_HALFOP, sptr, 0);
-          if (flags & CHFL_VOICE)
-              modebuf_mode_client(&mbuf, MODE_ADD | MODE_VOICE, sptr, 0);
-          modebuf_flush(&mbuf);
-      }
+      // Nur für normale User: Chanop setzen
+else if (flags & (CHFL_CHANSERVICE | CHFL_OWNER | CHFL_ADMIN | CHFL_CHANOP | CHFL_HALFOP | CHFL_VOICE)) {
+    struct ModeBuf mbuf;
+    modebuf_init(&mbuf, &me, cptr, chptr, MODEBUF_DEST_SERVER);
+    if (flags & CHFL_CHANSERVICE)
+        modebuf_mode_client(&mbuf, MODE_ADD | MODE_CHANSERVICE, sptr, 0);
+    if (flags & CHFL_OWNER)
+        modebuf_mode_client(&mbuf, MODE_ADD | MODE_OWNER, sptr, 0);
+    if (flags & CHFL_ADMIN)
+        modebuf_mode_client(&mbuf, MODE_ADD | MODE_ADMIN, sptr, 0);
+    if (flags & CHFL_CHANOP)
+        modebuf_mode_client(&mbuf, MODE_ADD | MODE_CHANOP, sptr,
+            chptr->mode.apass[0] ? ((flags & CHFL_CHANNEL_MANAGER) ? 0 : 1) : MAXOPLEVEL);
+    if (flags & CHFL_HALFOP)
+        modebuf_mode_client(&mbuf, MODE_ADD | MODE_HALFOP, sptr, 0);
+    if (flags & CHFL_VOICE)
+        modebuf_mode_client(&mbuf, MODE_ADD | MODE_VOICE, sptr, 0);
+    modebuf_flush(&mbuf);
+}
     }
 
     del_invite(sptr, chptr);
@@ -419,7 +517,7 @@ int ms_join(struct Client *cptr, struct Client *sptr, int parc, char *parv[])
   time_t creation = 0;
   char *p = 0;
   char *chanlist;
-  char *name;
+  const char *name;
 
   if (IsServer(sptr))
   {
@@ -443,24 +541,58 @@ int ms_join(struct Client *cptr, struct Client *sptr, int parc, char *parv[])
 
   for (name = ircd_strtok(&p, chanlist, ","); name;
        name = ircd_strtok(&p, 0, ",")) {
-      const char* redirect = get_renamed_channel(name);
-      if (redirect) {
-          name = (char*)redirect;
-      }
-      chptr = FindChannel(name);
-      // --- LINK mode check and error for server joins ---
-      if (chptr && (chptr->mode.mode & MODE_LINK) && *chptr->mode.linktarget) {
-          if (chptr->mode.limit > 0 && chptr->users >= chptr->mode.limit) {
-              // Prevent infinite loop: check for cycles
-              if (is_link_loop(chptr->chname, chptr->mode.linktarget)) {
-                  // Option: send error or ignore join
-                  continue;
-              }
-              name = chptr->mode.linktarget; // Redirect to the linked channel
-          }
-      }
 
-      flags = CHFL_DEOPPED;
+    flags = CHFL_DEOPPED;
+
+    if (IsChannelService(sptr) || IsService(sptr))
+		flags |= CHFL_CHANSERVICE;
+
+    /* Network-secure channel: check if ID already exists and join that channel if so */
+    if (IsNetSecureChannelName(name)) {
+        const char* id = NetSecureChannelID(name);
+        struct Channel* ch;
+        int found = 0;
+        for (ch = GlobalChannelList; ch; ch = ch->next) {
+            if (IsNetSecureChannelName(ch->chname)) {
+                const char* other_id = NetSecureChannelID(ch->chname);
+                if (other_id && id && strcmp(id, other_id) == 0) {
+                    /* ID exists, join that channel instead */
+                    name = ch->chname;
+                    found = 1;
+                    break;
+                }
+            }
+        }
+    }
+
+    // --- Channel redirect and +L forwarding for server joins ---
+    const char* redirect = find_channel_redirect(name);
+    if (redirect) {
+        if (IsLocalChannel(redirect)) {
+            send_reply(sptr, ERR_BADNETWORKCHAN, redirect);
+            continue;
+        }
+        if (strcmp(redirect, name) == 0) {
+            send_reply(sptr, ERR_LINKCHANNELLOOP, name, redirect, name, redirect);
+            continue;
+        }
+        name = redirect;
+    }
+    else {
+        struct Channel* ch = FindChannel(name);
+        if (ch && (ch->mode.mode & MODE_LINK) && (ch->mode.mode & MODE_LIMIT) && *ch->mode.linkchan) {
+            if (IsLocalChannel(ch->mode.linkchan)) {
+                send_reply(sptr, ERR_BADNETWORKCHAN, ch->mode.linkchan);
+                continue;
+            }
+            struct Channel* target = FindChannel(ch->mode.linkchan);
+            if (target && (target->mode.mode & MODE_LINK) && !strcmp(target->mode.linkchan, name)) {
+                send_reply(sptr, ERR_LINKCHANNELLOOP, name, ch->mode.linkchan, name, ch->mode.linkchan);
+                continue;
+            }
+            name = ch->mode.linkchan;
+        }
+    }
 
     if (IsLocalChannel(name) || !IsChannelName(name))
     {
@@ -471,10 +603,10 @@ int ms_join(struct Client *cptr, struct Client *sptr, int parc, char *parv[])
     if (!(chptr = FindChannel(name)))
     {
       /* No channel exists, so create one */
-      if (!(chptr = get_channel(sptr, name, CGT_CREATE)))
+      if (!(chptr = get_channel(sptr, (char *)name, CGT_CREATE)))
       {
         protocol_violation(sptr,"couldn't get channel %s for %s",
-        		   name,cli_name(sptr));
+        		   (char *)name,cli_name(sptr));
       	continue;
       }
       flags |= HasFlag(sptr, FLAG_TS8) ? CHFL_SERVOPOK : 0;
@@ -548,44 +680,20 @@ int ms_join(struct Client *cptr, struct Client *sptr, int parc, char *parv[])
 
         for (member = chptr->members; member; member = member->next_member)
         {
-            if (IsChanService(member)) {
-                modebuf_mode_client(&mbuf, MODE_DEL | MODE_CHANSERVICE, member->user, OpLevel(member));
-                member->status &= ~CHFL_CHANSERVICE;
-            }
-            if (IsOwner(member)) {
-                modebuf_mode_client(&mbuf, MODE_DEL | MODE_OWNER, member->user, OpLevel(member));
-                member->status &= ~CHFL_OWNER;
-            }
-            if (IsAdmin(member)) {
-                modebuf_mode_client(&mbuf, MODE_DEL | MODE_ADMIN, member->user, OpLevel(member));
-                member->status &= ~CHFL_ADMIN;
-            }
-            if (IsChanOp(member)) {
-                modebuf_mode_client(&mbuf, MODE_DEL | MODE_CHANOP, member->user, OpLevel(member));
-                member->status &= ~CHFL_CHANOP;
-            }
-            if (IsHalfOp(member)) {
-                modebuf_mode_client(&mbuf, MODE_DEL | MODE_HALFOP, member->user, OpLevel(member));
-                member->status &= ~CHFL_HALFOP;
-            }
-            if (HasVoice(member)) {
-                modebuf_mode_client(&mbuf, MODE_DEL | MODE_VOICE, member->user, OpLevel(member));
-                member->status &= ~CHFL_VOICE;
-            }
+          if (IsChanOp(member)) {
+            modebuf_mode_client(&mbuf, MODE_DEL | MODE_CHANOP, member->user, OpLevel(member));
+	    member->status &= ~CHFL_CHANOP;
+	  }
+          if (HasVoice(member)) {
+            modebuf_mode_client(&mbuf, MODE_DEL | MODE_VOICE, member->user, OpLevel(member));
+	    member->status &= ~CHFL_VOICE;
+          }
         }
         modebuf_flush(&mbuf);
       }
     }
 
     joinbuf_join(&join, chptr, flags);
-    struct Membership* member = find_member_link(chptr, sptr);
-    if (member && (IsChannelService(sptr) || IsService(sptr)) && !(member->status & CHFL_CHANSERVICE)) {
-        member->status |= CHFL_CHANSERVICE;
-        struct ModeBuf mbuf;
-        modebuf_init(&mbuf, &me, cptr, chptr, MODEBUF_DEST_SERVER);
-        modebuf_mode_client(&mbuf, MODE_ADD | MODE_CHANSERVICE, sptr, 0);
-        modebuf_flush(&mbuf);
-    }
   }
 
   joinbuf_flush(&join); /* flush joins... */

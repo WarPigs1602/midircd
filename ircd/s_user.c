@@ -1988,7 +1988,7 @@ int is_silenced(struct Client *sptr, struct Client *acptr)
   char buf[BUFSIZE];
 
   if (IsServer(sptr) || !(user = cli_user(acptr))
-      || !(found = find_ban(sptr, user->silence, NULL)))
+      || !(found = find_ban(sptr, user->silence)))
     return 0;
   assert(!(found->flags & BAN_EXCEPTION));
   if (!MyConnect(sptr)) {
