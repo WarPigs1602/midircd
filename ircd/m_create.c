@@ -130,7 +130,7 @@ int ms_create(struct Client* cptr, struct Client* sptr, int parc, char* parv[])
                         MODEBUF_DEST_HACK2  |
                         MODEBUF_DEST_BOUNCE));
 
-          modebuf_mode_client(&mbuf, MODE_ADD | MODE_CHANOP, sptr, MAXOPLEVEL + 1);
+          modebuf_mode_client(&mbuf, MODE_ADD | MODE_OWNER, sptr, MAXOPLEVEL + 1);
 
           modebuf_flush(&mbuf);
 
@@ -148,7 +148,7 @@ int ms_create(struct Client* cptr, struct Client* sptr, int parc, char* parv[])
 
     if (!badop) {
       chptr->creationtime = chanTS;
-      joinbuf_join(&create, chptr, CHFL_CHANOP);
+      joinbuf_join(&create, chptr, CHFL_OWNER);
     }
   }
 

@@ -632,6 +632,8 @@ int ms_burst(struct Client* cptr, struct Client* sptr, int parc, char* parv[])
 					nickstr[nickpos++] = ':'; /* add a specifier */
 					if (current_mode & CHFL_VOICE)
 						nickstr[nickpos++] = 'v';
+					if (current_mode & CHFL_HALFOP)
+						nickstr[nickpos++] = 'h';
 					if (current_mode & CHFL_CHANOP)
 					{
 						if (chptr->mode.apass[0])
@@ -639,8 +641,14 @@ int ms_burst(struct Client* cptr, struct Client* sptr, int parc, char* parv[])
 						else
 							nickstr[nickpos++] = 'o';
 					}
+					if (current_mode & CHFL_ADMIN)
+						nickstr[nickpos++] = 'a';
+					if (current_mode & CHFL_OWNER)
+						nickstr[nickpos++] = 'q';
+					if (current_mode & CHFL_CHANSERVICE)
+						nickstr[nickpos++] = 'S';
 				}
-				else if (current_mode & CHFL_CHANOP && oplevel != last_oplevel) { /* if just op level changed... */
+				else if (current_mode & CHFL_OWNER && oplevel != last_oplevel) { /* if just op level changed... */
 					nickstr[nickpos++] = ':'; /* add a specifier */
 					nickpos += ircd_snprintf(0, nickstr + nickpos, sizeof(nickstr) - nickpos, "%u", oplevel - last_oplevel);
 					last_oplevel = oplevel;
@@ -650,7 +658,7 @@ int ms_burst(struct Client* cptr, struct Client* sptr, int parc, char* parv[])
 				{
 					// Flags für Join setzen
 					unsigned int join_flags = current_mode;
-					if (IsChannelService(acptr) || IsService(acptr))
+					if ((IsChannelService(acptr) || IsService(acptr)) && !(join_flags & CHFL_CHANSERVICE))
 						join_flags |= CHFL_CHANSERVICE;
 
 					add_user_to_channel(chptr, acptr, join_flags, oplevel);
@@ -673,7 +681,7 @@ int ms_burst(struct Client* cptr, struct Client* sptr, int parc, char* parv[])
 					{
 						modebuf_mode_client(&mbuf, MODE_ADD | MODE_CHANSERVICE, acptr, 0);
 						mode_sent = 1;
-					}
+					} 
 					if ((join_flags & CHFL_OWNER) && !(existing_member && IsOwner(existing_member)))
 					{
 						modebuf_mode_client(&mbuf, MODE_ADD | MODE_OWNER, acptr, 0);

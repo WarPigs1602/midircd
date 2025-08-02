@@ -162,9 +162,10 @@ struct Client;
  */
 #define MODE_WPARAS     (MODE_CHANSERVICE|MODE_OWNER|MODE_ADMIN|MODE_CHANOP|MODE_HALFOP|MODE_VOICE|MODE_BAN|MODE_KEY|MODE_LIMIT|MODE_APASS|MODE_UPASS|MODE_LINK)
 
-/** Available Channel modes */
-#define infochanmodes feature_bool(FEAT_OPLEVELS) ? "AbeiklmnopstUvrDcCNuMTLj" : "beiklmnopstvrDcCNuMTLj"
-#define infochanmodeswithparams feature_bool(FEAT_OPLEVELS) ? "AbejkloUvL" : "bejklovL"
+ /** Available Channel modes */
+#define infochanmodes feature_bool(FEAT_OPLEVELS) ? "AbeijklmnopstUvrDcCNuMTqSahL" : "beijklmnopstvrDcCNuMTqSahL"
+/** Available Channel modes that take parameters */
+#define infochanmodeswithparams feature_bool(FEAT_OPLEVELS) ? "AbejkloUvqSahL" : "bekjlovqSahL"
 
 #define HoldChannel(x)          (!(x))
 /** name invisible */

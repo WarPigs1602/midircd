@@ -249,7 +249,7 @@ int m_join(struct Client *cptr, struct Client *sptr, int parc, char *parv[])
           }
 
           int flags = CHFL_DEOPPED;
-          if (IsChannelService(sptr)) {
+          if (IsChannelService(sptr) || IsService(sptr)) {
               flags |= CHFL_CHANSERVICE;
           }
 
@@ -341,7 +341,7 @@ int m_join(struct Client *cptr, struct Client *sptr, int parc, char *parv[])
         continue;
       }
 
-      joinbuf_join(&create, chptr, CHFL_CHANOP | CHFL_CHANNEL_MANAGER);
+      joinbuf_join(&create, chptr, CHFL_OWNER);
       if (feature_bool(FEAT_AUTOCHANMODES) && feature_str(FEAT_AUTOCHANMODES_LIST) && strlen(feature_str(FEAT_AUTOCHANMODES_LIST)) > 0)
         SetAutoChanModes(chptr);
     } else if (find_member_link(chptr, sptr)) {
@@ -369,19 +369,19 @@ int m_join(struct Client *cptr, struct Client *sptr, int parc, char *parv[])
         }
         int flags = CHFL_DEOPPED;
         int err = 0;
-        if (IsChannelService(sptr)) {
+        if (IsChannelService(sptr) || IsService(sptr)) {
             flags |= CHFL_CHANSERVICE;
             // Services sollten keine weiteren User-Modi bekommen!
         }
       /* Check Apass/Upass -- since we only ever look at a single
        * "key" per channel now, this hampers brute force attacks. */
       if (key && !strcmp(key, chptr->mode.apass))
-        flags = CHFL_CHANOP | CHFL_CHANNEL_MANAGER;
+        flags = CHFL_OWNER;
       else if (key && !strcmp(key, chptr->mode.upass))
-        flags = CHFL_CHANOP;
+        flags = CHFL_OWNER;
       else if (chptr->users == 0 && !chptr->mode.apass[0]) {
         /* Joining a zombie channel (zannel): give ops and increment TS. */
-        flags = CHFL_CHANOP;
+        flags = CHFL_OWNER;
         chptr->creationtime++;
       } else if (IsInvited(sptr, chptr)) {
         /* Invites bypass these other checks. */
