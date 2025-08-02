@@ -51,8 +51,6 @@ struct Client;
 #define STARTJOINLEN	10 	/**< fuzzy numbers */
 #define STARTCREATELEN	20
 
-#define NETWORK_ID_LEN 5
-
 /*
  * Macro's
  */
@@ -156,17 +154,15 @@ struct Client;
 #define MODE_NOMULTITARGET 0x1000000    /**< +T No multiple targets */
 #define MODE_MODERATENOREG 0x2000000    /**< +M Moderate unauthed users */
 #define MODE_TLSONLY       0x4000000    /**< +Z TLS users only */
-
-#define MODE_BANEXCEPTION 0x8000000 /**< +e Ban exception */
-#define MODE_ANTIJOINFLOOD 0x10000000  /**< +j Anti-Join-Flood mode */
-#define MODE_LINK      0x20000000  /**< +L LINK Mode */
-
+#define MODE_LINK      0x8000000    /**< +L Channel redirect */
+#define MODE_JOINFLOOD 0x10000000 /**< +j Join flood protection */
+#define MODE_EXCEPT    0x20000000 /**< +e Exception list */
 
 /** mode flags which take another parameter (With PARAmeterS)
  */
-#define MODE_WPARAS     (MODE_CHANSERVICE|MODE_OWNER|MODE_ADMIN|MODE_CHANOP|MODE_HALFOP|MODE_VOICE|MODE_BAN|MODE_BANEXCEPTION|MODE_ANTIJOINFLOOD|MODE_KEY|MODE_LIMIT|MODE_APASS|MODE_UPASS|MODE_LINK)
+#define MODE_WPARAS     (MODE_CHANSERVICE|MODE_OWNER|MODE_ADMIN|MODE_CHANOP|MODE_HALFOP|MODE_VOICE|MODE_BAN|MODE_KEY|MODE_LIMIT|MODE_APASS|MODE_UPASS|MODE_LINK)
 
-/** Available Channel modes */
+ /** Available Channel modes */
 #define infochanmodes feature_bool(FEAT_OPLEVELS) ? "AbeijklmnopstUvrDcCNuMTqSahL" : "beijklmnopstvrDcCNuMTqSahL"
 /** Available Channel modes that take parameters */
 #define infochanmodeswithparams feature_bool(FEAT_OPLEVELS) ? "AbejkloUvqSahL" : "bekjlovqSahL"
@@ -181,10 +177,10 @@ struct Client;
 #define PubChannel(x)           ((!x) || ((x)->mode.mode & \
                                     (MODE_PRIVATE | MODE_SECRET)) == 0)
 
+#define IsNetSecureChannel(name)   (*(name) == '!')
 #define IsGlobalChannel(name)   (*(name) == '#')
-#define IsLocalChannel(name)    (*(name) == '&')
-#define IsNetworkChannel(name) (*(name) == '!')
-#define IsChannelName(name) (IsGlobalChannel(name) || IsLocalChannel(name) || IsNetworkChannel(name))
+#define IsLocalChannel(name) ((name) && (*(name) == '&' || *(name) == '+'))
+#define IsChannelName(name)     (IsGlobalChannel(name) || IsLocalChannel(name) || IsNetSecureChannel(name))
 
 typedef enum ChannelGetType {
   CGT_NO_CREATE,
@@ -287,6 +283,13 @@ struct Membership {
 #define ClearBurstJoined(x) ((x)->status &= ~CHFL_BURST_JOINED)
 #define ClearDelayedJoin(x) ((x)->status &= ~CHFL_DELAYED)
 
+struct JoinFloodState {
+	int max_joins;         // Maximum allowed joins
+	int time_window;       // Time window in seconds
+	int join_count;        // Current join count in window
+	time_t window_start;   // Start time of current window
+};
+
 /** Mode information for a channel */
 struct Mode {
   unsigned int mode;
@@ -294,8 +297,11 @@ struct Mode {
   char key[KEYLEN + 1];
   char upass[KEYLEN + 1];
   char apass[KEYLEN + 1];
-  char linktarget[CHANNELLEN + 1];
+  char linkchan[CHANNELLEN + 1]; /**< Channel redirect, if any */
+  char joinflood[32]; /**< Join flood protection, if any */
+  struct JoinFloodState jflood; /**< Join flood state */
 };
+
 
 #define BAN_IPMASK         0x0001  /**< ban mask is an IP-number mask */
 #define BAN_OVERLAPPED     0x0002  /**< ban overlapped, need bounce */
@@ -326,19 +332,16 @@ struct Channel {
   time_t             creationtime; /**< Creation time of this channel */
   time_t             topic_time;   /**< Modification time of the topic */
   unsigned int       users;	   /**< Number of clients on this channel */
-  int joinflood_count;      /**< Number of joins in the current time window */
-  time_t joinflood_time;    /**< Timestamp of the first join in the window */
-  int joinflood_limit;      /**< Maximum allowed joins in the window */
-  int joinflood_period;     /**< Time window in seconds for join flood */
   struct Membership* members;	   /**< Pointer to the clients on this channel*/
   struct SLink*      invites;	   /**< List of invites on this channel */
   struct Ban*        banlist;      /**< List of bans on this channel */
-  struct Ban* ban_exceptions; /**< List of exceptions on this channel */
+  struct Ban*        exceptlist;   /**< List of ban exceptions on this channel */
   struct Mode        mode;	   /**< This channels mode */
   char               topic[TOPICLEN + 1]; /**< Channels topic */
   char               topic_nick[NICKLEN + 1]; /**< Nick of the person who set
 						*  The topic
 						*/
+  char relinkchan[CHANNELLEN + 1]; /**< Channel redirect, if any */
   char               chname[1];	   /**< Dynamically allocated string of the 
 				     * channel name
 				     */
@@ -418,14 +421,16 @@ struct JoinBuf {
 extern struct Channel* GlobalChannelList;
 extern int             LocalChanOperMode;
 
-struct ChannelRenameEntry {
+
+struct ChannelRedirect {
 	char oldname[CHANNELLEN + 1];
 	char newname[CHANNELLEN + 1];
-	time_t renametime;
-	struct ChannelRenameEntry* next;
+	struct ChannelRedirect* next;
 };
 
-extern struct ChannelRenameEntry* GlobalChannelRenameList;
+extern int channel_rename(struct Channel* chptr, const char* newname);
+extern const char* find_channel_redirect(const char* oldname);
+extern void add_channel_redirect(const char* oldname, const char* newname);
 
 /*
  * Proto types
@@ -460,7 +465,6 @@ extern const char* find_no_nickchange_channel(struct Client* cptr);
 extern struct Membership* find_channel_member(struct Client* cptr, struct Channel* chptr);
 extern int is_privileged_member(struct Membership* member);
 extern int is_privileged_user(struct Client* cptr, struct Channel* chptr);
-
 extern int member_can_send_to_channel(struct Membership* member, int reveal);
 extern int client_can_send_to_channel(struct Client *cptr, struct Channel *chptr, int reveal);
 
@@ -476,7 +480,11 @@ extern int has_voice(struct Client *cptr, struct Channel *chptr);
    this function can't make any assumptions that it has a channel
 */
 extern int IsInvited(struct Client* cptr, const void* chptr);
-extern int is_ban_exception(struct Channel* chptr, struct Client* sptr);
+extern const char* NetSecureChannelID(const char* name);
+extern int NetSecureChannelIDExists(const char* id);
+extern void GenerateNetSecureChannelID(char* out_id, size_t out_size);
+extern const char* get_channel_redirect(const char* newname);
+extern int IsNetSecureChannelName(const char* name);
 extern void send_channel_modes(struct Client *cptr, struct Channel *chptr);
 extern char *pretty_mask(char *mask);
 extern void del_invite(struct Client *cptr, struct Channel *chptr);
@@ -522,14 +530,8 @@ extern void joinbuf_init(struct JoinBuf *jbuf, struct Client *source,
 extern void joinbuf_join(struct JoinBuf *jbuf, struct Channel *chan,
 			 unsigned int flags);
 extern int joinbuf_flush(struct JoinBuf *jbuf);
-extern void create_network_channel(const char* base_name, char* out_name, size_t out_size);
-extern void add_channel_rename(const char* oldname, const char* newname);
-extern void remove_reverse_rename(const char* newname);
-extern const char* get_renamed_channel(const char* oldname);
-extern const char* get_original_channel(const char* newname);
-extern void get_network_channel_list(const char* visible_name, char* out_list, size_t out_size);
 extern struct Ban *make_ban(const char *banstr);
-extern struct Ban *find_ban(struct Client *cptr, struct Ban *banlist, struct Ban *exceptionlist);
+extern struct Ban *find_ban(struct Client *cptr, struct Ban *banlist);
 extern int apply_ban(struct Ban **banlist, struct Ban *newban, int free);
 extern void free_ban(struct Ban *ban);
 
