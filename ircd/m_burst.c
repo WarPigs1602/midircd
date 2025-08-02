@@ -658,9 +658,6 @@ int ms_burst(struct Client* cptr, struct Client* sptr, int parc, char* parv[])
 				{
 					// Flags für Join setzen
 					unsigned int join_flags = current_mode;
-					if ((IsChannelService(acptr) || IsService(acptr)) && !(join_flags & CHFL_CHANSERVICE))
-						join_flags |= CHFL_CHANSERVICE;
-
 					add_user_to_channel(chptr, acptr, join_flags, oplevel);
 
 					if (!(join_flags & CHFL_DELAYED)) {
@@ -677,11 +674,18 @@ int ms_burst(struct Client* cptr, struct Client* sptr, int parc, char* parv[])
 					modebuf_init(&mbuf, &me, cptr, chptr, MODEBUF_DEST_CHANNEL | MODEBUF_DEST_SERVER);
 
 					// MODE-Kommandos nur für Modi, die noch nicht aktiv sind
-					if ((join_flags & CHFL_CHANSERVICE) && !(existing_member && IsChanService(existing_member)))
+					if ((join_flags & CHFL_CHANSERVICE) && !(existing_member && IsChanService(existing_member)) && !(existing_member->status & CHFL_BURST_ALREADY_SERVICE))
+					{
+						modebuf_mode_client(&mbuf, MODE_ADD | MODE_CHANSERVICE, acptr, 0);
+						existing_member->status |= CHFL_BURST_ALREADY_SERVICE;
+						mode_sent = 1;
+					} else
+					if ((IsService(acptr) || IsChannelService(acptr)) && !(join_flags & CHFL_CHANSERVICE) && !(existing_member->status & CHFL_BURST_ALREADY_SERVICE))
 					{
 						modebuf_mode_client(&mbuf, MODE_ADD | MODE_CHANSERVICE, acptr, 0);
 						mode_sent = 1;
-					} 
+						existing_member->status |= CHFL_BURST_ALREADY_SERVICE;
+					}
 					if ((join_flags & CHFL_OWNER) && !(existing_member && IsOwner(existing_member)))
 					{
 						modebuf_mode_client(&mbuf, MODE_ADD | MODE_OWNER, acptr, 0);

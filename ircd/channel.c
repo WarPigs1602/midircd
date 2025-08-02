@@ -4064,7 +4064,7 @@ joinbuf_join(struct JoinBuf* jbuf, struct Channel* chan, unsigned int flags)
 					CAP_AWAYNOTIFY, 0, ":%s", cli_user(jbuf->jb_source)->away);
 
 			/* send an op, too, if needed */
-			if (flags & (CHFL_CHANSERVICE) || IsChannelService(jbuf->jb_source) || IsService(jbuf->jb_source))
+			if (flags & (CHFL_CHANSERVICE))
 				sendcmdto_channel_butserv_butone(&his,
 					CMD_MODE, chan, NULL, 0, "%H +S %C",
 					chan, jbuf->jb_source);
