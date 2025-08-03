@@ -52,6 +52,18 @@ int m_rename(struct Client* cptr, struct Client* sptr, int parc, char* parv[])
     newname = parv[2];
 
     chptr = FindChannel(oldname);
+    // Prevent rename if a service is present in the channel
+    for (struct Membership* member = chptr->members; member; member = member->next_member) {
+        if (IsService(member->user) || IsChannelService(member->user)) {
+            if (has_rename_caps(sptr)) {
+                send_standard_reply(&me, sptr, "FAIL", "RENAME", cli_name(sptr), "Channel contains a service, rename not allowed");
+            }
+            else {
+                send_reply(sptr, ERR_RENAME_SERVICEPRESENT, oldname);
+            }
+            return 0;
+        }
+    }
     if (!chptr) {
         if (has_rename_caps(sptr)) {
             send_standard_reply(&me, sptr, "FAIL", "RENAME", cli_name(sptr), "No such channel: %s", oldname);
