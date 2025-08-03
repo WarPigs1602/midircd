@@ -1463,8 +1463,8 @@ static Numeric replyTable[] = {
   { ERR_KNOCKONCHAN,   "%s :You are already on that channel",              "714" },
 /* 715 */
   { ERR_RENAME_LINKED, "%s :Channel is linked (+L) and cannot be renamed" , "715" },
-/* 717 */
-  { 0 },
+/* 716 */
+  { ERR_RENAME_SERVICEPRESENT, "%s :Channel contains a service, rename not allowed", "716" },
 /* 717 */
   { 0 },
 /* 718 */
