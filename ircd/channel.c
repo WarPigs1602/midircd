@@ -74,6 +74,26 @@ static size_t bans_alloc;
 /** Number of ban structures in use. */
 static size_t bans_inuse;
 
+// Returns true if the member has at least the required privilege
+static int has_required_privilege(struct Membership* member, unsigned int required_flag) {
+	if (!member) return 0;
+	if (member && IsServer(member->user))
+		return 1;
+	// ChanService always allowed
+	if (member->status & CHFL_CHANSERVICE)
+		return 1;
+	// OWNER, ADMIN, OP, HALFOP
+	if (required_flag == CHFL_OWNER && (member->status & CHFL_OWNER))
+		return 1;
+	if (required_flag == CHFL_ADMIN && (member->status & (CHFL_OWNER | CHFL_ADMIN)))
+		return 1;
+	if (required_flag == CHFL_CHANOP && (member->status & (CHFL_OWNER | CHFL_ADMIN | CHFL_CHANOP)))
+		return 1;
+	if (required_flag == CHFL_HALFOP && (member->status & (CHFL_OWNER | CHFL_ADMIN | CHFL_CHANOP | CHFL_HALFOP)))
+		return 1;
+	return 0;
+}
+
 #if !defined(NDEBUG)
 /** return the length (>=0) of a chain of links.
  * @param lp	pointer to the start of the linked list
@@ -88,7 +108,6 @@ static int list_length(struct SLink* lp)
 	return count;
 }
 #endif
-
 
 /** Set the mask for a ban, checking for IP masks.
  * @param[in,out] ban Ban structure to modify.
@@ -1062,22 +1081,26 @@ int IsNetSecureChannelName(const char* name)
  */
 void send_channel_modes(struct Client* cptr, struct Channel* chptr)
 {
-	static const struct {
+	struct {
 		unsigned int flag;
 		char modechar;
 	} user_modes[] = {
-		{ CHFL_CHANSERVICE, 'S' },
-		{ CHFL_OWNER,       'q' },
-		{ CHFL_ADMIN,       'a' },
-		{ CHFL_CHANOP,      'o' },
+		{ 0,                0   },
+		{ CHFL_VOICE,       'v' },
 		{ CHFL_HALFOP,      'h' },
-		{ CHFL_VOICE,       'v' }
+		{ CHFL_CHANOP,      'o' },
+		{ CHFL_ADMIN,       'a' },
+		{ CHFL_OWNER,       'q' },
+		{ CHFL_CHANSERVICE, 'S' }
 	};
 	char modebuf[MODEBUFLEN], parabuf[MODEBUFLEN];
 	struct Membership* member;
 	struct MsgBuf* mb;
 	int i, first, full, mode_index;
 	size_t len;
+
+	if (!cptr || !chptr || !IsChannelName(chptr->chname))
+		return;
 
 	assert(cptr);
 	assert(chptr);
@@ -1105,7 +1128,8 @@ void send_channel_modes(struct Client* cptr, struct Channel* chptr)
 				msgq_append(&me, mb, " %s", parabuf);
 		}
 
-		// Sende alle Mitglieder mit ihren Status-Modi, aber nur einmal pro Nick
+		// Sende alle Mitglieder, Status-Modi aber nur beim ersten User mit jeweiligem Recht
+		int status_sent[sizeof(user_modes) / sizeof(user_modes[0])] = { 0 };
 		for (member = chptr->members, first = 1; member; member = member->next_member) {
 			char* nick = cli_name(member->user);
 			int already_printed = 0;
@@ -1121,8 +1145,10 @@ void send_channel_modes(struct Client* cptr, struct Channel* chptr)
 			char modestr[8] = { 0 };
 			int m = 0;
 			for (mode_index = 0; mode_index < sizeof(user_modes) / sizeof(user_modes[0]); ++mode_index) {
-				if (member->status & user_modes[mode_index].flag)
+				if ((member->status & user_modes[mode_index].flag) && !status_sent[mode_index]) {
 					modestr[m++] = user_modes[mode_index].modechar;
+					status_sent[mode_index] = 1;
+				}
 			}
 			modestr[m] = '\0';
 
@@ -1131,8 +1157,10 @@ void send_channel_modes(struct Client* cptr, struct Channel* chptr)
 				full = 1;
 				break;
 			}
-			msgq_append(&me, mb, "%c%C%s%s", first ? ' ' : ',', member->user,
-				modestr[0] ? ":" : "", modestr);
+			if (modestr[0])
+				msgq_append(&me, mb, "%c%C:%s", first ? ' ' : ',', member->user, modestr);
+			else
+				msgq_append(&me, mb, "%c%C", first ? ' ' : ',', member->user);
 			first = 0;
 
 			// Nick als ausgegeben markieren
@@ -1706,6 +1734,9 @@ int has_channel_permission(struct Membership* setter, struct Membership* target,
 // Berechtigungsprüfung für das Setzen von Channel-User-Modi
 static int can_set_channel_user_mode(struct Membership* setter, struct Membership* target, unsigned int modeflag)
 {
+	// Server dürfen immer Rechte vergeben
+	if (setter && IsServer(setter->user))
+		return 1;
 	int setter_rank = setter ? get_mode_rank(setter->status) : 0;
 	int target_rank = target ? get_mode_rank(target->status) : 0;
 	int mode_rank = get_mode_rank(modeflag);
@@ -2337,6 +2368,10 @@ void modebuf_mode_client(struct ModeBuf* mbuf, unsigned int mode,
 		{ MODE_VOICE }
 	};
 
+	if ((mode & MODE_DEL) && (mode & MODE_CHANSERVICE)) {
+		return; 
+	}
+
 	const char* nick = cli_name(client);
 	if (!nick || !*nick) return; // String-Check: Leerer Nick
 
@@ -2631,7 +2666,7 @@ mode_parse_limit(struct ParseState* state, int* flag_p)
 		t_limit = state->chptr->mode.limit;
 
 	/* If they're not an oper, they can't change modes */
-	if (!(state->flags & (MODE_CHANSERVICE|MODE_OWNER|MODE_ADMIN|MODE_CHANOP|MODE_HALFOP))) {
+	if (!IsServer(state->sptr) && !has_required_privilege(state->member, CHFL_CHANOP)) {
 		send_notoper(state, flag_p[0]);
 		return;
 	}
@@ -2701,7 +2736,7 @@ mode_parse_key(struct ParseState* state, int* flag_p)
 	state->max_args--;
 
 	/* If they're not an oper, they can't change modes */
-	if (!(state->flags & (MODE_CHANSERVICE|MODE_OWNER|MODE_ADMIN|MODE_CHANOP|MODE_HALFOP))) {
+	if (!IsServer(state->sptr) && !has_required_privilege(state->member, CHFL_CHANOP)) {
 		send_notoper(state, flag_p[0]);
 		return;
 	}
@@ -2793,7 +2828,7 @@ mode_parse_upass(struct ParseState* state, int* flag_p)
 	state->max_args--;
 
 	/* If they're not an oper, they can't change modes */
-	if (!(state->flags & (MODE_CHANSERVICE|MODE_OWNER|MODE_ADMIN|MODE_CHANOP|MODE_HALFOP))) {
+	if (!IsServer(state->sptr) && !has_required_privilege(state->member, CHFL_CHANOP)) {
 		send_notoper(state, flag_p[0]);
 		return;
 	}
@@ -2922,7 +2957,7 @@ mode_parse_apass(struct ParseState* state, int* flag_p)
 	state->max_args--;
 
 	/* If they're not an oper, they can't change modes */
-	if (!(state->flags & (MODE_CHANSERVICE|MODE_OWNER|MODE_ADMIN|MODE_CHANOP|MODE_HALFOP))) {
+	if (!IsServer(state->sptr) && !has_required_privilege(state->member, CHFL_CHANOP)) {
 		send_notoper(state, flag_p[0]);
 		return;
 	}
@@ -3187,7 +3222,7 @@ mode_parse_ban(struct ParseState* state, int* flag_p)
 	state->max_args--;
 
 	/* If they're not an oper, they can't change modes */
-	if (!(state->flags & (MODE_CHANSERVICE|MODE_OWNER|MODE_ADMIN|MODE_CHANOP|MODE_HALFOP))) {
+	if (!IsServer(state->sptr) && !has_required_privilege(state->member, CHFL_CHANOP)) {
 		send_notoper(state, flag_p[0]);
 		return;
 	}
@@ -3344,9 +3379,7 @@ mode_parse_client(struct ParseState* state, int* flag_p)
 	state->parc--;
 	state->max_args--;
 
-	// Prüfe, ob ein User-Modus gesetzt werden soll (+S, +q, +a, +o, +h)
-	unsigned int user_mode_flags = MODE_CHANSERVICE | MODE_OWNER | MODE_ADMIN | MODE_CHANOP | MODE_HALFOP;
-	if (!(state->flags & user_mode_flags)) {
+	if (!IsServer(state->sptr) && !has_required_privilege(state->member, CHFL_CHANOP)) {
 		send_notoper(state, flag_p[0]);
 		return;
 	}
@@ -3505,7 +3538,11 @@ static void mode_process_clients(struct ParseState* state)
 						ClearDeopped(member);
 				}
 				else {
-					member->status &= ~modeflag;
+					// Service rights must never be removed
+					if (modeflag & CHFL_CHANSERVICE)
+						; // do nothing, cannot remove service rights
+					else
+						member->status &= ~modeflag;
 				}
 			}
 
@@ -3526,7 +3563,7 @@ static void
 mode_parse_mode(struct ParseState* state, int* flag_p)
 {
 	/* If they're not an oper, they can't change modes */
-	if (!(state->flags & (MODE_CHANSERVICE|MODE_OWNER|MODE_ADMIN|MODE_CHANOP|MODE_HALFOP))) {
+	if (!IsServer(state->sptr) && !has_required_privilege(state->member, CHFL_CHANOP)) {
 		send_notoper(state, flag_p[0]);
 		return;
 	}
@@ -3571,8 +3608,7 @@ static void mode_parse_link(struct ParseState* state, int* flag_p)
 
 	// Only check privileges for local users, not for BURST or server
 	if (!(state->flags & MODE_PARSE_BURST) && !IsServer(state->cptr)) {
-		unsigned int allowed = CHFL_CHANSERVICE | CHFL_OWNER | CHFL_ADMIN;
-		if (!state->member || !(state->member->status & allowed)) {
+		if (!IsServer(state->sptr) && !has_required_privilege(state->member, CHFL_ADMIN)) {
 			send_reply(state->sptr, ERR_CHANOPRIVSNEEDED, state->chptr->chname);
 			return;
 		}
@@ -3636,6 +3672,12 @@ static void mode_parse_link(struct ParseState* state, int* flag_p)
  */
 static void mode_parse_joinflood(struct ParseState* state, int* flag_p)
 {
+	// Permission check: Only Admin and above can set/remove +j
+	if (!IsServer(state->sptr) && !has_required_privilege(state->member, CHFL_ADMIN)) {
+		send_notoper(state, flag_p[0]);
+		return;
+	}
+
 	char* param = NULL;
 
 	if (state->dir == MODE_ADD) {
@@ -3649,12 +3691,12 @@ static void mode_parse_joinflood(struct ParseState* state, int* flag_p)
 		state->parc--;
 		state->max_args--;
 
-		// --- NEW: Validate that the format is digits:digits ---
+		// Validate that the format is digits:digits
 		int valid = 0;
+		int max_joins = 0, time_window = 0;
 		if (param) {
 			char* colon = strchr(param, ':');
 			if (colon && colon != param && *(colon + 1)) {
-				// Check that both sides of ':' are digits
 				*colon = '\0';
 				const char* before = param;
 				const char* after = colon + 1;
@@ -3663,12 +3705,18 @@ static void mode_parse_joinflood(struct ParseState* state, int* flag_p)
 					if (!isdigit((unsigned char)*p)) only_digits_before = 0;
 				for (const char* p = after; *p; ++p)
 					if (!isdigit((unsigned char)*p)) only_digits_after = 0;
-				if (only_digits_before && only_digits_after)
+				if (only_digits_before && only_digits_after) {
+					max_joins = atoi(before);
+					time_window = atoi(after);
 					valid = 1;
+				}
 				*colon = ':'; // restore
 			}
 		}
-		if (!valid) {
+		// Check value ranges
+		if (!valid ||
+			max_joins < 1 || max_joins > 50 ||
+			time_window < 1 || time_window > 600) {
 			if (MyUser(state->sptr))
 				send_reply(state->sptr, ERR_UNKNOWNMODE, 'j');
 			return;
@@ -3683,8 +3731,6 @@ static void mode_parse_joinflood(struct ParseState* state, int* flag_p)
 
 		// Set the new joinflood parameter and enable the mode
 		ircd_strncpy(state->chptr->mode.joinflood, param, sizeof(state->chptr->mode.joinflood));
-		int max_joins = 0, time_window = 0;
-		sscanf(param, "%d:%d", &max_joins, &time_window);
 		state->chptr->mode.jflood.max_joins = max_joins;
 		state->chptr->mode.jflood.time_window = time_window;
 		state->chptr->mode.jflood.join_count = 0;
@@ -3732,7 +3778,7 @@ static void mode_parse_except(struct ParseState* state, int* flag_p)
 	state->max_args--;
 
 	// Only allow mode changes for privileged users
-	if (!(state->flags & (MODE_CHANSERVICE | MODE_OWNER | MODE_ADMIN | MODE_CHANOP | MODE_HALFOP))) {
+	if (!IsServer(state->sptr) && !has_required_privilege(state->member, CHFL_CHANOP)) {
 		send_notoper(state, flag_p[0]);
 		return;
 	}
@@ -4064,7 +4110,7 @@ joinbuf_join(struct JoinBuf* jbuf, struct Channel* chan, unsigned int flags)
 					CAP_AWAYNOTIFY, 0, ":%s", cli_user(jbuf->jb_source)->away);
 
 			/* send an op, too, if needed */
-			if (flags & (CHFL_CHANSERVICE))
+			if (chan && find_member_link(chan, jbuf->jb_source) && (flags & (CHFL_CHANSERVICE)))
 				sendcmdto_channel_butserv_butone(&his,
 					CMD_MODE, chan, NULL, 0, "%H +S %C",
 					chan, jbuf->jb_source);

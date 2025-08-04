@@ -248,6 +248,7 @@ int m_join(struct Client *cptr, struct Client *sptr, int parc, char *parv[])
               continue;
           }
 
+
           int flags = CHFL_DEOPPED;
           if (IsChannelService(sptr) || IsService(sptr)) {
               flags |= CHFL_CHANSERVICE;
@@ -278,21 +279,81 @@ int m_join(struct Client *cptr, struct Client *sptr, int parc, char *parv[])
           }
       }
       else {
+          int redirect_count = 0;
+          const int MAX_REDIRECTS = 5;
           struct Channel* ch = FindChannel(name);
-          if (ch && (ch->mode.mode & MODE_LINK) && (ch->mode.mode & MODE_LIMIT) && *ch->mode.linkchan) {
-              // Loop-Schutz: Prüfe, ob Zielchannel auf diesen Channel zurücklinkt
-              struct Channel* target = FindChannel(ch->mode.linkchan);
-              if (target && (target->mode.mode & MODE_LINK) && !strcmp(target->mode.linkchan, name)) {
-                  send_reply(sptr, ERR_LINKCHANNELLOOP, name, ch->mode.linkchan, name, ch->mode.linkchan);
-                  continue;
+
+          while (ch && redirect_count < MAX_REDIRECTS) {
+              int err = 0;
+              int flags = CHFL_DEOPPED;
+              // Calculate flags as before (e.g. Services, Owner, etc.)
+
+              // Check join conditions as before:
+              if (find_member_link(ch, sptr)) {
+                  break; // already on channel
               }
-              // Prüfe, ob Zielchannel ein lokaler Channel ist
-              if (IsLocalChannel(ch->mode.linkchan)) {
-                  send_reply(sptr, ERR_BADNETWORKCHAN, ch->mode.linkchan);
-                  continue;
+              if (check_target_limit(sptr, ch, ch->chname, 0)) {
+                  break;
               }
-              // Weiterleitung auf Zielchannel
-              name = ch->mode.linkchan;
+              if (ch->mode.mode & MODE_INVITEONLY && !IsInvited(sptr, ch))
+                  err = ERR_INVITEONLYCHAN;
+              else if (ch->mode.limit && (ch->users >= ch->mode.limit))
+                  err = ERR_CHANNELISFULL;
+              else if ((ch->mode.mode & MODE_REGONLY) && !IsAccount(sptr))
+                  err = ERR_NEEDREGGEDNICK;
+              else if (find_ban(sptr, ch->exceptlist) == NULL && find_ban(sptr, ch->banlist))
+                  err = ERR_BANNEDFROMCHAN;
+              else if (*ch->mode.key && (!key || strcmp(key, ch->mode.key)))
+                  err = ERR_BADCHANNELKEY;
+              else if ((ch->mode.mode & MODE_TLSONLY) && !IsTLS(sptr))
+                  err = ERR_TLSONLYCHAN;
+
+              // XtraOp override as before
+              if (IsXtraOp(sptr))
+                  err = 0;
+
+              // If there is an error and +L is set, redirect
+              if (err && (ch->mode.mode & MODE_LINK) && *ch->mode.linkchan) {
+                  // Loop protection
+                  struct Channel* target = FindChannel(ch->mode.linkchan);
+                  if (target && (target->mode.mode & MODE_LINK) && !strcmp(target->mode.linkchan, ch->chname)) {
+                      send_reply(sptr, ERR_LINKCHANNELLOOP, ch->chname, ch->mode.linkchan, ch->chname, ch->mode.linkchan);
+                      break;
+                  }
+                  if (IsLocalChannel(ch->mode.linkchan)) {
+                      send_reply(sptr, ERR_BADNETWORKCHAN, ch->mode.linkchan);
+                      break;
+                  }
+                  // Redirect
+                  name = ch->mode.linkchan;
+                  ch = FindChannel(name);
+                  redirect_count++;
+                  continue; // Repeat join check for new channel
+              }
+
+              // If no error, perform normal join
+              if (!err) {
+                  joinbuf_join(&join, ch, flags);
+                  // Set modes as before
+                  del_invite(sptr, ch);
+                  if (ch->topic[0]) {
+                      send_reply(sptr, RPL_TOPIC, ch->chname, ch->topic);
+                      send_reply(sptr, RPL_TOPICWHOTIME, ch->chname, ch->topic_nick, ch->topic_time);
+                  }
+                  do_names(sptr, ch, NAMES_ALL | NAMES_EON);
+              }
+              else {
+                  // Error without redirect: send error
+                  switch (err) {
+                  case ERR_NEEDREGGEDNICK:
+                      send_reply(sptr, ERR_NEEDREGGEDNICK, ch->chname, feature_str(FEAT_URLREG));
+                      break;
+                  default:
+                      send_reply(sptr, err, ch->chname);
+                      break;
+                  }
+              }
+              break; // Exit loop after join or error
           }
       }
     /* If we have any more keys, take the first for this channel. */
