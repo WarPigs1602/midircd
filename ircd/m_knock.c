@@ -37,10 +37,26 @@ int m_knock(struct Client* cptr, struct Client* sptr, int parc, char* parv[])
         return 0;
     }
 
-    if (!(chptr->mode.mode & MODE_INVITEONLY)) {
+    int restricted = 0;
+    if (chptr->mode.mode & MODE_INVITEONLY)
+        restricted = 1;
+    else if ((chptr->mode.mode & MODE_LIMIT) && chptr->users >= chptr->mode.limit)
+        restricted = 1;
+    else if ((chptr->mode.mode & MODE_KEY) && *chptr->mode.key)
+        restricted = 1;
+    else if ((chptr->mode.mode & MODE_REGONLY) && !IsAccount(sptr))
+        restricted = 1;
+    else if ((chptr->mode.mode & MODE_TLSONLY) && !IsTLS(sptr))
+        restricted = 1;
+    else if ((chptr->mode.mode & MODE_LINK))
+        restricted = 1;
+    else if (find_ban(sptr, chptr->banlist) && !find_ban(sptr, chptr->exceptlist))
+        restricted = 1;
+
+    if (!restricted) {
         send_reply(sptr, ERR_KNOCKNOTINVITE, chptr->chname);
         return 0;
-    }   
+    }
 
     if (find_channel_member(sptr, chptr)) {
         send_reply(sptr, ERR_KNOCKONCHAN, chptr->chname);
@@ -86,7 +102,25 @@ int ms_knock(struct Client* cptr, struct Client* sptr, int parc, char* parv[])
         return 0;
     }
 
-    if (!(chptr->mode.mode & MODE_INVITEONLY)) {
+    int restricted = 0;
+    if (!chptr)
+		return 0; // Channel not found, silently ignore
+    if (chptr->mode.mode & MODE_INVITEONLY)
+        restricted = 1;
+    else if ((chptr->mode.mode & MODE_LIMIT) && chptr->users >= chptr->mode.limit)
+        restricted = 1;
+    else if ((chptr->mode.mode & MODE_KEY) && *chptr->mode.key)
+        restricted = 1;
+    else if ((chptr->mode.mode & MODE_REGONLY) && !IsAccount(sptr))
+        restricted = 1;
+    else if ((chptr->mode.mode & MODE_TLSONLY) && !IsTLS(sptr))
+        restricted = 1;
+    else if ((chptr->mode.mode & MODE_LINK))
+        restricted = 1;
+    else if (find_ban(sptr, chptr->banlist) && !find_ban(sptr, chptr->exceptlist))
+        restricted = 1;
+
+    if (!restricted) {
         return 0;
     }
 
