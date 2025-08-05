@@ -219,7 +219,6 @@ extern const char* const PartFmt2;
 extern const char* const PartFmt1serv;
 extern const char* const PartFmt2serv;
 
-
 /*
  * Structures
  */
@@ -380,6 +379,11 @@ struct ModeBuf {
 					/**< A mode w/args */
 };
 
+struct PendingMode {
+	struct Channel* chptr;
+	struct ModeBuf modebuf;
+	struct PendingMode* next;
+};
 #define MODEBUF_DEST_CHANNEL	0x00001	/**< Mode is flushed to channel */
 #define MODEBUF_DEST_SERVER	0x00002	/**< Mode is flushed to server */
 
@@ -420,7 +424,7 @@ struct JoinBuf {
 
 extern struct Channel* GlobalChannelList;
 extern int             LocalChanOperMode;
-
+extern struct PendingMode* pending_modes;
 
 struct ChannelRedirect {
 	char oldname[CHANNELLEN + 1];

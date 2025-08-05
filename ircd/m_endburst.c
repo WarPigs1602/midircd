@@ -85,6 +85,7 @@
 #include "client.h"
 #include "hash.h"
 #include "ircd.h"
+#include "ircd_alloc.h"
 #include "ircd_log.h"
 #include "ircd_reply.h"
 #include "ircd_string.h"
@@ -133,6 +134,14 @@ int ms_end_of_burst(struct Client* cptr, struct Client* sptr, int parc, char* pa
    } else
       chan->mode.mode &= ~MODE_BURSTADDED;
   }
+  struct PendingMode* pm = pending_modes;
+  while (pm) {
+      modebuf_flush(&pm->modebuf);
+      struct PendingMode* next = pm->next;
+      MyFree(pm);
+      pm = next;
+  }
+  pending_modes = NULL;
 
   return 0;
 }

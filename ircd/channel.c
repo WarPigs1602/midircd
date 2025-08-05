@@ -551,15 +551,18 @@ void add_user_to_channel(struct Channel* chptr, struct Client* who,
 		SetOpLevel(member, oplevel);
 
 		/* Automatisch ChanService setzen */
-		if (IsChannelService(who) || IsService(who))
-			member->status |= CHFL_CHANSERVICE;
 
-		/* Owner beim Join eines leeren Channels */
-		else if (chptr->users == 0) {
-			member->status |= CHFL_OWNER;
-		}
 		if (chptr->chname[0] == '+') {
 			member->status &= ~(CHFL_CHANSERVICE | CHFL_OWNER | CHFL_ADMIN | CHFL_CHANOP | CHFL_HALFOP | CHFL_VOICE);
+		}
+		else if (IsChannelService(who) || IsService(who)) {
+			member->status |= CHFL_CHANSERVICE;
+		}
+		else if (chptr->mode.mode & MODE_CHANSERVICE) {
+			member->status |= CHFL_CHANSERVICE;
+		}
+		else if (chptr->users == 0) {
+			member->status |= CHFL_OWNER;
 		}
 
 		member->next_member = chptr->members;

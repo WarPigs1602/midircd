@@ -107,6 +107,8 @@
 #include <string.h>
 #include <ctype.h>
 
+struct PendingMode* pending_modes = NULL;
+
 static int
 netride_modes(int parc, char** parv, const char* curr_key)
 {
@@ -715,8 +717,14 @@ int ms_burst(struct Client* cptr, struct Client* sptr, int parc, char* parv[])
 						mode_sent = 1;
 					}
 
-					if (mode_sent)
-						modebuf_flush(&mbuf);
+					if (mode_sent) {
+						struct PendingMode* pm = (struct PendingMode*)MyMalloc(sizeof(struct PendingMode));
+						pm->chptr = chptr;
+						memcpy(&pm->modebuf, &mbuf, sizeof(struct ModeBuf));
+						pm->next = pending_modes;
+						pending_modes = pm;
+						// NICHT: modebuf_flush(&mbuf);
+					}
 				}
 				else
 				{
