@@ -7,7 +7,7 @@
 ## Main Features
 
 - **Configurable Feature System:**  
-  All server features can be enabled or disabled at runtime or via configuration (F-lines). See `include/ircd_features.h`.
+  All server features can be enabled or disabled at runtime or via configuration (F-lines). See `include/ircd_features.h` and `doc/readme.midircd`.
 
 - **Advanced Channel Modes:**  
   - `+c`: Block mIRC/ANSI color codes  
@@ -28,10 +28,13 @@
   - `+n`: Hide channels in /whois  
   - `+I`: Hide idle time  
   - `+R`: Only accept messages from authenticated users  
-  - Many more!
+  - Many more (see below and `doc/readme.midircd`)
 
 - **IRCv3 Support:**  
-  - Capabilities: SASL, account-notify, away-notify, chghost, echomessage, extjoin, invite-notify, message-tags, standard-replies, channel-rename
+  - Capabilities:  
+    - `sasl` (PLAIN, EXTERNAL, SCRAM, etc.)  
+    - `account-notify`, `away-notify`, `chghost`, `echo-message`, `extended-join`, `invite-notify`,  
+      `message-tags`, `standard-replies`, `draft/channel-rename`
 
 - **SASL Authentication:**  
   Full SASL support with forwarding to configurable services.
@@ -46,16 +49,23 @@
   Detailed information about channels, users, and servers.
 
 - **MOTD Management:**  
-  Flexible management for MOTD and remote-MOTD, banner support.
+  Multiple MOTDs, selection by hostmask/IP/class, caching, dynamic reload, banner support.
 
 - **Anti-Abuse:**  
-  Clone and flood limits, IP checks, TLS-only channels, improved host-hiding/cloaking.
+  Clone and flood limits, IP checks, TLS-only channels, improved host-hiding/cloaking, G-lines, join/clone/nick abuse protection.
+
+- **HEAD_IN_SAND Features:**  
+  Granular control over visibility and accessibility of server information and statistics (see `doc/readme.midircd`).
+
+- **Service Forwarding:**  
+  SASL and other authentication commands can be forwarded to a configurable service.
+
+- **Advanced Logging and Debugging:**  
+  Flexible logging, debug levels, and feature reporting.
 
 ---
 
 ## Channel Privileges & Hierarchy
-
-midircd supports a fine-grained privilege system for channel users:
 
 | Mode | Prefix | Name         | Description                                                             |
 |------|--------|--------------|-------------------------------------------------------------------------|
@@ -76,6 +86,15 @@ ChanService > Owner > Admin > Operator > Half-Op > Voice > normal user
 
 ---
 
+## Channel Types
+
+- `#`: Global channel (network-wide)
+- `&`: Local channel (server-local)
+- `!`: Network channel (unique ID, advanced features)
+- `+`: Modeless channel (no ops/modes)
+
+---
+
 ## Important IRC Commands
 
 All commands use the `/COMMAND` syntax. Common commands (see `/HELP` in IRC for details):
@@ -91,7 +110,7 @@ All commands use the `/COMMAND` syntax. Common commands (see `/HELP` in IRC for 
 - `/MODE` — Set channel/user modes
 - `/SETHOST` — Change hostname (Opers)
 - `/OPER` — Become an operator
-- `/WHOIS`, `/WHOWAS`, `/LIST`, `/NAMES`, `/TOPIC`, `/KICK`, `/BAN`, /RENAME, etc.
+- `/WHOIS`, `/WHOWAS`, `/LIST`, `/NAMES`, `/TOPIC`, `/KICK`, `/BAN`, `/RENAME`, etc.
 
 ---
 
@@ -119,12 +138,64 @@ All commands use the `/COMMAND` syntax. Common commands (see `/HELP` in IRC for 
 
 ---
 
+## Feature Configuration (F-lines)
+
+All features can be enabled/disabled or configured via F-lines in the configuration file.  
+See `include/ircd_features.h` and `doc/readme.midircd` for a full list and documentation.
+
+**Examples:**
+- `F:SETHOST:TRUE` — Enable /sethost command for opers
+- `F:SETHOST_USER:TRUE` — Enable /sethost for users with password
+- `F:SETHOST_AUTO:TRUE` — Enable automatic sethost on matching ident/host
+- `F:AUTOCHANMODES:TRUE` — Enable automatic default channel modes
+- `F:AUTOCHANMODES_LIST:ntCN` — Set default channel modes for new channels
+- `F:MAXCHANNELSPERUSER:10` — Set max channels per user
+- `F:SOCKSENDBUF:61440` — Set socket send buffer size
+- `F:SOCKRECVBUF:61440` — Set socket receive buffer size
+- `F:USER_HIDECHANS:TRUE` — Allow users to hide channels in /whois
+- `F:HIS_USERGLINE:TRUE` — Enable /GLINE command for users
+- `F:AUTOINVISIBLE:TRUE` — Set +i (invisible) for all new users
+- `F:HIS_USERIP:TRUE` — Enable/disable /USERIP for users
+
+See `doc/readme.midircd` for all available F-lines and their effects.
+
+---
+
+## ISUPPORT / 005 Tokens
+
+midircd announces the following ISUPPORT tokens (see `include/supported.h`):
+
+- `CHANTYPES=#&!+`
+- `PREFIX=(Sqaohv)!~&@%+`
+- `CHANMODES=b,e,j,k,l,L,imnpstrDducCNMTZ`
+- `NICKLEN=15`
+- `MAXCHANNELS=10`
+- `MAXBANS=45`
+- `CHANNELLEN=200`
+- `EXCEPTS`
+- `CHANID`
+- `!CHAN`
+- `USERIP`
+- `WALLCHOPS`
+- `WALLVOICES`
+- `CPRIVMSG`
+- `CNOTICE`
+- `SILENCE`
+- `MODES`
+- `STATUSMSG`
+- `CASEMAPPING`
+- `NETWORK`
+- ...and more
+
+---
+
 ## Documentation & Help
 
 See these files for detailed information on features, configuration, and commands:  
 - `doc/irc.1` — User commands  
 - `doc/ircd.8` — Server options  
-- `ircd/ircd_features.c` & `include/ircd_features.h` — Feature definitions
+- `ircd/ircd_features.c` & `include/ircd_features.h` — Feature definitions  
+- `doc/readme.midircd` — Feature and configuration documentation
 
 ---
 
