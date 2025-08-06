@@ -432,9 +432,10 @@ int ms_burst(struct Client* cptr, struct Client* sptr, int parc, char* parv[])
 			}
 			param++; /* look at next param */
 			break;
-		case '%': /* parameter contains bans */
+
+		case '%': /* parameter enthält Bans, Exceptions oder Redirects */
 			if (parv[param][1] == 'r' && (parv[param][2] == ' ' || parv[param][2] == '\0')) {
-				// Channel rename/redirect: %r <oldname>
+				// Channel redirect: %r <oldname>
 				const char* oldname = parv[param] + 3;
 				if (oldname && *oldname) {
 					add_channel_redirect(oldname, chptr->chname);
@@ -448,10 +449,39 @@ int ms_burst(struct Client* cptr, struct Client* sptr, int parc, char* parv[])
 
 				for (ban = ircd_strtok(&p, banlist, " "); ban;
 					ban = ircd_strtok(&p, 0, " ")) {
-					if (ban[0] == ':' && ban[1] == '%' && (ban[2] == 'e' || ban[2] == 'r')) {
+					if (ban[0] == ':' && ban[1] == '%' && ban[2] == 'r') {
+						// Exception oder Redirect als eigenes Feld, nicht als Ban behandeln
 						continue;
 					}
-					if (ban[0] == '%' && ban[1] == 'e') {
+					if ((ban[0] == ':' && ban[1] == '%' && ban[2] == 'e') || (ban[0] == '%' && ban[1] == 'e')) {
+						// Exception: :%e<mask> oder %e<mask>
+						char* except = (ban[0] == ':') ? ban + 3 : ban + 2;
+						except = collapse(pretty_mask(except));
+						struct Ban* ex;
+						int found = 0;
+						for (ex = chptr->exceptlist; ex; ex = ex->next) {
+							if (!ircd_strcmp(ex->banstr, except)) {
+								found = 1;
+								break;
+							}
+						}
+						if (!found) {
+							struct Ban* newex = make_ban(except);
+							strcpy(newex->who, "*");
+							newex->when = TStime();
+							newex->flags = 0;
+							newex->next = chptr->exceptlist;
+							chptr->exceptlist = newex;
+							chptr->mode.mode |= MODE_EXCEPT;
+						}
+						continue;
+					}
+					if (ban[0] == '%' && ban[1] == 'r') {
+						// Redirect: %r<oldname>
+						const char* oldname = ban + 2;
+						if (oldname && *oldname) {
+							add_channel_redirect(oldname, chptr->chname);
+						}
 						continue;
 					}
 					if (ban[0] == '#') {
@@ -463,24 +493,17 @@ int ms_burst(struct Client* cptr, struct Client* sptr, int parc, char* parv[])
 					}
 					ban = collapse(pretty_mask(ban));
 
-					/*
-					 * Yeah, we should probably do this elsewhere, and make it better
-					 * and more general; this will hold until we get there, though.
-					 * I dislike the current add_banid API... -Kev
-					 *
-					 * I wish there were a better algo. for this than the n^2 one
-					 * shown below *sigh*
-					 */
+					// Prüfe auf Duplikate wie bei Bans
 					for (lp = chptr->banlist; lp; lp = lp->next) {
 						if (!ircd_strcmp(lp->banstr, ban)) {
 							ban = 0; /* don't add ban */
 							lp->flags &= ~BAN_BURST_WIPEOUT; /* not wiping out */
-							break; /* new ban already existed; don't even repropagate */
+							break;
 						}
 						else if (!(lp->flags & BAN_BURST_WIPEOUT) &&
 							!mmatch(lp->banstr, ban)) {
 							ban = 0; /* don't add ban unless wiping out bans */
-							break; /* new ban is encompassed by an existing one; drop */
+							break;
 						}
 						else if (!mmatch(ban, lp->banstr))
 							lp->flags |= BAN_OVERLAPPED; /* remove overlapping ban */
@@ -511,10 +534,12 @@ int ms_burst(struct Client* cptr, struct Client* sptr, int parc, char* parv[])
 						else
 							chptr->banlist = newban;
 					}
+
 				}
 			}
 			param++; /* look at next param */
 			break;
+
 		default: /* parameter contains clients */
 		{
 			struct Client* acptr;
@@ -531,7 +556,12 @@ int ms_burst(struct Client* cptr, struct Client* sptr, int parc, char* parv[])
 
 			for (nick = ircd_strtok(&p, nicklist, ","); nick;
 				nick = ircd_strtok(&p, 0, ",")) {
-
+				base_mode = CHFL_DEOPPED | CHFL_BURST_JOINED;
+				if (chptr->mode.mode & MODE_DELJOINS)
+					base_mode |= CHFL_DELAYED;
+				current_mode = last_mode = base_mode;
+				oplevel = -1;
+				last_oplevel = 0;
 				if ((ptr = strchr(nick, ':'))) { /* new flags; deal */
 					*ptr++ = '\0';
 
@@ -617,6 +647,13 @@ int ms_burst(struct Client* cptr, struct Client* sptr, int parc, char* parv[])
 					}
 				}
 
+				unsigned int status_mask = CHFL_VOICE | CHFL_HALFOP | CHFL_CHANOP | CHFL_ADMIN | CHFL_OWNER | CHFL_CHANSERVICE;
+				if ((current_mode & status_mask) == 0) {
+					// Modus-Kontext zurücksetzen, damit der nächste Nick nicht "mitgezogen" wird
+					current_mode = base_mode;
+					oplevel = -1;
+				}
+
 				if (!(acptr = findNUser(nick)) || cli_from(acptr) != cptr)
 					continue; /* ignore this client */
 
@@ -627,33 +664,25 @@ int ms_burst(struct Client* cptr, struct Client* sptr, int parc, char* parv[])
 				for (ptr = nick; *ptr; ptr++) /* store nick */
 					nickstr[nickpos++] = *ptr;
 
-				if (current_mode != last_mode) { /* if mode changed... */
+				if (current_mode != last_mode) {
 					last_mode = current_mode;
 					last_oplevel = oplevel;
 
-					nickstr[nickpos++] = ':'; /* add a specifier */
+					nickstr[nickpos++] = ':';
+
+					// Status order: v, h, o, a, q, S
 					if (current_mode & CHFL_VOICE)
 						nickstr[nickpos++] = 'v';
 					if (current_mode & CHFL_HALFOP)
 						nickstr[nickpos++] = 'h';
 					if (current_mode & CHFL_CHANOP)
-					{
-						if (chptr->mode.apass[0])
-							nickpos += ircd_snprintf(0, nickstr + nickpos, sizeof(nickstr) - nickpos, "%u", oplevel);
-						else
-							nickstr[nickpos++] = 'o';
-					}
+						nickstr[nickpos++] = 'o';
 					if (current_mode & CHFL_ADMIN)
 						nickstr[nickpos++] = 'a';
 					if (current_mode & CHFL_OWNER)
 						nickstr[nickpos++] = 'q';
 					if (current_mode & CHFL_CHANSERVICE)
 						nickstr[nickpos++] = 'S';
-				}
-				else if (current_mode & CHFL_OWNER && oplevel != last_oplevel) { /* if just op level changed... */
-					nickstr[nickpos++] = ':'; /* add a specifier */
-					nickpos += ircd_snprintf(0, nickstr + nickpos, sizeof(nickstr) - nickpos, "%u", oplevel - last_oplevel);
-					last_oplevel = oplevel;
 				}
 
 				if (!(member = find_member_link(chptr, acptr)))
@@ -684,12 +713,12 @@ int ms_burst(struct Client* cptr, struct Client* sptr, int parc, char* parv[])
 							mode_sent = 1;
 						}
 						else
-						if ((IsService(acptr) || IsChannelService(acptr)) && !(join_flags & CHFL_CHANSERVICE) && !(existing_member->status & CHFL_BURST_ALREADY_SERVICE))
-						{
-							modebuf_mode_client(&mbuf, MODE_ADD | MODE_CHANSERVICE, acptr, 0);
-							mode_sent = 1;
-							existing_member->status |= CHFL_BURST_ALREADY_SERVICE;
-						}
+							if ((IsService(acptr) || IsChannelService(acptr)) && !(join_flags & CHFL_CHANSERVICE) && !(existing_member->status & CHFL_BURST_ALREADY_SERVICE))
+							{
+								modebuf_mode_client(&mbuf, MODE_ADD | MODE_CHANSERVICE, acptr, 0);
+								mode_sent = 1;
+								existing_member->status |= CHFL_BURST_ALREADY_SERVICE;
+							}
 					}
 					if ((join_flags & CHFL_OWNER) && !(existing_member && IsOwner(existing_member)))
 					{
@@ -742,15 +771,15 @@ int ms_burst(struct Client* cptr, struct Client* sptr, int parc, char* parv[])
 					if (member->status & CHFL_VOICE)
 						member->status |= CHFL_BURST_ALREADY_VOICED;
 					/* Synchronize with the burst. */
-					member->status |= CHFL_BURST_JOINED | (current_mode & (CHFL_CHANSERVICE|CHFL_OWNER|CHFL_ADMIN|CHFL_CHANOP|CHFL_HALFOP | CHFL_VOICE));
+					member->status |= CHFL_BURST_JOINED | (current_mode & (CHFL_CHANSERVICE | CHFL_OWNER | CHFL_ADMIN | CHFL_CHANOP | CHFL_HALFOP | CHFL_VOICE));
 					SetOpLevel(member, oplevel);
 				}
 			}
+			param++;
+			break;
 		}
-		param++;
-		break;
-		} /* switch (*parv[param]) */
-	} /* while (param < parc) */
+		}
+	}
 
 	nickstr[nickpos] = '\0';
 	banstr[banpos] = '\0';

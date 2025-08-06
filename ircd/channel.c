@@ -948,16 +948,6 @@ void channel_modes(struct Client* cptr, char* mbuf, char* pbuf, int buflen,
 		ircd_snprintf(0, pbuf, buflen, "%u", chptr->mode.limit);
 		previous_parameter = 1;
 	}
-	if (chptr->mode.mode & MODE_EXCEPT) {
-		struct Ban* e;
-		for (e = chptr->exceptlist; e; e = e->next) {
-			*mbuf++ = 'e';
-			if (previous_parameter)
-				strcat(pbuf, " ");
-			strcat(pbuf, e->banstr);
-			previous_parameter = 1;
-		}
-	}
 	if (chptr->mode.mode & MODE_LINK) {
 		*mbuf++ = 'L';
 		if (*chptr->mode.linkchan) {
@@ -1147,10 +1137,9 @@ void send_channel_modes(struct Client* cptr, struct Channel* chptr)
 
 			char modestr[8] = { 0 };
 			int m = 0;
-			for (mode_index = 0; mode_index < sizeof(user_modes) / sizeof(user_modes[0]); ++mode_index) {
-				if ((member->status & user_modes[mode_index].flag) && !status_sent[mode_index]) {
+			for (mode_index = 1; mode_index < sizeof(user_modes) / sizeof(user_modes[0]); ++mode_index) {
+				if (member->status & user_modes[mode_index].flag) {
 					modestr[m++] = user_modes[mode_index].modechar;
-					status_sent[mode_index] = 1;
 				}
 			}
 			modestr[m] = '\0';
@@ -3675,7 +3664,7 @@ static void mode_parse_link(struct ParseState* state, int* flag_p)
  */
 static void mode_parse_joinflood(struct ParseState* state, int* flag_p)
 {
-	// Permission check: Only Admin and above can set/remove +j
+	// Only Admin and above may set/remove +j
 	if (!IsServer(state->sptr) && !has_required_privilege(state->member, CHFL_ADMIN)) {
 		send_notoper(state, flag_p[0]);
 		return;
@@ -3694,14 +3683,16 @@ static void mode_parse_joinflood(struct ParseState* state, int* flag_p)
 		state->parc--;
 		state->max_args--;
 
-		// Validate that the format is digits:digits
+		// Validate format: digits:digits
 		int valid = 0;
 		int max_joins = 0, time_window = 0;
 		if (param) {
-			char* colon = strchr(param, ':');
-			if (colon && colon != param && *(colon + 1)) {
+			char paramcopy[32];
+			ircd_strncpy(paramcopy, param, sizeof(paramcopy));
+			char* colon = strchr(paramcopy, ':');
+			if (colon && colon != paramcopy && *(colon + 1)) {
 				*colon = '\0';
-				const char* before = param;
+				const char* before = paramcopy;
 				const char* after = colon + 1;
 				int only_digits_before = 1, only_digits_after = 1;
 				for (const char* p = before; *p; ++p)
@@ -3713,7 +3704,6 @@ static void mode_parse_joinflood(struct ParseState* state, int* flag_p)
 					time_window = atoi(after);
 					valid = 1;
 				}
-				*colon = ':'; // restore
 			}
 		}
 		// Check value ranges
@@ -3725,14 +3715,13 @@ static void mode_parse_joinflood(struct ParseState* state, int* flag_p)
 			return;
 		}
 
-		// Only set if the value is different from the current one
+		// Only set if the value changes
 		if ((state->chptr->mode.mode & MODE_JOINFLOOD) &&
 			!strcmp(state->chptr->mode.joinflood, param)) {
-			// Already set and identical, no action needed
 			return;
 		}
 
-		// Set the new joinflood parameter and enable the mode
+		// Store values
 		ircd_strncpy(state->chptr->mode.joinflood, param, sizeof(state->chptr->mode.joinflood));
 		state->chptr->mode.jflood.max_joins = max_joins;
 		state->chptr->mode.jflood.time_window = time_window;
@@ -3741,10 +3730,13 @@ static void mode_parse_joinflood(struct ParseState* state, int* flag_p)
 		state->chptr->mode.mode |= MODE_JOINFLOOD;
 	}
 	else if (state->dir == MODE_DEL) {
-		// Only remove if currently active
 		if (!(state->chptr->mode.mode & MODE_JOINFLOOD))
 			return;
 		*state->chptr->mode.joinflood = '\0';
+		state->chptr->mode.jflood.max_joins = 0;
+		state->chptr->mode.jflood.time_window = 0;
+		state->chptr->mode.jflood.join_count = 0;
+		state->chptr->mode.jflood.window_start = 0;
 		state->chptr->mode.mode &= ~MODE_JOINFLOOD;
 	}
 
