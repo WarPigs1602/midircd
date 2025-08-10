@@ -82,30 +82,45 @@ static char *IsVhostPass(char *hostmask);
 static int userCount = 0;
 
 static void rejoin_and_set_modes(struct Client* cptr) {
-    struct Membership* chan;
-    for (chan = cli_user(cptr)->channel; chan; chan = chan->next_channel) {
-        if (IsZombie(chan))
-            continue;
-        /* If this channel has delayed joins and the user has no modes, just set
-         * the delayed join flag rather than showing the join, even if the user
-         * was visible before */
-        if (!IsChanOp(chan) && !HasVoice(chan)
-            && (chan->channel->mode.mode & MODE_DELJOINS)) {
-            SetDelayedJoin(chan);
-        }
-        else {
-            sendcmdto_channel_butserv_butone(cptr, CMD_JOIN, chan->channel, cptr, 0,
-                "%H", chan->channel);
-        }
-        if (IsChanOp(chan) && HasVoice(chan)) {
-            sendcmdto_channel_butserv_butone(&his, CMD_MODE, chan->channel, cptr, 0,
-                "%H +ov %C %C", chan->channel, cptr, cptr);
-        }
-        else if (IsChanOp(chan) || HasVoice(chan)) {
-            sendcmdto_channel_butserv_butone(&his, CMD_MODE, chan->channel, cptr, 0,
-                "%H +%c %C", chan->channel, IsChanOp(chan) ? 'o' : 'v', cptr);
-        }
+  struct Membership* chan;
+  for (chan = cli_user(cptr)->channel; chan; chan = chan->next_channel) {
+    if (IsZombie(chan))
+      continue;
+    /* If this channel has delayed joins and der User hat keine Modi, setze delayed join */
+    if (!(IsChanService(chan) || IsOwner(chan) || IsAdmin(chan) || IsChanOp(chan) || IsHalfOp(chan) || HasVoice(chan))
+      && (chan->channel->mode.mode & MODE_DELJOINS)) {
+      SetDelayedJoin(chan);
+    } else {
+      sendcmdto_channel_butserv_butone(cptr, CMD_JOIN, chan->channel, cptr, 0,
+        "%H", chan->channel);
     }
+
+    // Modi nach Hierarchie setzen: +S +q +a +o +h +v
+    char modebuf[16] = "+";
+    char* p = modebuf + 1;
+    int count = 0;
+    struct Client* mode_targets[6];
+
+    if (IsChanService(chan)) { *p++ = 'S'; mode_targets[count++] = cptr; }
+    if (IsOwner(chan))      { *p++ = 'q'; mode_targets[count++] = cptr; }
+    if (IsAdmin(chan))      { *p++ = 'a'; mode_targets[count++] = cptr; }
+    if (IsChanOp(chan))     { *p++ = 'o'; mode_targets[count++] = cptr; }
+    if (IsHalfOp(chan))     { *p++ = 'h'; mode_targets[count++] = cptr; }
+    if (HasVoice(chan))     { *p++ = 'v'; mode_targets[count++] = cptr; }
+    *p = '\0';
+
+    if (count > 0) {
+      // Baue Parameterliste
+      char paramstr[256] = "";
+      for (int i = 0; i < count; ++i) {
+        char tmp[64];
+        ircd_snprintf(0, tmp, sizeof(tmp), " %C", cptr);
+        strncat(paramstr, tmp, sizeof(paramstr) - strlen(paramstr) - 1);
+      }
+      sendcmdto_channel_butserv_butone(&his, CMD_MODE, chan->channel, cptr, 0,
+        "%H %s%s", chan->channel, modebuf, paramstr);
+    }
+  }
 }
 
 /** Makes sure that \a cptr has a User information block.
