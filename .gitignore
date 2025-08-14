@@ -23,3 +23,4 @@ stamp-h
 
 # Editor files
 .vs
+.vscode
