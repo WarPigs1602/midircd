@@ -155,12 +155,15 @@ static void ssl_set_ciphers(SSL_CTX *ctx, SSL *tls, const char *text)
 
 int ircd_verify_peer(int preverify_ok, X509_STORE_CTX *ctx) {
     int err = X509_STORE_CTX_get_error(ctx);
-
-    if (err == X509_V_ERR_DEPTH_ZERO_SELF_SIGNED_CERT) {
-        return 1; // Accept self-signed client certificates TODO: Consider making this configurable?
-    }
-
-    return preverify_ok; // Default verification for other errors
+  /* Accept self-signed at depth 0 only if no CA path/file is configured. */
+  if (err == X509_V_ERR_DEPTH_ZERO_SELF_SIGNED_CERT) {
+    const char *caf = feature_str(FEAT_TLS_CACERTFILE);
+    const char *cad = feature_str(FEAT_TLS_CACERTDIR);
+  if (feature_bool(FEAT_TLS_ACCEPT_SELFSIGNED) || (EmptyString(caf) && EmptyString(cad)))
+      return 1; /* no CA configured: stay permissive */
+    /* CA configured: do not auto-accept self-signed */
+  }
+  return preverify_ok; // Defer to OpenSSL's decision otherwise
 }
 
 int ircd_tls_init(void)
@@ -226,6 +229,10 @@ int ircd_tls_init(void)
 
   SSL_CTX_set_verify(server_ctx, SSL_VERIFY_PEER, ircd_verify_peer);
   SSL_CTX_set_verify(client_ctx, SSL_VERIFY_PEER, ircd_verify_peer);
+
+  /* Load system default trust stores in addition to any configured CA paths. */
+  SSL_CTX_set_default_verify_paths(server_ctx);
+  SSL_CTX_set_default_verify_paths(client_ctx);
 
   /* OpenSSL only defines this macro if it supports TLS 1.3. */
 #if defined(SSL_OP_NO_TLSv1_3)
@@ -370,21 +377,21 @@ void *ircd_tls_connect(struct ConfItem *aconf, int fd)
 
   ssl_set_fd(tls, fd);
 
-  SSL_set_connect_state(tls);
-
-  /* TODO: This is a gross fix, but the handshake has to be retried. */
-  int cnt_retry = 0;
-  while (SSL_connect(tls) != 1)  // Perform the handshake
+  /* Enable SNI and hostname verification for client connections. */
+  if (!EmptyString(aconf->name))
   {
-    cnt_retry++;
-    ssl_log_error("SSL_connect() failed");
-    if (cnt_retry > 1000) {
-      SSL_free(tls);
-      return NULL;
-    }
+#ifdef SSL_CTRL_SET_TLSEXT_HOSTNAME
+    SSL_set_tlsext_host_name(tls, aconf->name);
+#endif
+    /* Enable hostname verification using X509_VERIFY_PARAM. */
+    X509_VERIFY_PARAM *param = SSL_get0_param(tls);
+    X509_VERIFY_PARAM_set_hostflags(param, 0);
+    X509_VERIFY_PARAM_set1_host(param, aconf->name, 0);
   }
 
-  /* TODO: Should we call ircd_tls_fingerprint() here? And should we be checking the fingerpint of our peer? */
+  SSL_set_connect_state(tls);
+
+  /* Handshake will be progressed non-blocking via ircd_tls_negotiate(). */
   return tls;
 }
 
@@ -424,7 +431,12 @@ int ircd_tls_negotiate(struct Client *cptr)
   if (!tls)
     return 1;
 
-  res = SSL_accept(tls);
+  /* Use correct handshake direction based on SSL mode. */
+  if (SSL_is_server(tls))
+    res = SSL_accept(tls);
+  else
+    res = SSL_connect(tls);
+
   if (res == 1)
   {
     ClearNegotiatingTLS(cptr);
@@ -435,7 +447,7 @@ int ircd_tls_negotiate(struct Client *cptr)
   else
   {
     int orig_errno = errno;
-    /* Handshake in progress. */
+    /* Handshake in progress or error. */
     res = (ssl_handle_error(cptr, tls, res, orig_errno) < 0) ? -1 : 0;
   }
 

@@ -360,9 +360,10 @@ static struct FeatureDesc {
   F_B(TLS_SSLV2, 0, 0, 0),
   F_B(TLS_SSLV3, 0, 0, 0),
   F_B(TLS_V1P0, 0, 0, 0),
-  F_B(TLS_V1P1, 0, 1, 0),
+  F_B(TLS_V1P1, 0, 0, 0),
   F_B(TLS_V1P2, 0, 1, 0),
   F_B(TLS_V1P3, 0, 1, 0),
+  F_B(TLS_ACCEPT_SELFSIGNED, 0, 0, 0),
 
   /* features that affect all operators */
   F_B(EXTENDED_CHECKCMD, 0, 0, 0),

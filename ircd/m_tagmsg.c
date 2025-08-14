@@ -92,6 +92,7 @@
 #include "ircd_log.h"
 #include "ircd_reply.h"
 #include "ircd_string.h"
+#include "ircd_snprintf.h"
 #include "msg.h"
 #include "numeric.h"
 #include "numnicks.h"
@@ -121,17 +122,15 @@ static int handle_tagmsg_status(struct Client* cptr, struct Client* sptr, int pa
 
   struct Channel *chan = FindChannel(parv[2]);
   struct Client *user = FindUser(parv[2]);
-  char tag_draft[32], tag[32];
-  snprintf(tag_draft, sizeof(tag_draft), "@+draft/typing=%s", status);
-  snprintf(tag, sizeof(tag), "@+typing=%s", status);
+  /* Combine draft and stable tags into one TAGMSG for efficiency */
+  char tags[80];
+  ircd_snprintf(NULL, tags, sizeof(tags), "@+draft/typing=%s;+typing=%s", status, status);
 
   if (chan) {
-    sendcmdto_capflag_tagmsg_butone(sptr, chan, sptr, tag_draft);
-    sendcmdto_capflag_tagmsg_butone(sptr, chan, sptr, tag);
+    sendcmdto_capflag_tagmsg_butone(sptr, chan, sptr, tags);
   }
   if (user) {
-    sendcmdto_capflag_tagmsg_priv_butone(sptr, user, sptr, tag_draft);
-    sendcmdto_capflag_tagmsg_priv_butone(sptr, user, sptr, tag);
+    sendcmdto_capflag_tagmsg_priv_butone(sptr, user, sptr, tags);
   }
   return 0;
 }

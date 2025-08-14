@@ -215,7 +215,15 @@ void ircd_tls_fingerprint(void *ctx, char *fingerprint)
   text = tls_peer_cert_hash(ctx);
   if (text && !ircd_strncmp(text, "SHA256:", 7))
   {
-    /* TODO: convert from ASCII hex to binary */
+    /* Convert ASCII hex after prefix to lowercase hex string (64 chars). */
+    const char *hex = text + 7;
+    size_t len = strlen(hex);
+    size_t out = len > 64 ? 64 : len;
+    for (size_t i = 0; i < out; ++i)
+      fingerprint[i] = ToLower(hex[i]);
+    if (out < 64)
+      memset(fingerprint + out, 0, 64 - out);
+    fingerprint[64] = '\0';
     return;
   }
   memset(fingerprint, 0, 65);

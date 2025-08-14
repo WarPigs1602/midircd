@@ -110,6 +110,7 @@ enum Feature {
   FEAT_TLS_V1P1,
   FEAT_TLS_V1P2,
   FEAT_TLS_V1P3,
+  FEAT_TLS_ACCEPT_SELFSIGNED,
 
   /* features that affect all operators */
   FEAT_EXTENDED_CHECKCMD,

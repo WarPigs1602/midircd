@@ -112,12 +112,13 @@ void *ircd_tls_connect(struct ConfItem *aconf, int fd);
  */
 void ircd_tls_close(void *ctx, const char *message);
 
-/** ircd_tls_fingerprint() fills \a fingerprint with the TLS fingerprint
- * used by the TLS session \a ctx.  If \a ctx is null or there is some
- * internal failure, \a fingerprint should be filled with zero bytes.
+/** ircd_tls_fingerprint() fills \a fingerprint with the SHA-256 fingerprint
+ * used by the TLS session \a ctx as a lowercase hex string (64 chars plus
+ * NUL). If \a ctx is null or there is some internal failure, \a fingerprint
+ * should be filled with zero bytes.
  *
  * @param[in] ctx TLS session to query.
- * @param[out] fingerprint 32-byte binary buffer.
+ * @param[out] fingerprint 65-byte buffer for hex string (64 hex + NUL).
  */
 void ircd_tls_fingerprint(void *ctx, char *fingerprint);
 

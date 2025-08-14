@@ -204,6 +204,15 @@ static void *tls_create(int flag, int fd, const char *name, const char *tls_ciph
   if (flag & GNUTLS_SERVER)
     gnutls_certificate_server_set_request(tls, GNUTLS_CERT_REQUEST);
 
+  /* For client side, enable SNI and prepare hostname verification. */
+  if ((flag & GNUTLS_SERVER) == 0 && name && *name)
+  {
+    (void)gnutls_server_name_set(tls, GNUTLS_NAME_DNS, name, strlen(name));
+#ifdef GNUTLS_CERTIFICATE_VERIFY_FLAGS
+    /* Prefer system verification; detailed host verify can be done after handshake if needed. */
+#endif
+  }
+
   gnutls_handshake_set_timeout(tls, GNUTLS_DEFAULT_HANDSHAKE_TIMEOUT);
 
   gnutls_transport_set_int(tls, fd);
@@ -229,7 +238,40 @@ void ircd_tls_close(void *ctx, const char *message)
 
 void ircd_tls_fingerprint(void *ctx, char *fingerprint)
 {
+  gnutls_session_t tls = ctx;
   memset(fingerprint, 0, 65);
+  if (!tls)
+    return;
+
+  const gnutls_datum_t *peer_certs = NULL;
+  unsigned int cert_count = 0;
+  peer_certs = gnutls_certificate_get_peers(tls, &cert_count);
+  if (!peer_certs || cert_count == 0)
+    return;
+
+  gnutls_x509_crt_t crt;
+  if (gnutls_x509_crt_init(&crt) != GNUTLS_E_SUCCESS)
+    return;
+  if (gnutls_x509_crt_import(crt, &peer_certs[0], GNUTLS_X509_FMT_DER) != GNUTLS_E_SUCCESS)
+  {
+    gnutls_x509_crt_deinit(crt);
+    return;
+  }
+
+  unsigned char fp_raw[64];
+  size_t fp_len = sizeof(fp_raw);
+  if (gnutls_x509_crt_get_fingerprint(crt, GNUTLS_DIG_SHA256, fp_raw, &fp_len) == GNUTLS_E_SUCCESS)
+  {
+    static const char hexdigits[] = "0123456789abcdef";
+    size_t out_len = (fp_len > 32) ? 32 : fp_len;
+    for (size_t i = 0; i < out_len; ++i)
+    {
+      fingerprint[i * 2 + 0] = hexdigits[(fp_raw[i] >> 4) & 0xF];
+      fingerprint[i * 2 + 1] = hexdigits[(fp_raw[i]) & 0xF];
+    }
+    fingerprint[64] = '\0';
+  }
+  gnutls_x509_crt_deinit(crt);
 }
 
 static void handle_blocked(struct Client *cptr, gnutls_session_t tls)
@@ -254,6 +296,12 @@ int ircd_tls_negotiate(struct Client *cptr)
   switch (res)
   {
   case GNUTLS_E_SUCCESS:
+    ClearNegotiatingTLS(cptr);
+    {
+      char tls_fp[65];
+      ircd_tls_fingerprint(tls, tls_fp);
+      strcpy(cli_tls_fingerprint(cptr), tls_fp);
+    }
     return 1;
   case GNUTLS_E_INTERRUPTED:
   case GNUTLS_E_AGAIN:
