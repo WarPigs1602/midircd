@@ -37,6 +37,8 @@
 #include "md5.h"
 #include "s_bsd.h"
 #include "s_debug.h"
+
+#include <arpa/inet.h>
 #include "struct.h"
 
 #include <sys/stat.h>
@@ -186,17 +188,28 @@ unsigned int alpha, n;
  */
 static char *hidehost_ipv6(const char *host)
 {
+    unsigned char addr[16];
     char buf[512];
     unsigned char res[512], res2[512];
     unsigned long n;
     unsigned int alpha, beta, gamma, delta;
     char *result;
 
-    if (!host || strchr(host, ':') == NULL)
+    if (!host)
         return NULL;
 
+    // IPv6-Parsing und Normalisierung
+    if (inet_pton(AF_INET6, host, addr) != 1)
+        return NULL;
+
+    // Wir wandeln die Binärdaten in einen hex-String, um alle Schreibweisen zu normalisieren
+    char hex[33];
+    for (int i = 0; i < 16; ++i)
+        sprintf(hex + i * 2, "%02x", addr[i]);
+    hex[32] = '\0';
+
     // ALPHA
-    ircd_snprintf(0, buf, sizeof(buf), "%s:%s:%s", KEY2, host, KEY3);
+    ircd_snprintf(0, buf, sizeof(buf), "%s:%s:%s", KEY2, hex, KEY3);
     DoMD5(res, (unsigned char*) buf, strlen(buf));
     strncpy((char *)res+16, KEY1, sizeof(res)-16-1);
     n = strlen((char *)res+16) + 16;
@@ -204,7 +217,7 @@ static char *hidehost_ipv6(const char *host)
     alpha = downsample(res2);
 
     // BETA
-    ircd_snprintf(0, buf, sizeof(buf), "%s:%s:%s", KEY3, host, KEY1);
+    ircd_snprintf(0, buf, sizeof(buf), "%s:%s:%s", KEY3, hex, KEY1);
     DoMD5(res, (unsigned char*) buf, strlen(buf));
     strncpy((char *)res+16, KEY2, sizeof(res)-16-1);
     n = strlen((char *)res+16) + 16;
@@ -212,7 +225,7 @@ static char *hidehost_ipv6(const char *host)
     beta = downsample(res2);
 
     // GAMMA
-    ircd_snprintf(0, buf, sizeof(buf), "%s:%s:%s", KEY1, host, KEY2);
+    ircd_snprintf(0, buf, sizeof(buf), "%s:%s:%s", KEY1, hex, KEY2);
     DoMD5(res, (unsigned char*) buf, strlen(buf));
     strncpy((char *)res+16, KEY3, sizeof(res)-16-1);
     n = strlen((char *)res+16) + 16;
@@ -220,7 +233,7 @@ static char *hidehost_ipv6(const char *host)
     gamma = downsample(res2);
 
     // DELTA
-    ircd_snprintf(0, buf, sizeof(buf), "%s:%s:%s", KEY2, host, KEY1);
+    ircd_snprintf(0, buf, sizeof(buf), "%s:%s:%s", KEY2, hex, KEY1);
     DoMD5(res, (unsigned char*) buf, strlen(buf));
     strncpy((char *)res+16, KEY3, sizeof(res)-16-1);
     n = strlen((char *)res+16) + 16;
@@ -239,6 +252,7 @@ static char *hidehost_ipv6(const char *host)
 
     return result;
 }
+#include <arpa/inet.h>
 
 char *cloak_host(const char *host)
 {

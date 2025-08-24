@@ -1107,7 +1107,7 @@ void send_channel_modes(struct Client* cptr, struct Channel* chptr)
 	first = 1;
 	full = 1;
 
-	// --- NEU: Array für bereits ausgegebene User ---
+	// --- NEU: Array fï¿½r bereits ausgegebene User ---
 	char printed_nicks[512][NICKLEN + 1];
 	int printed_count = 0;
 
@@ -1173,12 +1173,12 @@ void send_channel_modes(struct Client* cptr, struct Channel* chptr)
 				first = 0;
 			}
 		}
-		// ... nach dem Block für die Ban-Liste:
+		// ... nach dem Block fï¿½r die Ban-Liste:
 		if (!full) {
 			struct Ban* ex2;
 			for (ex2 = chptr->exceptlist, first = 2; ex2; ex2 = ex2->next) {
 				len = strlen(ex2->banstr);
-				if (msgq_bufleft(mb) < len + 3 + first) { // +3 für " :%e"
+				if (msgq_bufleft(mb) < len + 3 + first) { // +3 fï¿½r " :%e"
 					full = 1;
 					break;
 				}
@@ -1709,7 +1709,7 @@ static int get_mode_rank(unsigned int status)
 	return 0;
 }
 
-// Gibt zurück, ob ein Mitglied einen Befehl auf ein anderes ausführen darf
+// Gibt zurï¿½ck, ob ein Mitglied einen Befehl auf ein anderes ausfï¿½hren darf
 int has_channel_permission(struct Membership* setter, struct Membership* target, unsigned int required_flag) {
 	int setter_rank = get_mode_rank(setter ? setter->status : 0);
 	int required_rank = get_mode_rank(required_flag);
@@ -1719,24 +1719,25 @@ int has_channel_permission(struct Membership* setter, struct Membership* target,
 	if (setter && (setter->status & CHFL_CHANSERVICE))
 		return 1;
 
-	// Muss mindestens den Rang für die Aktion haben und darf sich nicht an Gleichrangigen/Höheren vergreifen
+	// Muss mindestens den Rang fï¿½r die Aktion haben und darf sich nicht an Gleichrangigen/Hï¿½heren vergreifen
 	return setter_rank >= required_rank && setter_rank > target_rank;
 }
 
-// Berechtigungsprüfung für das Setzen von Channel-User-Modi
+// Berechtigungsprï¿½fung fï¿½r das Setzen von Channel-User-Modi
 static int can_set_channel_user_mode(struct Membership* setter, struct Membership* target, unsigned int modeflag)
 {
-	// Server dürfen immer Rechte vergeben
+	// Server dï¿½rfen immer Rechte vergeben
 	if (setter && IsServer(setter->user))
 		return 1;
 	int setter_rank = setter ? get_mode_rank(setter->status) : 0;
 	int target_rank = target ? get_mode_rank(target->status) : 0;
 	int mode_rank = get_mode_rank(modeflag);
 
-	// Voice kann keine Modi setzen
-	if (setter_rank == 1) return 0;
 
-	// Nur gleichrangige oder höhere dürfen setzen
+	// Nur ChanOps (3) und hÃ¶her dÃ¼rfen Channel-User-Modes setzen (z.B. +v, +h, +o, ...)
+	if (setter_rank < 3) return 0;
+
+	// Nur gleichrangige oder hï¿½here dï¿½rfen setzen
 	return setter_rank >= mode_rank && setter_rank >= target_rank;
 }
 
@@ -2348,7 +2349,7 @@ void modebuf_mode_client(struct ModeBuf* mbuf, unsigned int mode,
 	assert(mbuf);
 	assert(mode & (MODE_ADD | MODE_DEL));
 
-	// Deduplizierung: Prüfe für jeden User-Modus einzeln
+	// Deduplizierung: Prï¿½fe fï¿½r jeden User-Modus einzeln
 	static const struct {
 		unsigned int flag;
 	} user_modes[] = {
@@ -2373,7 +2374,7 @@ void modebuf_mode_client(struct ModeBuf* mbuf, unsigned int mode,
 				if (MB_CLIENT(mbuf, i) == client &&
 					(MB_TYPE(mbuf, i) & user_modes[um].flag) &&
 					(MB_TYPE(mbuf, i) & (MODE_ADD | MODE_DEL)) == (mode & (MODE_ADD | MODE_DEL))) {
-					// Modus für diesen User existiert bereits
+					// Modus fï¿½r diesen User existiert bereits
 					return;
 				}
 			}
@@ -2609,14 +2610,14 @@ send_notoper(struct ParseState* state, unsigned int modeflag)
 	int setter_rank = setter ? get_mode_rank(setter->status) : 0;
 	int mode_rank = get_mode_rank(modeflag);
 
-	// Voice und Nicht-Mitglieder können keine Rechte setzen
+	// Voice und Nicht-Mitglieder kï¿½nnen keine Rechte setzen
 	if (!setter || setter_rank < 2 || setter_rank < mode_rank) {
 		send_reply(state->sptr, ERR_CHANOPRIVSNEEDED, state->chptr->chname);
 		state->done |= DONE_NOTOPER;
 		return;
 	}
 
-	// Optional: Für andere Fehlerfälle (z.B. kein Channel-Member)
+	// Optional: Fï¿½r andere Fehlerfï¿½lle (z.B. kein Channel-Member)
 	send_reply(state->sptr, ERR_NOTONCHANNEL, state->chptr->chname);
 
 	state->done |= DONE_NOTOPER;
@@ -3376,7 +3377,7 @@ mode_parse_client(struct ParseState* state, int* flag_p)
 		return;
 	}
 
-	// Oplevel für +o, +q, +a, +h, +S auslesen (z.B. nick:level)
+	// Oplevel fï¿½r +o, +q, +a, +h, +S auslesen (z.B. nick:level)
 	if (MyUser(state->sptr)) {
 		colon = strchr(t_str, ':');
 		if (colon != NULL) {
@@ -3408,7 +3409,7 @@ mode_parse_client(struct ParseState* state, int* flag_p)
 	if (!acptr)
 		return;
 
-	// Für jeden User-Modus einzeln prüfen und setzen
+	// Fï¿½r jeden User-Modus einzeln prï¿½fen und setzen
 	for (i = 0; i < MAXPARA; i++) {
 		if (!state->cli_change[i].flag) {
 			state->cli_change[i].flag = state->dir | flag_p[0];
@@ -3416,7 +3417,7 @@ mode_parse_client(struct ParseState* state, int* flag_p)
 			state->cli_change[i].client = acptr;
 			break;
 		}
-		// Deduplizierung: Wenn dieser Modus für diesen User schon gesetzt ist, nicht erneut eintragen
+		// Deduplizierung: Wenn dieser Modus fï¿½r diesen User schon gesetzt ist, nicht erneut eintragen
 		if (state->cli_change[i].client == acptr && (state->cli_change[i].flag & flag_p[0]))
 			break;
 	}
@@ -3426,16 +3427,17 @@ static void mode_process_clients(struct ParseState* state)
 {
 	int i;
 	struct Membership* member;
-	static const struct {
-		unsigned int flag;
-		char modechar;
-	} user_modes[] = {
-		{ CHFL_CHANSERVICE, 'S' },
-		{ CHFL_OWNER,       'q' },
-		{ CHFL_ADMIN,       'a' },
-		{ CHFL_CHANOP,      'o' },
-		{ CHFL_HALFOP,      'h' }
-	};
+       static const struct {
+	       unsigned int flag;
+	       char modechar;
+       } user_modes[] = {
+	       { CHFL_CHANSERVICE, 'S' },
+	       { CHFL_OWNER,       'q' },
+	       { CHFL_ADMIN,       'a' },
+	       { CHFL_CHANOP,      'o' },
+	       { CHFL_HALFOP,      'h' },
+	       { CHFL_VOICE,       'v' }
+       };
 
 	struct {
 		char name[NICKLEN + 1];
@@ -3804,7 +3806,7 @@ static void mode_parse_except(struct ParseState* state, int* flag_p)
 		struct Ban** ep = &state->chptr->exceptlist, * next;
 		while ((ex = *ep)) {
 			if (!mmatch(mask, ex->banstr) || !mmatch(ex->banstr, mask)) {
-				// mask überschneidet ex->banstr (beidseitiges Wildcard-Match)
+				// mask ï¿½berschneidet ex->banstr (beidseitiges Wildcard-Match)
 				if (state->mbuf)
 					modebuf_mode_string(state->mbuf, MODE_DEL | MODE_EXCEPT, ex->banstr, 0);
 				*ep = ex->next;
@@ -3813,7 +3815,7 @@ static void mode_parse_except(struct ParseState* state, int* flag_p)
 			}
 			ep = &ex->next;
 		}
-		// Exception hinzufügen
+		// Exception hinzufï¿½gen
 		newex = make_ban(mask);
 		ircd_strncpy(newex->who, IsUser(state->sptr) ? cli_name(state->sptr) : "*", NICKLEN);
 		newex->when = TStime();
