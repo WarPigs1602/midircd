@@ -3534,20 +3534,8 @@ static void mode_process_clients(struct ParseState* state)
 				   else {
 						  // Channel-Services dürfen sich gegenseitig keine Rechte entziehen,
 						  // aber Server und Services dürfen immer Rechte entziehen (außer Services untereinander)
-						  int setter_is_service = (IsChannelService(state->sptr) || IsService(state->sptr));
 						  int target_is_service = (member->status & CHFL_CHANSERVICE);
-						  int setter_is_server = (IsServer(state->sptr) || IsServer(state->cptr));
-						  if (setter_is_server) {
-							  // Server darf immer alles entziehen
-							  member->status &= ~modeflag;
-						  } else if (setter_is_service) {
-							  // Service darf alles entziehen, außer Service-Rechte von anderen Services
-							  if (!(modeflag == CHFL_CHANSERVICE && target_is_service)) {
-								  member->status &= ~modeflag;
-							  }
-							  // Sonst: Service darf Service keine Service-Rechte entziehen
-						  } else {
-							  // Normale User: wie gehabt
+						  if (modeflag != CHFL_CHANSERVICE || !target_is_service) {
 							  member->status &= ~modeflag;
 						  }
 				   }
