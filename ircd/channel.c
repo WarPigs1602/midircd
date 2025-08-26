@@ -3457,94 +3457,78 @@ static void mode_process_clients(struct ParseState* state)
 			continue;
 		}
 
-		for (int mode_index = 0; mode_index < sizeof(user_modes) / sizeof(user_modes[0]); ++mode_index) {
-			unsigned int modeflag = user_modes[mode_index].flag;
-			char modechar = user_modes[mode_index].modechar;
+		   for (int mode_index = 0; mode_index < sizeof(user_modes) / sizeof(user_modes[0]); ++mode_index) {
+			   unsigned int modeflag = user_modes[mode_index].flag;
+			   char modechar = user_modes[mode_index].modechar;
 
-			if (!(state->cli_change[i].flag & modeflag))
-				continue;
+			   if (!(state->cli_change[i].flag & modeflag))
+				   continue;
 
-			// Deduplication: Check if this nick with a different modechar was already processed
-			int duplicate_wrong_mode = 0;
-			for (int j = 0; j < printed_count; ++j) {
-				if (!strcmp(printed[j].name, nick) && printed[j].modechar != modechar) {
-					duplicate_wrong_mode = 1;
-					break;
-				}
-			}
-			if (duplicate_wrong_mode)
-				continue;
-
-			// Deduplication: Check if this nick+modechar was already processed
-			int already_printed = 0;
-			for (int j = 0; j < printed_count; ++j) {
-				if (!strcmp(printed[j].name, nick) && printed[j].modechar == modechar) {
-					already_printed = 1;
-					break;
-				}
-			}
-			if (already_printed)
-				continue;
-
-			strncpy(printed[printed_count].name, nick, NICKLEN);
-			printed[printed_count].name[NICKLEN] = '\0';
-			printed[printed_count].modechar = modechar;
-			printed_count++;
-
-			// --- NEW: Rank check ---
-			if (state->flags & MODE_PARSE_SET) {
-				struct Membership* setter = state->member;
-				int setter_rank = setter ? get_mode_rank(setter->status) : 0;
-				int target_rank = get_mode_rank(member->status);
-				int mode_rank = get_mode_rank(modeflag);
-
-				// ChanService can do everything
-				if (!(setter && (setter->status & CHFL_CHANSERVICE))) {
-					// Only allow if setter has a higher rank than the target and at least the mode's rank
-					if (setter_rank < mode_rank || setter_rank < target_rank) {
-						if (MyUser(state->sptr)) {
-							send_reply(state->sptr, ERR_CHANOPRIVSNEEDED, state->chptr->chname);
-						}
-						continue;
-					}
-				}
-			}
-
-			if ((state->cli_change[i].flag & MODE_ADD && (modeflag & member->status)) ||
-				(state->cli_change[i].flag & MODE_DEL && !(modeflag & member->status)))
-				continue;
-
-			if ((state->cli_change[i].flag & MODE_ADD) && state->cli_change[i].oplevel <= MAXOPLEVEL) {
-				if ((IsChannelService(state->sptr) && IsService(cli_user(state->sptr)->server)) || (IsService(state->sptr))) {
-					SetOpLevel(member, state->cli_change[i].oplevel);
-				}
-				else {
-					SetOpLevel(member, state->cli_change[i].oplevel > MINOPLEVEL ? state->cli_change[i].oplevel : MINOPLEVEL);
-				}
-			}
-
-			if (state->flags & MODE_PARSE_SET) {
-				if (state->cli_change[i].flag & MODE_ADD) {
-					if (IsDelayedJoin(member) && !IsZombie(member))
-						RevealDelayedJoin(member);
-					member->status |= modeflag;
-					if (modeflag & (CHFL_CHANSERVICE | CHFL_OWNER | CHFL_ADMIN | CHFL_CHANOP | CHFL_HALFOP))
-						ClearDeopped(member);
-				}
-				   else {
-						  // Channel-Services dürfen sich gegenseitig keine Rechte entziehen,
-						  // aber Server und Services dürfen immer Rechte entziehen (außer Services untereinander)
-						  int target_is_service = (member->status & CHFL_CHANSERVICE);
-						  if (modeflag != CHFL_CHANSERVICE || !target_is_service) {
-							  member->status &= ~modeflag;
-						  }
+			   // Deduplizierung: Nur für dieselbe User+Mode-Kombination überspringen
+			   int already_printed = 0;
+			   for (int j = 0; j < printed_count; ++j) {
+				   if (!strcmp(printed[j].name, nick) && printed[j].modechar == modechar) {
+					   already_printed = 1;
+					   break;
 				   }
-			}
+			   }
+			   if (already_printed)
+				   continue;
 
-			modebuf_mode_client(state->mbuf, state->cli_change[i].flag & (MODE_ADD | MODE_DEL) | modeflag,
-				state->cli_change[i].client,
-				state->cli_change[i].oplevel);
-		}
+			   strncpy(printed[printed_count].name, nick, NICKLEN);
+			   printed[printed_count].name[NICKLEN] = '\0';
+			   printed[printed_count].modechar = modechar;
+			   printed_count++;
+
+			   // --- Rank check wie gehabt ---
+			   if (state->flags & MODE_PARSE_SET) {
+				   struct Membership* setter = state->member;
+				   int setter_rank = setter ? get_mode_rank(setter->status) : 0;
+				   int target_rank = get_mode_rank(member->status);
+				   int mode_rank = get_mode_rank(modeflag);
+
+				   if (!(setter && (setter->status & CHFL_CHANSERVICE))) {
+					   if (setter_rank < mode_rank || setter_rank < target_rank) {
+						   if (MyUser(state->sptr)) {
+							   send_reply(state->sptr, ERR_CHANOPRIVSNEEDED, state->chptr->chname);
+						   }
+						   continue;
+					   }
+				   }
+			   }
+
+			   if ((state->cli_change[i].flag & MODE_ADD && (modeflag & member->status)) ||
+				   (state->cli_change[i].flag & MODE_DEL && !(modeflag & member->status)))
+				   continue;
+
+			   if ((state->cli_change[i].flag & MODE_ADD) && state->cli_change[i].oplevel <= MAXOPLEVEL) {
+				   if ((IsChannelService(state->sptr) && IsService(cli_user(state->sptr)->server)) || (IsService(state->sptr))) {
+					   SetOpLevel(member, state->cli_change[i].oplevel);
+				   }
+				   else {
+					   SetOpLevel(member, state->cli_change[i].oplevel > MINOPLEVEL ? state->cli_change[i].oplevel : MINOPLEVEL);
+				   }
+			   }
+
+			   if (state->flags & MODE_PARSE_SET) {
+				   if (state->cli_change[i].flag & MODE_ADD) {
+					   if (IsDelayedJoin(member) && !IsZombie(member))
+						   RevealDelayedJoin(member);
+					   member->status |= modeflag;
+					   if (modeflag & (CHFL_CHANSERVICE | CHFL_OWNER | CHFL_ADMIN | CHFL_CHANOP | CHFL_HALFOP))
+						   ClearDeopped(member);
+				   } else {
+					   int target_is_service = (member->status & CHFL_CHANSERVICE);
+					   if (modeflag != CHFL_CHANSERVICE || !target_is_service) {
+						   member->status &= ~modeflag;
+					   }
+				   }
+			   }
+
+			   modebuf_mode_client(state->mbuf, state->cli_change[i].flag & (MODE_ADD | MODE_DEL) | modeflag,
+				   state->cli_change[i].client,
+				   state->cli_change[i].oplevel);
+		   }
 	}
 
 	if (state->mbuf)

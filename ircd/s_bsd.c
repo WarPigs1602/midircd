@@ -435,6 +435,11 @@ void close_connection(struct Client *cptr)
   if (-1 < cli_fd(cptr)) {
     flush_connections(cptr);
     LocalClientArray[cli_fd(cptr)] = 0;
+    /* TLS-Socket sauber schließen, falls aktiv */
+    if (IsTLS(cptr) && s_tls(&cli_socket(cptr))) {
+      ircd_tls_close(s_tls(&cli_socket(cptr)), NULL);
+      s_tls(&cli_socket(cptr)) = NULL;
+    }
     close(cli_fd(cptr));
     socket_del(&(cli_socket(cptr))); /* queue a socket delete */
     cli_fd(cptr) = -1;
