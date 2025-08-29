@@ -373,8 +373,9 @@ enum AuthorizationCheckResult attach_iline(struct Client* cptr)
     if ((aconf->addrbits >= 0)
         && !ipmask_check(&cli_ip(cptr), &aconf->address.addr, aconf->addrbits))
       continue;
-    if (IPcheck_nr(cptr) > aconf->maximum)
+  if (IPcheck_nr(cptr) > aconf->maximum) {
       return ACR_TOO_MANY_FROM_IP;
+    }
     if (aconf->username)
       SetFlag(cptr, FLAG_DOID);
     return attach_conf(cptr, aconf);

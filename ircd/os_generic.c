@@ -563,7 +563,12 @@ IOResult os_sendv_nonb(int fd, struct MsgQ* buf, unsigned int* count_in,
   *count_in = 0;
   count = msgq_mapiov(buf, iov, IOV_MAX, count_in);
 
-  if (-1 < (res = writev(fd, iov, count))) {
+  /* writev durch sendmsg mit MSG_NOSIGNAL ersetzen, um SIGPIPE zu vermeiden */
+  struct msghdr msg = {0};
+  msg.msg_iov = iov;
+  msg.msg_iovlen = count;
+  res = sendmsg(fd, &msg, MSG_NOSIGNAL);
+  if (res >= 0) {
     *count_out = (unsigned) res;
     return IO_SUCCESS;
   } else {
@@ -594,16 +599,19 @@ int os_socket(const struct irc_sockaddr* local, int type, const char* port_name,
   if (fd > MAXCLIENTS - 1) {
     report_error(CONNLIMIT_ERROR_MSG, port_name, 0);
     close(fd);
+    fd = -1;
     return -1;
   }
   if (!os_set_reuseaddr(fd)) {
     report_error(REUSEADDR_ERROR_MSG, port_name, errno);
     close(fd);
+    fd = -1;
     return -1;
   }
   if (!os_set_nonblocking(fd)) {
     report_error(NONB_ERROR_MSG, port_name, errno);
     close(fd);
+    fd = -1;
     return -1;
   }
   if (local) {
@@ -615,6 +623,7 @@ int os_socket(const struct irc_sockaddr* local, int type, const char* port_name,
     if (bind(fd, (struct sockaddr*)&addr, size)) {
       report_error(BIND_ERROR_MSG, port_name, errno);
       close(fd);
+      fd = -1;
       return -1;
     }
   }

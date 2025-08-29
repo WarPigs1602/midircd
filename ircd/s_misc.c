@@ -363,6 +363,8 @@ int exit_client(struct Client *cptr,
   struct Client* acptr = 0;
   struct DLink *dlp;
   time_t on_for;
+  /* Hinweis: Kein früher Return mehr bei DEADSOCKET/CLOSING, um sicherzustellen,
+   * dass exit_one_client() immer ausgeführt wird (IPcheck_disconnect etc.). */
 
   char comment1[HOSTLEN + HOSTLEN + 2];
   assert(killer);

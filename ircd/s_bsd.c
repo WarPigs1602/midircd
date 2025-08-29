@@ -551,8 +551,8 @@ void add_connection(struct Listener* listener, int fd) {
       close(fd);
       return;
     }
-    new_client = make_client(0, STAT_UNKNOWN_USER);
-    SetIPChecked(new_client);
+  new_client = make_client(0, STAT_UNKNOWN_USER);
+  SetIPChecked(new_client);
   }
 
   /*
