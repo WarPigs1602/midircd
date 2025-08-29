@@ -21,6 +21,7 @@
  * @brief Entry point and other initialization functions for the daemon.
  * @version $Id: ircd.c,v 1.91.2.5 2007/03/17 14:17:27 entrope Exp $
  */
+#include <signal.h>
 #include "config.h"
 
 #include "ircd.h"
@@ -623,6 +624,8 @@ static int set_userid_if_needed(void) {
  * @param[in] argv Arguments to program execution.
  */
 int main(int argc, char **argv) {
+  /* SIGPIPE ignorieren, damit der Server bei Broken Pipe nicht beendet wird */
+  signal(SIGPIPE, SIG_IGN);
   CurrentTime = time(NULL);
 
   thisServer.argc = argc;
