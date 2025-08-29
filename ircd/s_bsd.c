@@ -546,8 +546,10 @@ void add_connection(struct Listener* listener, int fd) {
       ++ServerStats->is_ref;
       if (tls)
         ircd_tls_close(tls, throttle_message);
-      else
-        write(fd, throttle_message, strlen(throttle_message));
+      else {
+        ssize_t _wr = write(fd, throttle_message, strlen(throttle_message));
+        (void)_wr;
+      }
       close(fd);
       return;
     }
@@ -572,8 +574,10 @@ void add_connection(struct Listener* listener, int fd) {
     ++ServerStats->is_ref;
     if (tls)
       ircd_tls_close(tls, register_message);
-    else
-      write(fd, register_message, strlen(register_message));
+    else {
+      ssize_t _wr = write(fd, register_message, strlen(register_message));
+      (void)_wr;
+    }
     close(fd);
     cli_fd(new_client) = -1;
     return;

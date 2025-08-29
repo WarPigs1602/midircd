@@ -467,8 +467,11 @@ static void parse_command_line(int argc, char** argv) {
   const char *options = "d:f:h:nktvx:c:";
   int opt;
 
-  if (thisServer.euid != thisServer.uid)
-    setuid(thisServer.uid);
+  if (thisServer.euid != thisServer.uid) {
+    if (setuid(thisServer.uid) != 0) {
+      fprintf(stderr, "WARNING: setuid(%u) failed: %s\n", (unsigned)thisServer.uid, strerror(errno));
+    }
+  }
 
   /* Do we really need to sanity check the non-NULLness of optarg?  That's
    * getopt()'s job...  Removing those... -zs
