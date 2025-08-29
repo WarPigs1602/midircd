@@ -258,9 +258,8 @@ static void exit_one_client(struct Client* bcptr, const char* comment)
 
   /*
    * Update IPregistry
-   * Nur für gültige, noch IP-überwachte Clients aufrufen
    */
-  if (IsIPChecked(bcptr) && (IsUser(bcptr) || IsUserPort(bcptr) || IsUnknown(bcptr) || IsConnecting(bcptr) || IsHandshake(bcptr)))
+  if (IsIPChecked(bcptr))
     IPcheck_disconnect(bcptr);
 
   /* 
