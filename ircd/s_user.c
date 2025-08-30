@@ -601,7 +601,7 @@ static const struct UserMode {
   { FLAG_SETHOST,     'h' },
   { FLAG_PARANOID,    'P' },
   { FLAG_TLS,         'z' }
-  ,{ FLAG_CLOAK,       'C' }
+  ,{ FLAG_CLOAK,       'c' }
 };
 
 /** Length of #userModeList. */
@@ -1475,8 +1475,8 @@ int set_user_mode(struct Client *cptr, struct Client *sptr, int parc,
           SetTLS(sptr);
         /* There is no -z */
         break;
-      case 'C':
-        /* +C (cloak) may only be set/cleared by servers */
+      case 'c':
+        /* +c (cloak) may only be set/cleared by servers */
         if (!IsServer(cptr))
           break;
         if (what == MODE_ADD)

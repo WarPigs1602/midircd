@@ -538,11 +538,11 @@ struct Client {
 /** Return non-zero if the client is a registered user. */
 #define IsUser(x)               (cli_status(x) == STAT_USER)
 
-/** Return non-zero if the client has mode +C (cloak). */
+/** Return non-zero if the client has mode +c (cloak). */
 #define IsCloaked(x)             HasFlag(x, FLAG_CLOAK)
-/** Mark a client as having mode +C (cloak). */
+/** Mark a client as having mode +c (cloak). */
 #define SetCloak(x)              SetFlag(x, FLAG_CLOAK)
-/** Remove mode +C (cloak) from a client. */
+/** Remove mode +c (cloak) from a client. */
 #define ClearCloak(x)            ClrFlag(x, FLAG_CLOAK)
 
 /** Mark a client with STAT_CONNECTING. */

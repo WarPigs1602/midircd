@@ -1,21 +1,21 @@
-# midircd – Moderner IRC-Server (basiert auf ircu, Fork von snircd)
+# midircd ï¿½ Moderner IRC-Server (basiert auf ircu, Fork von snircd)
 
-**midircd** ist ein leistungsstarker, hoch konfigurierbarer IRC-Daemon mit modernen Funktionen und umfangreicher Kontrolle für Channels und Benutzer. Ziel ist es, einen sicheren, flexiblen und funktionsreichen IRC-Server bereitzustellen.
+**midircd** ist ein leistungsstarker, hoch konfigurierbarer IRC-Daemon mit modernen Funktionen und umfangreicher Kontrolle fï¿½r Channels und Benutzer. Ziel ist es, einen sicheren, flexiblen und funktionsreichen IRC-Server bereitzustellen.
 
 ---
 
 ## Hauptfunktionen
 
 - **Konfigurierbares Feature-System:**  
-  Alle Serverfunktionen können zur Laufzeit oder über die Konfiguration (F-Lines) aktiviert oder deaktiviert werden. Siehe `include/ircd_features.h` und `doc/readme.midircd`.
+  Alle Serverfunktionen kï¿½nnen zur Laufzeit oder ï¿½ber die Konfiguration (F-Lines) aktiviert oder deaktiviert werden. Siehe `include/ircd_features.h` und `doc/readme.midircd`.
 
 - **Erweiterte Channel-Modi:**  
   - `+c`: Blockiert mIRC/ANSI-Farbcodes  
-  - `+C`: Blockiert CTCPs  
+  - `+c`: Blockiert CTCPs  
   - `+N`: Blockiert Channel-Notices  
-  - `+M`: Nur authentifizierte Nutzer dürfen sprechen  
+  - `+M`: Nur authentifizierte Nutzer dï¿½rfen sprechen  
   - `+T`: Blockiert Multi-Target-Nachrichten  
-  - `+D/+d`: Verzögerter Beitritt (unsichtbar bis zur Aktivität)  
+  - `+D/+d`: Verzï¿½gerter Beitritt (unsichtbar bis zur Aktivitï¿½t)  
   - `+u`: Versteckt Quit/Part-Nachrichten  
   - `+j`: Anti-Join-Flood  
   - `+L`: Channel-Verlinkung  
@@ -23,42 +23,42 @@
   - `+Z`: Nur TLS-Channel
 
 - **Erweiterte Nutzer- und Oper-Modi:**  
-  - `+X`: Oper-Override für Channel-Beschränkungen  
-  - `+k`: Schutz für Netzwerkdienste (kein Kick/Deop/Kill)  
+  - `+X`: Oper-Override fï¿½r Channel-Beschrï¿½nkungen  
+  - `+k`: Schutz fï¿½r Netzwerkdienste (kein Kick/Deop/Kill)  
   - `+n`: Versteckt Channels in /whois  
   - `+I`: Versteckt Idle-Zeit  
   - `+R`: Akzeptiert nur Nachrichten von authentifizierten Nutzern  
   - Viele weitere (siehe unten und `doc/readme.midircd`)
 
-- **IRCv3-Unterstützung:**  
-  - Fähigkeiten:  
+- **IRCv3-Unterstï¿½tzung:**  
+  - Fï¿½higkeiten:  
     - `sasl` (PLAIN, EXTERNAL, SCRAM, etc.)  
     - `account-notify`, `away-notify`, `chghost`, `echo-message`, `extended-join`, `invite-notify`,  
       `message-tags`, `standard-replies`, `draft/channel-rename`
 
 - **SASL-Authentifizierung:**  
-  Volle SASL-Unterstützung mit Weiterleitung an konfigurierbare Dienste.
+  Volle SASL-Unterstï¿½tzung mit Weiterleitung an konfigurierbare Dienste.
 
 - **Sethost:**  
-  Opers und autorisierte Nutzer können ihren Hostnamen ändern (Spoofing), mit feingranularer Steuerung über S:- und F:-Lines.
+  Opers und autorisierte Nutzer kï¿½nnen ihren Hostnamen ï¿½ndern (Spoofing), mit feingranularer Steuerung ï¿½ber S:- und F:-Lines.
 
 - **Automatische Channel-Modi:**  
-  Neue Channels erhalten Standardmodi (z.B. `ntCN`), konfigurierbar über `AUTOCHANMODES` und `AUTOCHANMODES_LIST`.
+  Neue Channels erhalten Standardmodi (z.B. `ntCN`), konfigurierbar ï¿½ber `AUTOCHANMODES` und `AUTOCHANMODES_LIST`.
 
 - **Erweiterte /check- und /stats-Befehle:**  
   Detaillierte Informationen zu Channels, Nutzern und Servern.
 
 - **MOTD-Verwaltung:**  
-  Mehrere MOTDs, Auswahl nach Hostmaske/IP/Klasse, Caching, dynamisches Nachladen, Banner-Unterstützung.
+  Mehrere MOTDs, Auswahl nach Hostmaske/IP/Klasse, Caching, dynamisches Nachladen, Banner-Unterstï¿½tzung.
 
 - **Anti-Abuse:**  
-  Klon- und Flood-Limits, IP-Prüfungen, TLS-only-Channels, verbessertes Host-Hiding/Cloaking, G-Lines, Schutz vor Join/Klon/Nick-Missbrauch.
+  Klon- und Flood-Limits, IP-Prï¿½fungen, TLS-only-Channels, verbessertes Host-Hiding/Cloaking, G-Lines, Schutz vor Join/Klon/Nick-Missbrauch.
 
 - **HEAD_IN_SAND-Features:**  
-  Granulare Kontrolle über Sichtbarkeit und Zugänglichkeit von Serverinformationen und Statistiken (siehe `doc/readme.midircd`).
+  Granulare Kontrolle ï¿½ber Sichtbarkeit und Zugï¿½nglichkeit von Serverinformationen und Statistiken (siehe `doc/readme.midircd`).
 
 - **Service-Weiterleitung:**  
-  SASL und andere Authentifizierungsbefehle können an einen konfigurierbaren Dienst weitergeleitet werden.
+  SASL und andere Authentifizierungsbefehle kï¿½nnen an einen konfigurierbaren Dienst weitergeleitet werden.
 
 - **Erweitertes Logging und Debugging:**  
   Flexibles Logging, Debug-Level und Feature-Reporting.
@@ -67,22 +67,22 @@
 
 ## Channel-Privilegien & Hierarchie
 
-| Modus | Präfix | Name         | Beschreibung                                                            |
+| Modus | Prï¿½fix | Name         | Beschreibung                                                            |
 |-------|--------|--------------|-------------------------------------------------------------------------|
-| +S    | !      | ChanService  | Channel-Service-Bot, höchste Berechtigung, kann alle Beschränkungen umgehen |
+| +S    | !      | ChanService  | Channel-Service-Bot, hï¿½chste Berechtigung, kann alle Beschrï¿½nkungen umgehen |
 | +q    | ~      | Owner        | Channel-Besitzer, kann alle niedrigeren Modi setzen/entfernen und Channel verwalten |
 | +a    | &      | Admin        | Channel-Admin, kann die meisten niedrigeren Modi setzen und Channel verwalten |
 | +o    | @      | Operator     | Channel-Operator, kann Nutzer verwalten und Channel moderieren          |
-| +h    | %      | Half-Op      | Eingeschränkte Moderationsrechte (kann keine höheren Modi setzen)       |
+| +h    | %      | Half-Op      | Eingeschrï¿½nkte Moderationsrechte (kann keine hï¿½heren Modi setzen)       |
 | +v    | +      | Voice        | Nutzer mit Voice, kann in moderierten (+m) Channels sprechen           |
 
 **Hierarchie:**  
 ChanService > Owner > Admin > Operator > Half-Op > Voice > normaler Nutzer
 
-- Nur Nutzer mit höherer Berechtigung können Modi für Nutzer mit niedrigerer Berechtigung setzen oder entfernen.
-- Half-Ops können keine Operator-/Admin-/Owner-Modi setzen oder entfernen.
-- Channel-Service-Bots (+S) können alle Beschränkungen umgehen.
-- Das Privilegiensystem wird für alle Mode-Änderungen, Kicks und andere Moderationsaktionen durchgesetzt.
+- Nur Nutzer mit hï¿½herer Berechtigung kï¿½nnen Modi fï¿½r Nutzer mit niedrigerer Berechtigung setzen oder entfernen.
+- Half-Ops kï¿½nnen keine Operator-/Admin-/Owner-Modi setzen oder entfernen.
+- Channel-Service-Bots (+S) kï¿½nnen alle Beschrï¿½nkungen umgehen.
+- Das Privilegiensystem wird fï¿½r alle Mode-ï¿½nderungen, Kicks und andere Moderationsaktionen durchgesetzt.
 
 ---
 
@@ -97,19 +97,19 @@ ChanService > Owner > Admin > Operator > Half-Op > Voice > normaler Nutzer
 
 ## Wichtige IRC-Befehle
 
-Alle Befehle verwenden die `/BEFEHL`-Syntax. Gängige Befehle (siehe `/HELP` im IRC für Details):
+Alle Befehle verwenden die `/BEFEHL`-Syntax. Gï¿½ngige Befehle (siehe `/HELP` im IRC fï¿½r Details):
 
-- `/ADMIN [server]` — Zeigt Admin-Informationen
-- `/AWAY [Nachricht]` — Setzt Abwesenheitsstatus
-- `/BYE`, `/EXIT`, `/QUIT` — Sitzung beenden
-- `/CHANNEL [channel]` — Channel betreten
-- `/CLEAR` — Bildschirm leeren
-- `/HELP [Befehl]` — Hilfe anzeigen
-- `/CHECK` — Status von Channels, Nutzern, Servern anzeigen
-- `/STATS [Typ]` — Statistiken anzeigen (a/c/d/e/f/g/i/j/J etc.)
-- `/MODE` — Channel-/Nutzermodi setzen
-- `/SETHOST` — Hostname ändern (Opers)
-- `/OPER` — Operator werden
+- `/ADMIN [server]` ï¿½ Zeigt Admin-Informationen
+- `/AWAY [Nachricht]` ï¿½ Setzt Abwesenheitsstatus
+- `/BYE`, `/EXIT`, `/QUIT` ï¿½ Sitzung beenden
+- `/CHANNEL [channel]` ï¿½ Channel betreten
+- `/CLEAR` ï¿½ Bildschirm leeren
+- `/HELP [Befehl]` ï¿½ Hilfe anzeigen
+- `/CHECK` ï¿½ Status von Channels, Nutzern, Servern anzeigen
+- `/STATS [Typ]` ï¿½ Statistiken anzeigen (a/c/d/e/f/g/i/j/J etc.)
+- `/MODE` ï¿½ Channel-/Nutzermodi setzen
+- `/SETHOST` ï¿½ Hostname ï¿½ndern (Opers)
+- `/OPER` ï¿½ Operator werden
 - `/WHOIS`, `/WHOWAS`, `/LIST`, `/NAMES`, `/TOPIC`, `/KICK`, `/BAN`, `/RENAME`, etc.
 
 ---
@@ -117,17 +117,17 @@ Alle Befehle verwenden die `/BEFEHL`-Syntax. Gängige Befehle (siehe `/HELP` im I
 ## Wichtige Einstellungen / Limits
 
 - Maximale Channels pro Nutzer: 10
-- Maximale Nicklänge: 15
+- Maximale Nicklï¿½nge: 15
 - Maximale Bans pro Channel: 45
-- Maximale Ban-Länge: 40 Zeichen
+- Maximale Ban-Lï¿½nge: 40 Zeichen
 - Klon-Limit pro IP: 4
-- Channel-Länge: 200 Zeichen
+- Channel-Lï¿½nge: 200 Zeichen
 - Standard-Port: 4400
-- TLS: TLSv1.1, TLSv1.2, TLSv1.3 unterstützt
+- TLS: TLSv1.1, TLSv1.2, TLSv1.3 unterstï¿½tzt
 
 ---
 
-## Zusätzliche Funktionen
+## Zusï¿½tzliche Funktionen
 
 - Host-Cloaking und -Hiding (konfigurierbar)
 - WebIRC-Cloaking
@@ -140,30 +140,30 @@ Alle Befehle verwenden die `/BEFEHL`-Syntax. Gängige Befehle (siehe `/HELP` im I
 
 ## Feature-Konfiguration (F-Lines)
 
-Alle Features können über F-Lines in der Konfigurationsdatei aktiviert/deaktiviert oder konfiguriert werden.  
-Siehe `include/ircd_features.h` und `doc/readme.midircd` für eine vollständige Liste und Dokumentation.
+Alle Features kï¿½nnen ï¿½ber F-Lines in der Konfigurationsdatei aktiviert/deaktiviert oder konfiguriert werden.  
+Siehe `include/ircd_features.h` und `doc/readme.midircd` fï¿½r eine vollstï¿½ndige Liste und Dokumentation.
 
 **Beispiele:**
-- `F:SETHOST:TRUE` — /sethost-Befehl für Opers aktivieren
-- `F:SETHOST_USER:TRUE` — /sethost für Nutzer mit Passwort aktivieren
-- `F:SETHOST_AUTO:TRUE` — Automatisches Sethost bei passender Ident/Host aktivieren
-- `F:AUTOCHANMODES:TRUE` — Automatische Standard-Channel-Modi aktivieren
-- `F:AUTOCHANMODES_LIST:ntCN` — Standard-Channel-Modi für neue Channels setzen
-- `F:MAXCHANNELSPERUSER:10` — Maximale Channels pro Nutzer setzen
-- `F:SOCKSENDBUF:61440` — Socket-Sendepuffergröße setzen
-- `F:SOCKRECVBUF:61440` — Socket-Empfangspuffergröße setzen
-- `F:USER_HIDECHANS:TRUE` — Nutzern erlauben, Channels in /whois zu verstecken
-- `F:HIS_USERGLINE:TRUE` — /GLINE-Befehl für Nutzer aktivieren
-- `F:AUTOINVISIBLE:TRUE` — +i (unsichtbar) für alle neuen Nutzer setzen
-- `F:HIS_USERIP:TRUE` — /USERIP für Nutzer aktivieren/deaktivieren
+- `F:SETHOST:TRUE` ï¿½ /sethost-Befehl fï¿½r Opers aktivieren
+- `F:SETHOST_USER:TRUE` ï¿½ /sethost fï¿½r Nutzer mit Passwort aktivieren
+- `F:SETHOST_AUTO:TRUE` ï¿½ Automatisches Sethost bei passender Ident/Host aktivieren
+- `F:AUTOCHANMODES:TRUE` ï¿½ Automatische Standard-Channel-Modi aktivieren
+- `F:AUTOCHANMODES_LIST:ntCN` ï¿½ Standard-Channel-Modi fï¿½r neue Channels setzen
+- `F:MAXCHANNELSPERUSER:10` ï¿½ Maximale Channels pro Nutzer setzen
+- `F:SOCKSENDBUF:61440` ï¿½ Socket-Sendepuffergrï¿½ï¿½e setzen
+- `F:SOCKRECVBUF:61440` ï¿½ Socket-Empfangspuffergrï¿½ï¿½e setzen
+- `F:USER_HIDECHANS:TRUE` ï¿½ Nutzern erlauben, Channels in /whois zu verstecken
+- `F:HIS_USERGLINE:TRUE` ï¿½ /GLINE-Befehl fï¿½r Nutzer aktivieren
+- `F:AUTOINVISIBLE:TRUE` ï¿½ +i (unsichtbar) fï¿½r alle neuen Nutzer setzen
+- `F:HIS_USERIP:TRUE` ï¿½ /USERIP fï¿½r Nutzer aktivieren/deaktivieren
 
-Siehe `doc/readme.midircd` für alle verfügbaren F-Lines und deren Wirkung.
+Siehe `doc/readme.midircd` fï¿½r alle verfï¿½gbaren F-Lines und deren Wirkung.
 
 ---
 
 ## ISUPPORT / 005-Tokens
 
-midircd kündigt folgende ISUPPORT-Tokens an (siehe `include/supported.h`):
+midircd kï¿½ndigt folgende ISUPPORT-Tokens an (siehe `include/supported.h`):
 
 - `CHANTYPES=#&!+`
 - `PREFIX=(Sqaohv)!~&@%+`
@@ -191,11 +191,11 @@ midircd kündigt folgende ISUPPORT-Tokens an (siehe `include/supported.h`):
 
 ## Dokumentation & Hilfe
 
-Für detaillierte Informationen zu Features, Konfiguration und Befehlen siehe:  
-- `doc/irc.1` — Nutzerbefehle  
-- `doc/ircd.8` — Serveroptionen  
-- `ircd/ircd_features.c` & `include/ircd_features.h` — Feature-Definitionen  
-- `doc/readme.midircd` — Feature- und Konfigurationsdokumentation
+Fï¿½r detaillierte Informationen zu Features, Konfiguration und Befehlen siehe:  
+- `doc/irc.1` ï¿½ Nutzerbefehle  
+- `doc/ircd.8` ï¿½ Serveroptionen  
+- `ircd/ircd_features.c` & `include/ircd_features.h` ï¿½ Feature-Definitionen  
+- `doc/readme.midircd` ï¿½ Feature- und Konfigurationsdokumentation
 
 ---
 
@@ -206,4 +206,4 @@ Siehe LICENSE-Datei im Repository.
 ---
 
 **Kontakt/Support:**  
-Fragen und Beiträge über GitHub-Issue oder direkt an die Projektbetreuer.
+Fragen und Beitrï¿½ge ï¿½ber GitHub-Issue oder direkt an die Projektbetreuer.
