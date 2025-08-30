@@ -601,7 +601,6 @@ static const struct UserMode {
   { FLAG_SETHOST,     'h' },
   { FLAG_PARANOID,    'P' },
   { FLAG_TLS,         'z' }
-  ,{ FLAG_CLOAK,       'C' }
 };
 
 /** Length of #userModeList. */
@@ -1001,7 +1000,6 @@ int
 hide_hostmask(struct Client *cptr, unsigned int flag)
 {
   struct Membership *chan;
-  struct Flags oldflags;
 
   switch (flag) {
   case FLAG_HIDDENHOST:
@@ -1018,33 +1016,16 @@ hide_hostmask(struct Client *cptr, unsigned int flag)
   default:
     return 0;
   }
-  /* Save old flags for propagation to servers later */
-  oldflags = cli_flags(cptr);
 
   SetFlag(cptr, flag);
-  /*
-   * If the client already has a "set host" we normally refuse to
-   * apply host-hiding. However, cloaking (WEBIRC_CLOAKING) sets
-   * FLAG_SETHOST together with FLAG_CLOAK; allow +x to succeed in
-   * that case so cloak and explicit host-hiding can coexist.
-   */
-  if (!HasFlag(cptr, FLAG_HIDDENHOST) || !HasFlag(cptr, FLAG_ACCOUNT) ||
-      (HasSetHost(cptr) && !IsCloaked(cptr)))
+  if (!HasFlag(cptr, FLAG_HIDDENHOST) || !HasFlag(cptr, FLAG_ACCOUNT) || HasSetHost(cptr))
     return 0;
 
-  /* Send a QUIT to common channels so servers and non-chghost clients
-   * receive the 'Registered' fake-quit, then send CHGHOST to clients with
-   * the chghost capability. */
-  sendcmdto_common_channels_butone(cptr, CMD_QUIT, cptr, ":Registered");
+  sendcmdto_capflag_common_channels_butone(cptr, CMD_QUIT, cptr, 0, CAP_CHGHOST, ":Registered");
   sendcmdto_capflag_common_channels_butone(cptr, CMD_CHGHOST, NULL, CAP_CHGHOST, 0, "%s %s.%s",
     cli_user(cptr)->username, cli_user(cptr)->account, feature_str(FEAT_HIDDEN_HOST));
   ircd_snprintf(0, cli_user(cptr)->host, HOSTLEN, "%s.%s",
                 cli_user(cptr)->account, feature_str(FEAT_HIDDEN_HOST));
-
-  /* If this client is cloaked, ensure SETHOST is set so other servers
-   * receive the new host parameter when modes are propagated. */
-  if (IsCloaked(cptr))
-    SetSetHost(cptr);
 
   /* ok, the client is now fully hidden, so let them know -- hikari */
   if (MyConnect(cptr) && !CapHas(cli_active(cptr), CAP_CHGHOST))
@@ -1055,8 +1036,6 @@ hide_hostmask(struct Client *cptr, unsigned int flag)
    * and set the modes, if any
    */
   rejoin_and_set_modes(cptr);
-  /* Propagate the usermode change (+x and possibly +h) to other servers */
-  send_umode_out(NULL, cptr, &oldflags, 0);
   return 0;
 }
 
@@ -1474,15 +1453,6 @@ int set_user_mode(struct Client *cptr, struct Client *sptr, int parc,
         if (what == MODE_ADD)
           SetTLS(sptr);
         /* There is no -z */
-        break;
-      case 'C':
-        /* +C (cloak) may only be set/cleared by servers */
-        if (!IsServer(cptr))
-          break;
-        if (what == MODE_ADD)
-          SetCloak(sptr);
-        else
-          ClearCloak(sptr);
         break;
       default:
         send_reply(sptr, ERR_UMODEUNKNOWNFLAG, *m);
@@ -2091,19 +2061,14 @@ int set_cloakhost(struct Client *cptr, char *hostmask)
     if (!cptr || !hostmask)
         return 0;
 
-  /* Remember old flags so we can propagate mode changes to servers */
-  struct Flags oldflags = cli_flags(cptr);
-
-  char *cloaked = cloak_host(hostmask);
+    char *cloaked = cloak_host(hostmask);
     if (!cloaked)
         return 0;
 
 
     ircd_strncpy(cli_user(cptr)->realhost, hostmask, HOSTLEN);
     ircd_strncpy(cli_user(cptr)->host, cloaked, HOSTLEN);
-  SetCloak(cptr);
-  SetSetHost(cptr);
-  /* Propagate the new user mode (+C and possibly +h) to other servers */
-  send_umode_out(NULL, cptr, &oldflags, 0);
+	SetCloak(cptr);
+	SetSetHost(cptr);
     return 1;
 }
