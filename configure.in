@@ -163,7 +163,7 @@ case "$host" in
 	else
 	    unet_poll_syscall=no
 	fi
-        AC_DEFINE([IRCU_SOLARIS], 1, [Define if building on Solaris])
+        AC_DEFINE([midircd_SOLARIS], 1, [Define if building on Solaris])
 	;;
 
     *-sunos*)
@@ -692,10 +692,6 @@ dnl --with-maxcon allows us to set the maximum connections
 unet_maxcon=`ulimit -Hn`
 if test x"$unet_maxcon" = xunlimited; then
     unet_maxcon=`ulimit -Sn`
-fi
-NN_MAX_CLIENT_P=262168
-if test "$unet_maxcon" -gt $NN_MAX_CLIENT_P ; then
-    unet_maxcon=$NN_MAX_CLIENT_P
 fi
 unet_maxcon=`expr $unet_maxcon - 4`
 AC_MSG_CHECKING([max connections])
