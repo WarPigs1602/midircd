@@ -36,6 +36,7 @@
 #include "ircd_alloc.h"
 #include "ircd_chattr.h"
 #include "ircd_log.h"
+#include "ircd_lexer.h"
 #include "ircd_reply.h"
 #include "ircd_snprintf.h"
 #include "ircd_string.h"
@@ -821,9 +822,9 @@ void clear_quarantines(void)
 static int conf_error;
 /** When non-zero, indicates that the configuration file was loaded at least once. */
 static int conf_already_read;
-extern FILE *yyin;
-extern void yyparse(void);
-extern void init_lexer(void);
+extern int init_lexer(void);
+extern void deinit_lexer(void);
+extern const char *lexer_position(int *lineno);
 
 /** Read configuration file.
  * @return Zero on failure, non-zero on success. */
@@ -833,10 +834,10 @@ int read_configuration_file(void)
   feature_unmark(); /* unmark all features for resetting later */
   clear_nameservers(); /* clear previous list of DNS servers */
   /* Now just open an fd. The buffering isn't really needed... */
-  init_lexer();
+  if (!init_lexer())
+    return 0;
   yyparse();
-  fclose(yyin);
-  yyin = NULL;
+  deinit_lexer();
   feature_mark(); /* reset unmarked features */
   conf_already_read = 1;
   return 1;
@@ -848,12 +849,17 @@ int read_configuration_file(void)
 void
 yyerror(const char *msg)
 {
- sendto_opmask_butone(0, SNO_ALL, "Config file parse error line %d: %s",
-                      lineno, msg);
- log_write(LS_CONFIG, L_ERROR, 0, "Config file parse error line %d: %s",
-           lineno, msg);
- if (!conf_already_read)
-   fprintf(stderr, "Config file parse error line %d: %s\n", lineno, msg);
+  const char *fname;
+  int lineno;
+
+  fname = lexer_position(&lineno);
+  sendto_opmask_butone(0, SNO_ALL, "Config file parse error line %s:%d: %s",
+                       fname, lineno, msg);
+  log_write(LS_CONFIG, L_ERROR, 0, "Config file parse error line %s:%d: %s",
+            fname, lineno, msg);
+  if (!conf_already_read)
+    fprintf(stderr, "Config file parse error line %s:%d: %s\n",
+            fname, lineno, msg);
  conf_error = 1;
 }
 

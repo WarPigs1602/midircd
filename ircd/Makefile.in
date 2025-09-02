@@ -115,10 +115,10 @@ IRCD_SRC = \
 	ircd_reslib.c \
 	ircd_signal.c \
 	ircd_snprintf.c \
-	ircd_string.c \
-	jupe.c \
-	lex.yy.c \
-	list.c \
+  ircd_string.c \
+  jupe.c \
+  ircd_lexer.c \
+  list.c \
 	listener.c \
 	m_account.c \
 	m_admin.c \
@@ -284,8 +284,7 @@ table_gen: table_gen.o
 chattr.tab.c: table_gen
 	./table_gen > chattr.tab.c
 
-lex.yy.c: ircd_lexer.l y.tab.h
-	${LEX} ${srcdir}/ircd_lexer.l
+
 
 y.tab.c y.tab.h: ircd_parser.y
 	${YACC} -d ${srcdir}/ircd_parser.y
@@ -566,7 +565,7 @@ jupe.o: jupe.c ../config.h ../include/jupe.h ../include/client.h \
   ../include/numeric.h ../include/numnicks.h ../include/s_bsd.h \
   ../include/s_misc.h ../include/send.h ../include/struct.h \
   ../include/sys.h
-lex.yy.o: lex.yy.c ../config.h ../include/ircd.h ../include/struct.h \
+ircd_lexer.o: ircd_lexer.c ../config.h ../include/ircd.h ../include/struct.h \
   ../include/ircd_defs.h ../include/ircd_alloc.h ../include/ircd_string.h \
   ../include/ircd_chattr.h ../include/s_debug.h ../config.h y.tab.h
 list.o: list.c ../config.h ../include/list.h ../include/client.h \
