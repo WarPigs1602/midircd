@@ -338,6 +338,8 @@ static struct FeatureDesc {
   F_I(SOCKRECVBUF, 0, SERVER_TCP_WINDOW, 0),
   F_I(IPCHECK_CLONE_LIMIT, 0, 4, 0),
   F_I(IPCHECK_CLONE_PERIOD, 0, 40, 0),
+  F_I(IPCHECK_48_CLONE_LIMIT, 0, 50, 0),
+  F_I(IPCHECK_48_CLONE_PERIOD, 0, 10, 0),
   F_I(IPCHECK_CLONE_DELAY, 0, 600, 0),
   F_I(CHANNELLEN, 0, 200, 0),
 
@@ -429,11 +431,12 @@ static struct FeatureDesc {
   F_B(HIS_STATS_U, 0, 1, 0),
   F_B(HIS_STATS_v, 0, 1, 0),
   F_B(HIS_STATS_w, 0, 1, 0),
+  F_B(HIS_STATS_W, 0, 1, 0),
   F_B(HIS_STATS_x, 0, 1, 0),
   F_B(HIS_STATS_y, 0, 1, 0),
   F_B(HIS_STATS_z, 0, 1, 0),
   F_B(HIS_STATS_IAUTH, 0, 1, 0),
-  F_S(HIS_WEBIRC_NAME, 0, "qwebirc", 0),
+  F_B(HIS_WEBIRC, 0, 1, 0),
   F_B(HIS_WHOIS_SERVERNAME, 0, 1, 0),
   F_B(HIS_WHOIS_IDLETIME, 0, 1, 0),
   F_B(HIS_WHOIS_LOCALCHAN, 0, 1, 0),
@@ -906,8 +909,24 @@ feature_report(struct Client* to, const struct StatDesc* sd, char* param)
 int
 feature_int(enum Feature feat)
 {
-  assert(features[feat].feat == feat);
-  assert((features[feat].flags & FEAT_MASK) == FEAT_INT);
+  /* Runtime checks to avoid aborts if enum/index mismatch happens at runtime.
+   * If a mismatch is detected, log an error and return a safe default.  This
+   * helps debugging and prevents the entire daemon from aborting because of a
+   * corrupted index or mismatched build artifacts. */
+  if (feat < 0 || feat >= FEAT_LAST_F) {
+    Debug((DEBUG_ERROR, "feature_int: invalid feature index %d", feat));
+    return 0;
+  }
+
+  if (features[feat].feat != feat) {
+    Debug((DEBUG_ERROR, "feature_int: feature descriptor mismatch for %d (desc %d)", feat, features[feat].feat));
+    return 0;
+  }
+
+  if ((features[feat].flags & FEAT_MASK) != FEAT_INT) {
+    Debug((DEBUG_ERROR, "feature_int: feature %d is not an integer feature", feat));
+    return 0;
+  }
 
   return features[feat].v_int;
 }
@@ -919,11 +938,20 @@ feature_int(enum Feature feat)
 int
 feature_bool(enum Feature feat)
 {
-  assert(feat <= FEAT_LAST_F);
-  if (FEAT_LAST_F < feat)
+  if (feat < 0 || feat >= FEAT_LAST_F) {
+    Debug((DEBUG_ERROR, "feature_bool: invalid feature index %d", feat));
     return 0;
-  assert(features[feat].feat == feat);
-  assert((features[feat].flags & FEAT_MASK) == FEAT_BOOL);
+  }
+
+  if (features[feat].feat != feat) {
+    Debug((DEBUG_ERROR, "feature_bool: feature descriptor mismatch for %d (desc %d)", feat, features[feat].feat));
+    return 0;
+  }
+
+  if ((features[feat].flags & FEAT_MASK) != FEAT_BOOL) {
+    Debug((DEBUG_ERROR, "feature_bool: feature %d is not a boolean feature (flags=0x%x)", feat, features[feat].flags));
+    return 0;
+  }
 
   return features[feat].v_int;
 }
@@ -935,8 +963,20 @@ feature_bool(enum Feature feat)
 const char *
 feature_str(enum Feature feat)
 {
-  assert(features[feat].feat == feat);
-  assert((features[feat].flags & FEAT_MASK) == FEAT_STR);
+  if (feat < 0 || feat >= FEAT_LAST_F) {
+    Debug((DEBUG_ERROR, "feature_str: invalid feature index %d", feat));
+    return 0;
+  }
+
+  if (features[feat].feat != feat) {
+    Debug((DEBUG_ERROR, "feature_str: feature descriptor mismatch for %d (desc %d)", feat, features[feat].feat));
+    return 0;
+  }
+
+  if ((features[feat].flags & FEAT_MASK) != FEAT_STR) {
+    Debug((DEBUG_ERROR, "feature_str: feature %d is not a string feature (flags=0x%x)", feat, features[feat].flags));
+    return 0;
+  }
 
   return features[feat].v_str;
 }

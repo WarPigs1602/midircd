@@ -257,6 +257,7 @@ struct Connection
   capset_t            con_capab;     /**< Client capabilities (from us) */
   capset_t            con_active;    /**< Active capabilities (to us) */
   struct AuthRequest* con_auth;      /**< Auth request for client */
+  const struct wline* con_wline;     /**< WebIRC authorization for client */
   char*               con_rexmit;    /**< TLS retransmission data */
   size_t              con_rexmit_len; /**, TLS retransmission length */
 };
@@ -411,6 +412,8 @@ struct Client {
 #define cli_proc(cli)		con_proc(cli_connect(cli))
 /** Get auth request for client. */
 #define cli_auth(cli)		con_auth(cli_connect(cli))
+/** Get WebIRC authorization for client. */
+#define cli_wline(cli)          con_wline(cli_connect(cli))
 /** Get sentalong marker for client. */
 #define cli_sentalong(cli)      con_sentalong(cli_connect(cli))
 
@@ -494,6 +497,8 @@ struct Client {
 #define con_active(con)         ((con)->con_active)
 /** Get the auth request for the connection. */
 #define con_auth(con)		((con)->con_auth)
+/** Get the WebIRC block (if any) used by the connection. */
+#define con_wline(con)          ((con)->con_wline)
 
 #define STAT_CONNECTING         0x001 /**< connecting to another server */
 #define STAT_HANDSHAKE          0x002 /**< pass - server sent */
@@ -503,6 +508,7 @@ struct Client {
 #define STAT_UNKNOWN_SERVER     0x020 /**< connection on a server port */
 #define STAT_SERVER             0x040 /**< fully registered server */
 #define STAT_USER               0x080 /**< fully registered user */
+#define STAT_WEBIRC             0x100 /**< connection on a webirc port */
 
 /*
  * status macros.
@@ -526,6 +532,9 @@ struct Client {
 /** Return non-zero if the client is an unregistered connection on a
  * user port. */
 #define IsUserPort(x)           (cli_status(x) == STAT_UNKNOWN_USER )
+/** Return non-zero if the client is an unregistered connection on a
+ * WebIRC port that has not yet sent WEBIRC. */
+#define IsWebircPort(x)         (cli_status(x) == STAT_WEBIRC)
 /** Return non-zero if the client is a real client connection. */
 #define IsClient(x)             (cli_status(x) & \
         (STAT_HANDSHAKE | STAT_ME | STAT_UNKNOWN |\

@@ -154,6 +154,8 @@ int m_nick(struct Client* cptr, struct Client* sptr, int parc, char* parv[])
 
   if (IsServerPort(cptr))
     return exit_client(cptr, cptr, &me, "Use a different port");
+  if (IsWebircPort(cptr) && !cli_wline(cptr))
+    return exit_client(cptr, cptr, &me, "WebIRC authorization required");
 
   /*
    * parv[0] will be empty for clients connecting for the first time
@@ -258,7 +260,8 @@ int m_nick(struct Client* cptr, struct Client* sptr, int parc, char* parv[])
    */
   if (IsUnknown(acptr) && MyConnect(acptr)) {
     ServerStats->is_ref++;
-    IPcheck_connect_fail(acptr);
+    if (IsIPChecked(acptr))
+      IPcheck_connect_fail(acptr, 0);
     exit_client(cptr, acptr, &me, "Overridden by other sign on");
     return set_nick_name(cptr, sptr, nick, parc, parv);
   }
@@ -387,8 +390,8 @@ int ms_nick(struct Client* cptr, struct Client* sptr, int parc, char* parv[])
    */
   if (IsUnknown(acptr) && MyConnect(acptr))
   {
-    ServerStats->is_ref++;
-    IPcheck_connect_fail(acptr);
+  ServerStats->is_ref++;
+  IPcheck_connect_fail(acptr, 0);
     exit_client(cptr, acptr, &me, "Overridden by other sign on");
     return set_nick_name(cptr, sptr, nick, parc, parv);
   }

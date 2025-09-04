@@ -56,6 +56,76 @@ struct SLink *opsarray[32];     /* don't use highest bit unless you change
 /** Linked list of all connections with data queued to send. */
 static struct Connection *send_queues;
 
+#include <stdarg.h>
+
+/* IRCv3 standard reply with pattern support */
+void send_standard_reply(struct Client* from, struct Client* to, const char* reply_type, const char* reply_code, const char* target_nick, const char* pattern, ...)
+{
+  va_list args;
+  char buf[512];
+
+  va_start(args, pattern);
+  ircd_vsnprintf(to, buf, sizeof(buf), pattern, args);
+  va_end(args);
+
+  /* Compose the reply according to IRCv3 standard */
+  if (reply_code && *reply_code) {
+    if (target_nick && *target_nick) {
+      sendrawto_one(to, "%s %s %s :%s", reply_type, reply_code, target_nick, buf);
+    }
+    else {
+      sendrawto_one(to, "%s %s :%s", reply_type, reply_code, buf);
+    }
+  }
+  else {
+    if (target_nick && *target_nick) {
+      sendrawto_one(to, "%s %s :%s", reply_type, target_nick, buf);
+    }
+    else {
+      sendrawto_one(to, "%s :%s", reply_type, buf);
+    }
+  }
+}
+
+/* IRCv3 FAIL reply with pattern support */
+void send_fail_reply(struct Client* from, struct Client* to, const char* reply_code, const char* target_nick, const char* pattern, ...)
+{
+  va_list args;
+  char buf[512];
+
+  va_start(args, pattern);
+  ircd_vsnprintf(to, buf, sizeof(buf), pattern, args);
+  va_end(args);
+
+  send_standard_reply(from, to, "FAIL", reply_code, target_nick, "%s", buf);
+}
+
+/* IRCv3 WARN reply with pattern support */
+void send_warn_reply(struct Client* from, struct Client* to, const char* reply_code, const char* target_nick, const char* pattern, ...)
+{
+  va_list args;
+  char buf[512];
+
+  va_start(args, pattern);
+  ircd_vsnprintf(to, buf, sizeof(buf), pattern, args);
+  va_end(args);
+
+  send_standard_reply(from, to, "WARN", reply_code, target_nick, "%s", buf);
+}
+
+/* IRCv3 NOTE reply with pattern support */
+void send_note_reply(struct Client* from, struct Client* to, const char* reply_code, const char* target_nick, const char* pattern, ...)
+{
+  va_list args;
+  char buf[512];
+
+  va_start(args, pattern);
+  ircd_vsnprintf(to, buf, sizeof(buf), pattern, args);
+  va_end(args);
+
+  send_standard_reply(from, to, "NOTE", reply_code, target_nick, "%s", buf);
+}
+
 /*
  * dead_link
  *
@@ -97,76 +167,6 @@ static void dead_link(struct Client *to, char *notice)
   if (!IsUser(to) && !IsUnknown(to) && !HasFlag(to, FLAG_CLOSING))
     sendto_opmask_butone(0, SNO_OLDSNO, "%s for %s", cli_info(to), cli_name(to));
   Debug((DEBUG_ERROR, cli_info(to)));
-}
-
-#include <stdarg.h>
-
-// IRCv3 standard reply with pattern support
-void send_standard_reply(struct Client* from, struct Client* to, const char* reply_type, const char* reply_code, const char* target_nick, const char* pattern, ...)
-{
-    va_list args;
-    char buf[512];
-
-    va_start(args, pattern);
-    ircd_vsnprintf(to, buf, sizeof(buf), pattern, args);
-    va_end(args);
-
-    // Compose the reply according to IRCv3 standard
-    if (reply_code && *reply_code) {
-        if (target_nick && *target_nick) {
-            sendrawto_one(to, "%s %s %s :%s", reply_type, reply_code, target_nick, buf);
-        }
-        else {
-            sendrawto_one(to, "%s %s :%s", reply_type, reply_code, buf);
-        }
-    }
-    else {
-        if (target_nick && *target_nick) {
-            sendrawto_one(to, "%s %s :%s", reply_type, target_nick, buf);
-        }
-        else {
-            sendrawto_one(to, "%s :%s", reply_type, buf);
-        }
-    }
-}
-
-// IRCv3 FAIL reply with pattern support
-void send_fail_reply(struct Client* from, struct Client* to, const char* reply_code, const char* target_nick, const char* pattern, ...)
-{
-    va_list args;
-    char buf[512];
-
-    va_start(args, pattern);
-    ircd_vsnprintf(to, buf, sizeof(buf), pattern, args);
-    va_end(args);
-
-    send_standard_reply(from, to, "FAIL", reply_code, target_nick, "%s", buf);
-}
-
-// IRCv3 WARN reply with pattern support
-void send_warn_reply(struct Client* from, struct Client* to, const char* reply_code, const char* target_nick, const char* pattern, ...)
-{
-    va_list args;
-    char buf[512];
-
-    va_start(args, pattern);
-    ircd_vsnprintf(to, buf, sizeof(buf), pattern, args);
-    va_end(args);
-
-    send_standard_reply(from, to, "WARN", reply_code, target_nick, "%s", buf);
-}
-
-// IRCv3 NOTE reply with pattern support
-void send_note_reply(struct Client* from, struct Client* to, const char* reply_code, const char* target_nick, const char* pattern, ...)
-{
-    va_list args;
-    char buf[512];
-
-    va_start(args, pattern);
-    ircd_vsnprintf(to, buf, sizeof(buf), pattern, args);
-    va_end(args);
-
-    send_standard_reply(from, to, "NOTE", reply_code, target_nick, "%s", buf);
 }
 
 /** Test whether we can send to a client.
@@ -351,7 +351,7 @@ static int match_it(struct Client *from, struct Client *one, const char *mask, i
   {
     case MATCH_HOST:
       return (match(mask, cli_user(one)->host) == 0 ||
-        ((HasHiddenHost(one) || HasSetHost(one)) && match(mask, cli_user(one)->realhost) == 0));
+        (HasHiddenHost(one) && match(mask, cli_user(one)->realhost) == 0));
     case MATCH_SERVER:
     default:
       return (match(mask, cli_name(cli_user(one)->server)) == 0);

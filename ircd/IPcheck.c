@@ -18,11 +18,12 @@
  */
 /** @file
  * @brief Code to count users connected from particular IP addresses.
- * @version $Id: IPcheck.c,v 1.40 2005/08/15 23:22:50 entrope Exp $
+ * @version $Id$
  */
 #include "config.h"
 
 #include "IPcheck.h"
+#include "channel.h"        /* struct Ban */
 #include "client.h"
 #include "ircd.h"
 #include "match.h"
@@ -32,17 +33,13 @@
 #include "ircd_features.h"
 #include "ircd_log.h"
 #include "ircd_string.h"    /* ircd_ntoa */
+#include "res.h"            /* irc_in_addr_is_ipv4 */
 #include "s_debug.h"        /* Debug */
 #include "s_user.h"         /* TARGET_DELAY */
 #include "send.h"
 
 /* #include <assert.h> -- Now using assert in ircd_log.h */
 #include <string.h>
-#include <stdio.h>
-#ifndef IPCHK_DEBUG
-#define IPCHK_DEBUG 0
-#endif
-#define IPCHK_DPRINTF(...) do { if (IPCHK_DEBUG) fprintf(stderr, __VA_ARGS__); } while(0)
 
 /** Stores free target information for a particular user. */
 struct IPTargetEntry {
@@ -60,30 +57,13 @@ struct IPRegistryEntry {
   unsigned char            attempts; /**< Number of recent connection attempts. */
 };
 
-static void ip_registry_canonicalize(struct irc_in_addr *out, const struct irc_in_addr *in)
-{
-    if (irc_in_addr_is_ipv4(in)) {
-        out->in6_16[0] = htons(0x2002);
-        out->in6_16[1] = in->in6_16[6];
-        out->in6_16[2] = in->in6_16[7];
-        out->in6_16[3] = out->in6_16[4] = out->in6_16[5] = 0;
-        out->in6_16[6] = out->in6_16[7] = 0;
-    } else
-        memcpy(out, in, sizeof(*out));
-}
-
-/* Helper: compare two addresses in the same canonical way the registry uses
- * (IPv4 mapped to 6to4 form, compare first 48 bits for IPv4, 64 for IPv6).
- */
-static int ip_registry_same_ip(const struct irc_in_addr *a, const struct irc_in_addr *b)
-{
-  struct irc_in_addr ca, cb;
-  ip_registry_canonicalize(&ca, a);
-  ip_registry_canonicalize(&cb, b);
-  /* For canonical IPv4 (6to4) addresses only first 48 bits significant */
-  int bits = (ca.in6_16[0] == htons(0x2002)) ? 48 : 64;
-  return ipmask_check(&ca, &cb, bits);
-}
+/** Stores information about an IPv6/48 block's recent connections. */
+struct IPRegistry48 {
+  struct IPRegistry48* next;     /**< Next entry in the hash chain. */
+  int              last_connect; /**< Last connection attempt timestamp. */
+  uint16_t             addr[3];  /**< 48 MSBs of IP address. */
+  unsigned short       attempts; /**< Number of recent connection attempts. */
+};
 
 /** Size of hash table (must be a power of two). */
 #define IP_REGISTRY_TABLE_SIZE 0x10000
@@ -96,23 +76,52 @@ static int ip_registry_same_ip(const struct irc_in_addr *a, const struct irc_in_
 #define IPCHECK_CLONE_LIMIT feature_int(FEAT_IPCHECK_CLONE_LIMIT)
 /** Macro for easy access to configured IPcheck clone period. */
 #define IPCHECK_CLONE_PERIOD feature_int(FEAT_IPCHECK_CLONE_PERIOD)
+/** Macro for easy access to configured /48 clone limit. */
+#define IPCHECK_48_CLONE_LIMIT feature_int(FEAT_IPCHECK_48_CLONE_LIMIT)
+/** Macro for easy access to configured 48 clone period. */
+#define IPCHECK_48_CLONE_PERIOD feature_int(FEAT_IPCHECK_48_CLONE_PERIOD)
 /** Macro for easy access to configured IPcheck clone delay. */
 #define IPCHECK_CLONE_DELAY feature_int(FEAT_IPCHECK_CLONE_DELAY)
 
 /** Hash table for storing IPRegistryEntry entries. */
 static struct IPRegistryEntry* hashTable[IP_REGISTRY_TABLE_SIZE];
+/** Hash table for storing IPRegistry48 entries. */
+static struct IPRegistry48* hashTable48[IP_REGISTRY_TABLE_SIZE];
 /** List of allocated but unused IPRegistryEntry structs. */
 static struct IPRegistryEntry* freeList;
+/** List of allocated but unused IPRegistry48 structs. */
+static struct IPRegistry48* freeList48;
 /** Periodic timer to look for too-old registry entries. */
 static struct Timer expireTimer;
+/** List of IPv4 net blocks exempt from IPcheck. */
+static struct Ban *exceptIPv4;
+/** List of IPv6 net blocks exempt from IPcheck. */
+static struct Ban *exceptIPv6;
 
 /** Convert IP addresses to canonical form for comparison.  IPv4
- * addresses are translated into 6to4 form; IPv6 addresses are left
- * alone.
+ * addresses are translated into 6to4 form; IPv6 addresses are
+ * truncated to their /64 prefix.
+ *
  * @param[out] out Receives canonical format for address.
  * @param[in] in IP address to canonicalize.
  */
+static void ip_registry_canonicalize(struct irc_in_addr *out, const struct irc_in_addr *in)
+{
+    if (irc_in_addr_is_ipv4(in)) {
+        out->in6_16[0] = htons(0x2002);
+        out->in6_16[1] = in->in6_16[6];
+        out->in6_16[2] = in->in6_16[7];
+        out->in6_16[3] = 0;
+    } else {
+        out->in6_16[0] = in->in6_16[0];
+        out->in6_16[1] = in->in6_16[1];
+        out->in6_16[2] = in->in6_16[2];
+        out->in6_16[3] = in->in6_16[3];
+    }
 
+    out->in6_16[4] = out->in6_16[5] = 0;
+    out->in6_16[6] = out->in6_16[7] = 0;
+}
 
 /** Calculate hash value for an IP address.
  * @param[in] ip Address to hash; must be in canonical form.
@@ -128,8 +137,10 @@ static unsigned int ip_registry_hash(const struct irc_in_addr *ip)
 }
 
 /** Find an IP registry entry if one exists for the IP address.
- * If \a ip looks like an IPv6 address, only consider the first 64 bits
- * of the address. Otherwise, only consider the final 32 bits.
+ *
+ * If \a ip canonicalizes to a 6to4 mapped IPv6 address, use the first
+ * 48 bits to detect matches.  Otherwise use the first 64 bits.
+ *
  * @param[in] ip IP address to search for.
  * @return Matching registry entry, or NULL if none exists.
  */
@@ -137,10 +148,12 @@ static struct IPRegistryEntry* ip_registry_find(const struct irc_in_addr *ip)
 {
   struct irc_in_addr canon;
   struct IPRegistryEntry* entry;
+  int bits;
+
   ip_registry_canonicalize(&canon, ip);
+  bits = (canon.in6_16[0] == htons(0x2002)) ? 48 : 64;
   entry = hashTable[ip_registry_hash(&canon)];
   for ( ; entry; entry = entry->next) {
-    int bits = (canon.in6_16[0] == htons(0x2002)) ? 48 : 64;
     if (ipmask_check(&canon, &entry->addr, bits))
       break;
   }
@@ -191,8 +204,8 @@ static struct IPRegistryEntry* ip_registry_new_entry(void)
   assert(0 != entry);
   memset(entry, 0, sizeof(struct IPRegistryEntry));
   entry->last_connect = NOW;     /* Seconds since last connect attempt */
-  entry->connected    = 0;       /* start at 0; first successful check will ++ */
-  entry->attempts     = 0;       /* start at 0; first successful check will ++ */
+  entry->connected    = 1;       /* connected clients for this IP */
+  entry->attempts     = 1;       /* Number attempts for this IP */
   return entry;
 }
 
@@ -252,6 +265,57 @@ static void ip_registry_expire_entry(struct IPRegistryEntry* entry)
   }
 }
 
+/** Calculate hash value for an IP address's /48 block.
+ * @param[in] ip Address to hash; must be an IPv6 address.
+ * @return Hash value for address.
+ */
+static unsigned int ip_48_hash(const struct irc_in_addr *ip)
+{
+  unsigned int res;
+  res = ip->in6_16[0] ^ ip->in6_16[1] ^ ip->in6_16[2];
+  return res & (IP_REGISTRY_TABLE_SIZE - 1);
+}
+
+/** Find or create an IPv6 /48 entry for the IP address.
+ * @param[in] ip IPv6 address to search for.
+ * @return Matching registry entry (possibly newly created).
+ */
+static struct IPRegistry48* ip_48_find(const struct irc_in_addr *ip)
+{
+  struct IPRegistry48* entry;
+  unsigned int idx;
+
+  /* Does it exist in the chain? */
+  idx = ip_48_hash(ip);
+  for (entry = hashTable48[idx]; entry; entry = entry->next) {
+    if ((ip->in6_16[0] == entry->addr[0])
+        && (ip->in6_16[1] == entry->addr[1])
+        && (ip->in6_16[2] == entry->addr[2]))
+      goto done;
+  }
+
+  /* Where do we get the next entry? */
+  entry = freeList48;
+  if (entry)
+    freeList48 = entry->next;
+  else
+    entry = MyMalloc(sizeof(*entry));
+
+  /* Initialize this entry. */
+  entry->last_connect = NOW;
+  entry->addr[0]  = ip->in6_16[0];
+  entry->addr[1]  = ip->in6_16[1];
+  entry->addr[2]  = ip->in6_16[2];
+  entry->attempts = 0;
+
+  /* Link it into the hash table. */
+  entry->next = hashTable48[idx];
+  hashTable48[idx] = entry;
+
+done:
+  return entry;
+}
+
 /** Periodic timer callback to check for expired registry entries.
  * @param[in] ev Timer event (ignored).
  */
@@ -271,12 +335,96 @@ static void ip_registry_expire(struct Event* ev)
         ip_registry_expire_entry(entry);
     }
   }
+
+  for (i = 0; i < IP_REGISTRY_TABLE_SIZE; ++i) {
+    struct IPRegistry48** prev_p;
+    struct IPRegistry48* entry;
+
+    for (prev_p = &hashTable48[i]; (entry = *prev_p); ) {
+      if (CONNECTED_SINCE(entry->last_connect) > 600) {
+        *prev_p = entry->next;
+        entry->next = freeList48;
+        freeList48 = entry;
+      } else
+        prev_p = &entry->next;
+    }
+  }
 }
 
 /** Initialize the IPcheck subsystem. */
 void IPcheck_init(void)
 {
   timer_add(timer_init(&expireTimer), ip_registry_expire, 0, TT_PERIODIC, 60);
+}
+
+/** Reset IPcheck configurable settings. */
+void IPcheck_clear_config(void)
+{
+  struct Ban *except;
+
+  /* Free any existing IPv4 exceptions. */
+  while (exceptIPv4) {
+    except = exceptIPv4;
+    exceptIPv4 = except->next;
+    free(except);
+  }
+
+  /* Free any existing IPv6 exceptions. */
+  while (exceptIPv6) {
+    except = exceptIPv6;
+    exceptIPv6 = exceptIPv6->next;
+    free(except);
+  }
+}
+
+/** Add an IP netblock exemption to IPcheck.
+ *
+ * @param[in] ip_mask IP address, optionally in CIDR netblock form.
+ * @return Zero on success, non-zero on error.
+ */
+int IPcheck_except(const char *ip_mask)
+{
+  struct Ban *except, **p_list;
+
+  /* Parse the IP address. */
+  except = MyMalloc(sizeof(*except));
+  if (!ipmask_parse(ip_mask, &except->address, &except->addrbits)) {
+    MyFree(except);
+    return 1;
+  }
+  if (!irc_in_addr_valid(&except->address)) {
+    MyFree(except);
+    return 2;
+  }
+
+  /* Add it to the right list. */
+  p_list = irc_in_addr_is_ipv4(&except->address)
+    ? &exceptIPv4 : &exceptIPv6;
+  except->next = *p_list;
+  *p_list = except;
+  return 0;
+}
+
+/** Indicates whether an IP address is exempt from per-IP connection
+ * rate limits.
+ *
+ * @param[in] addr Address to look up.
+ * @return Non-zero if the IP address is exempt, zero if it should be
+ *   checked for too many connections in a short time.
+ */
+static int ip_registry_is_exempt(const struct irc_in_addr *addr)
+{
+  struct Ban *list;
+
+  list = irc_in_addr_is_ipv4(addr) ? exceptIPv4 : exceptIPv6;
+  while (list) {
+    if (ipmask_check(addr, &list->address, list->addrbits))   {
+      return 1;
+    }
+    list = list->next;
+  }
+
+  return 0;
 }
 
 /** Check whether a new connection from a local client should be allowed.
@@ -287,34 +435,60 @@ void IPcheck_init(void)
  * @param[out] next_target_out Receives time to grant another free target.
  * @return Non-zero if the connection is permitted, zero if denied.
  */
-int ip_registry_check_local(const struct irc_in_addr *addr, time_t* next_target_out)
+static int ip_registry_check_local(const struct irc_in_addr *addr, time_t* next_target_out)
 {
-  struct IPRegistryEntry* entry = ip_registry_find(addr);
+  struct IPRegistryEntry* entry;
   unsigned int free_targets = STARTTARGETS;
-  int is_new = 0;
+
+  if (ip_registry_is_exempt(addr)) {
+    return 1;
+  }
+
+  entry = ip_registry_find(addr);
+  if (!irc_in_addr_is_ipv4(addr)) {
+    struct IPRegistry48* entry_48 = ip_48_find(addr);
+
+    if (CONNECTED_SINCE(entry_48->last_connect) > IPCHECK_48_CLONE_PERIOD)
+      entry_48->attempts = 0;
+
+    entry_48->last_connect = NOW;
+    if (0 == ++entry_48->attempts)
+      --entry_48->attempts;
+
+#ifndef NOTHROTTLE
+    if ((entry_48->attempts >= IPCHECK_48_CLONE_LIMIT)
+        && ((CurrentTime - cli_since(&me) > IPCHECK_CLONE_DELAY)))
+    {
+      if (entry)
+      {
+        entry->last_connect = NOW;
+        if (!++entry->connected)
+        {
+          entry->connected--;
+          entry = NULL;
+        }
+      }
+      goto reject;
+    }
+#endif
+  }
 
   if (0 == entry) {
     entry       = ip_registry_new_entry();
     ip_registry_canonicalize(&entry->addr, addr);
     ip_registry_add(entry);
-    is_new = 1;
     Debug((DEBUG_DNS, "IPcheck added new registry for local connection from %s.", ircd_ntoa(&entry->addr)));
+    return 1;
   }
   /* Note that this also counts server connects.
    * It is hard and not interesting, to change that.
    * Refuse connection if it would overflow the counter.
    */
-  /* Statt blind zu inkrementieren, synchronisiere mit realen Clients (neu+1). */
+  if (0 == ++entry->connected)
   {
-    extern struct Client *GlobalClientList; struct Client *tmp; unsigned real_now = 0;
-    struct irc_in_addr canon_search; ip_registry_canonicalize(&canon_search, addr);
-    for (tmp = GlobalClientList; tmp; tmp = cli_next(tmp)) {
-      if (ip_registry_same_ip(&cli_ip(tmp), &canon_search))
-        ++real_now;
-    }
-    /* real_now enthaelt die bereits vorhandenen Clients dieser IP. Diesem fügen wir den neuen hinzu. */
-  entry->connected = (real_now < 0xFFFF) ? (real_now + 1) : 0xFFFF; /* saturate */
-  IPCHK_DPRINTF("[IPCHK][recalc_local] %s real_now=%u set connected=%u\n", ircd_ntoa(&canon_search), real_now, entry->connected);
+    entry->connected--;
+    Debug((DEBUG_DNS, "IPcheck refusing local connection from %s: counter overflow.", ircd_ntoa(&entry->addr)));
+    return 0;
   }
 
   if (CONNECTED_SINCE(entry->last_connect) > IPCHECK_CLONE_PERIOD)
@@ -330,19 +504,22 @@ int ip_registry_check_local(const struct irc_in_addr *addr, time_t* next_target_
     if (next_target_out)
       *next_target_out = CurrentTime - (TARGET_DELAY * free_targets - 1);
   }
+#ifndef NOTHROTTLE
   else if ((CurrentTime - cli_since(&me)) > IPCHECK_CLONE_DELAY) {
     /*
      * Don't refuse connection when we just rebooted the server
      */
-#ifndef NOTHROTTLE
-    assert(entry->connected > 0);
-    --entry->connected;
-    Debug((DEBUG_DNS, "IPcheck refusing local connection from %s: too fast.", ircd_ntoa(&entry->addr)));
+reject:
+    if (entry)
+    {
+      assert(entry->connected > 0);
+      --entry->connected;
+    }
+    Debug((DEBUG_DNS, "IPcheck refusing local connection from %s: too fast.", ircd_ntoa(addr)));
     return 0;
-#endif
   }
+#endif
   Debug((DEBUG_DNS, "IPcheck accepting local connection from %s.", ircd_ntoa(&entry->addr)));
-  IPCHK_DPRINTF("[IPCHK][local_connect] %s connected=%u attempts=%u%s\n", ircd_ntoa(&entry->addr), entry->connected, entry->attempts, is_new?" (new)":"");
   return 1;
 }
 
@@ -354,7 +531,7 @@ int ip_registry_check_local(const struct irc_in_addr *addr, time_t* next_target_
  * @param[in] is_burst Non-zero if client was introduced during a burst.
  * @return Non-zero if the client should be accepted, zero if they must be killed.
  */
-int ip_registry_check_remote(struct Client* cptr, int is_burst)
+static int ip_registry_check_remote(struct Client* cptr, int is_burst)
 {
   struct IPRegistryEntry* entry;
 
@@ -366,26 +543,34 @@ int ip_registry_check_remote(struct Client* cptr, int is_burst)
     Debug((DEBUG_DNS, "IPcheck accepting remote connection from invalid %s.", ircd_ntoa(&cli_ip(cptr))));
     return 1;
   }
+
+  if (ip_registry_is_exempt(&cli_ip(cptr))) {
+    return 1;
+  }
+
+  if (!irc_in_addr_is_ipv4(&cli_ip(cptr))) {
+    struct IPRegistry48* entry_48 = ip_48_find(&cli_ip(cptr));
+    if (CONNECTED_SINCE(entry_48->last_connect) > IPCHECK_48_CLONE_PERIOD)
+      entry_48->attempts = 0;
+    if (0 == ++entry_48->attempts)
+      --entry_48->attempts;
+    entry_48->last_connect = NOW;
+  }
+
   entry = ip_registry_find(&cli_ip(cptr));
   if (0 == entry) {
     entry = ip_registry_new_entry();
     ip_registry_canonicalize(&entry->addr, &cli_ip(cptr));
+    if (is_burst)
+      entry->attempts = 0;
     ip_registry_add(entry);
     Debug((DEBUG_DNS, "IPcheck added new registry for remote connection from %s.", ircd_ntoa(&entry->addr)));
+    return 1;
   }
-  /* Recalculate connected count based on current global list (plus this new one if not yet linked). */
-  {
-    extern struct Client *GlobalClientList; struct Client *tmp; unsigned real_now = 0;
-    struct irc_in_addr canon_search; ip_registry_canonicalize(&canon_search, &cli_ip(cptr));
-    for (tmp = GlobalClientList; tmp; tmp = cli_next(tmp)) {
-      if (ip_registry_same_ip(&cli_ip(tmp), &canon_search))
-        ++real_now;
-    }
-    /* If cptr noch nicht in Liste (Handshake/introduce), zählen wir ihn dazu: */
-    if (!IsClient(cptr))
-      ++real_now;
-  entry->connected = (real_now <= 0xFFFF) ? real_now : 0xFFFF;
-  IPCHK_DPRINTF("[IPCHK][recalc_remote] %s real_now=%u set connected=%u\n", ircd_ntoa(&canon_search), real_now, entry->connected);
+  /* Avoid overflowing the connection counter. */
+  if (0 == ++entry->connected) {
+    Debug((DEBUG_DNS, "IPcheck refusing remote connection from %s: counter overflow.", ircd_ntoa(&entry->addr)));
+    return 0;
   }
   if (CONNECTED_SINCE(entry->last_connect) > IPCHECK_CLONE_PERIOD)
     entry->attempts = 0;
@@ -407,13 +592,27 @@ int ip_registry_check_remote(struct Client* cptr, int is_burst)
  * of their own.  This "undoes" the effect of ip_registry_check_local()
  * so the client's address is not penalized for the failure.
  * @param[in] addr Address of rejected client.
+ * @param[in] disconnect If true, also count the client as disconnecting.
  */
-void ip_registry_connect_fail(const struct irc_in_addr *addr)
+static void ip_registry_connect_fail(const struct irc_in_addr *addr, int disconnect)
 {
   struct IPRegistryEntry* entry = ip_registry_find(addr);
-  if (entry && 0 == --entry->attempts) {
-    Debug((DEBUG_DNS, "IPcheck noting local connection failure for %s.", ircd_ntoa(&entry->addr)));
-    ++entry->attempts;
+
+  if (!irc_in_addr_is_ipv4(addr)) {
+    struct IPRegistry48* entry_48 = ip_48_find(addr);
+    if (0 == --entry_48->attempts)
+      ++entry_48->attempts;
+  }
+
+  if (entry) {
+    if (0 == --entry->attempts) {
+      Debug((DEBUG_DNS, "IPcheck noting local connection failure for %s.", ircd_ntoa(&entry->addr)));
+      ++entry->attempts;
+    }
+    if (disconnect) {
+      assert(entry->connected > 0);
+      entry->connected--;
+    }
   }
 }
 
@@ -423,13 +622,14 @@ void ip_registry_connect_fail(const struct irc_in_addr *addr)
  * the entry.
  * @param[in,out] cptr Client that has successfully connected.
  */
-void ip_registry_connect_succeeded(struct Client *cptr)
+static void ip_registry_connect_succeeded(struct Client *cptr)
 {
   const char*             tr    = "";
   unsigned int free_targets     = STARTTARGETS;
   struct IPRegistryEntry* entry = ip_registry_find(&cli_ip(cptr));
 
-  assert(entry);
+  if (!entry)
+    return;
   if (entry->target) {
     memcpy(cli_targets(cptr), entry->target->targets, MAXTARGETS);
     free_targets = entry->target->count;
@@ -446,35 +646,27 @@ void ip_registry_connect_succeeded(struct Client *cptr)
  * information for his IP registry entry.
  * @param[in] cptr Client that has exited.
  */
-void ip_registry_disconnect(struct Client *cptr)
+static void ip_registry_disconnect(struct Client *cptr)
 {
   struct IPRegistryEntry* entry = ip_registry_find(&cli_ip(cptr));
   if (!irc_in_addr_valid(&cli_ip(cptr))) {
     Debug((DEBUG_DNS, "IPcheck noting dicconnect from invalid %s.", ircd_ntoa(&cli_ip(cptr))));
     return;
   }
-  assert(entry);
+  if (!entry)
+    return;
   assert(entry->connected > 0);
-  IPCHK_DPRINTF("[IPCHK][disc][before] %s connected=%u attempts=%u\n", ircd_ntoa(&entry->addr), entry->connected, entry->attempts);
-  /* Zähle reale Clients mit derselben IP (inkl. des gerade trennenden) */
-  unsigned real_before = 0; {
-    extern struct Client *GlobalClientList; /* deklariert in ircd.c */
-    struct Client *tmp;
-    for (tmp = GlobalClientList; tmp; tmp = cli_next(tmp)) {
-      if (ip_registry_same_ip(&cli_ip(tmp), &entry->addr))
-        ++real_before;
-    }
-  IPCHK_DPRINTF("[IPCHK][disc][real_before] %s registry_connected=%u real_clients=%u\n", ircd_ntoa(&entry->addr), entry->connected, real_before);
-  }
   Debug((DEBUG_DNS, "IPcheck noting disconnect from %s.", ircd_ntoa(&entry->addr)));
-  /* Synchronisiere den Zähler exakt mit den real existierenden Clients nach diesem Disconnect.
-   * real_before enthält den aktuellen Client noch, daher nach Abzug: */
-  unsigned target_after = (real_before > 0) ? real_before - 1 : 0;
-  /* Drift-Ausgabe entfernt; Zähler wird deterministisch gesetzt. */
-  entry->connected = target_after;
-  if (entry->connected == 0) {
-    if (CONNECTED_SINCE(entry->last_connect) > IPCHECK_CLONE_LIMIT * IPCHECK_CLONE_PERIOD)
+  /*
+   * If this was the last one, set `last_connect' to disconnect time (used for expiration)
+   */
+  if (0 == --entry->connected) {
+    if (CONNECTED_SINCE(entry->last_connect) > IPCHECK_CLONE_LIMIT * IPCHECK_CLONE_PERIOD) {
+      /*
+       * Otherwise we'd penalize for this old value if the client reconnects within 20 seconds
+       */
       entry->attempts = 0;
+    }
     ip_registry_update_free_targets(entry);
     entry->last_connect = NOW;
   }
@@ -525,22 +717,13 @@ void ip_registry_disconnect(struct Client *cptr)
     if (free_targets < entry->target->count)
       entry->target->count = free_targets;
   }
-  IPCHK_DPRINTF("[IPCHK][disc][after] %s connected=%u attempts=%u\n", ircd_ntoa(&entry->addr), entry->connected, entry->attempts);
-  {
-    extern struct Client *GlobalClientList; unsigned real_count = 0; struct Client *tmp;
-    for (tmp = GlobalClientList; tmp; tmp = cli_next(tmp)) {
-      if (ip_registry_same_ip(&cli_ip(tmp), &entry->addr))
-        ++real_count;
-    }
-  IPCHK_DPRINTF("[IPCHK][disc][real_after] %s registry_connected=%u real_clients=%u\n", ircd_ntoa(&entry->addr), entry->connected, real_count);
-  }
 }
 
 /** Find number of clients from a particular IP address.
  * @param[in] addr Address to look up.
  * @return Number of clients known to be connected from that address.
  */
-int ip_registry_count(const struct irc_in_addr *addr)
+static int ip_registry_count(const struct irc_in_addr *addr)
 {
   struct IPRegistryEntry* entry = ip_registry_find(addr);
   return (entry) ? entry->connected : 0;
@@ -573,11 +756,12 @@ int IPcheck_remote_connect(struct Client *cptr, int is_burst)
  * of their own.  This "undoes" the effect of ip_registry_check_local()
  * so the client's address is not penalized for the failure.
  * @param[in] cptr Client who has been rejected.
+ * @param[in] disconnect If true, also count the client as disconnecting.
  */
-void IPcheck_connect_fail(const struct Client *cptr)
+void IPcheck_connect_fail(const struct Client *cptr, int disconnect)
 {
   assert(IsIPChecked(cptr));
-  ip_registry_connect_fail(&cli_ip(cptr));
+  ip_registry_connect_fail(&cli_ip(cptr), disconnect);
 }
 
 /** Handle a client that has successfully connected.
@@ -603,11 +787,6 @@ void IPcheck_disconnect(struct Client *cptr)
   assert(0 != cptr);
   assert(IsIPChecked(cptr));
   ip_registry_disconnect(cptr);
-  if (IPCHK_DEBUG) {
-    struct IPRegistryEntry* e = ip_registry_find(&cli_ip(cptr));
-    if (e)
-      fprintf(stderr, "[IPCHK][disconnect_done] %s connected=%u attempts=%u\n", ircd_ntoa(&e->addr), e->connected, e->attempts);
-  }
 }
 
 /** Find number of clones of a client.

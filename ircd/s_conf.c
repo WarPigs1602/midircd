@@ -75,8 +75,13 @@ int              GlobalConfCount;
 struct s_map     *GlobalServiceMapList;
 /** Global list of channel quarantines. */
 struct qline     *GlobalQuarantineList;
+/** Global list of webirc authorizations. */
+struct wline*      GlobalWebircList;
 /** Global list of spoofhosts. */
 struct sline    *GlobalSList = 0;
+
+/** Flag for whether to perform ident lookups. */
+int DoIdentLookups;
 
 /** Current line number in scanner input. */
 int lineno;
@@ -790,6 +795,23 @@ const struct DenyConf* conf_get_deny_list(void)
   return denyConfList;
 }
 
+/** Find a WebIRC authorization for the given client address.
+ * @param addr IP address to search for.
+ * @param passwd Client-provided password for block.
+ * @return WebIRC authorization block, or NULL if none exists.
+ */
+const struct wline *
+find_webirc(const struct irc_in_addr *addr, const char *passwd)
+{
+  struct wline *wline;
+
+  for (wline = GlobalWebircList; wline; wline = wline->next)
+    if (ipmask_check(addr, &wline->ip, wline->bits)
+        && (0 == strcmp(wline->passwd, passwd)))
+      return wline;
+  return NULL;
+}
+
 /** Find any existing quarantine for the named channel.
  * @param chname Channel name to search for.
  * @return Reason for channel's quarantine, or NULL if none exists.
@@ -803,6 +825,31 @@ find_quarantine(const char *chname)
     if (!ircd_strcmp(qline->chname, chname))
       return qline->reason;
   return NULL;
+}
+
+/** Mark everything in #GlobalWebircList stale. */
+static void webirc_mark_stale(void)
+{
+  struct wline *wline;
+  for (wline = GlobalWebircList; wline; wline = wline->next)
+    wline->stale = 1;
+}
+
+/** Remove any still-stale entries in #GlobalWebircList. */
+static void webirc_remove_stale(void)
+{
+  struct wline *wline, **pp_w;
+
+  for (pp_w = &GlobalWebircList; (wline = *pp_w) != NULL; ) {
+    if (wline->stale) {
+      *pp_w = wline->next;
+      MyFree(wline->passwd);
+      MyFree(wline->description);
+      MyFree(wline);
+    } else {
+      pp_w = &wline->next;
+    }
+  }
 }
 
 /** Free all qline structs from #GlobalQuarantineList. */
@@ -960,7 +1007,9 @@ int rehash(struct Client *cptr, int sig)
   class_mark_delete();
   mark_listeners_closing();
   auth_mark_closing();
+  webirc_mark_stale();
   close_mappings();
+  DoIdentLookups = 0;
 
   read_configuration_file();
 
@@ -1010,6 +1059,7 @@ int rehash(struct Client *cptr, int sig)
   }
 
   attach_conf_uworld(&me);
+  webirc_remove_stale();
 
   return ret;
 }

@@ -406,10 +406,11 @@ int register_user(struct Client *cptr, struct Client *sptr)
 
     if (MyConnect(sptr) && feature_bool(FEAT_AUTOINVISIBLE))
       SetInvisible(sptr);
-    
-    if (MyConnect(sptr) && feature_bool(FEAT_WEBIRC_CLOAKING) && IsWebirc(sptr)) {
+
+    if (MyConnect(sptr) && feature_bool(FEAT_WEBIRC_CLOAKING) && cli_wline(sptr)) {
         set_cloakhost(sptr, cli_user(sptr)->realhost);
     }
+    
     if(MyConnect(sptr) && feature_bool(FEAT_SETHOST_AUTO)) {
       if (conf_check_slines(sptr)) {
         send_reply(sptr, RPL_USINGSLINE);

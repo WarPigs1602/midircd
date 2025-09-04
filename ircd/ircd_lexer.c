@@ -177,6 +177,7 @@ static const struct lexer_token tokens[] = {
   { "uworld", UWORLD },
   { "vhost", VHOST },
   { "walk_lchan", TPRIV_WALK_LCHAN },
+  { "webirc", WEBIRC },
   { "weeks", WEEKS },
   { "whox", TPRIV_WHOX },
   { "wide_gline", TPRIV_WIDE_GLINE },

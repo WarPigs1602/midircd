@@ -112,7 +112,7 @@ static void makeTables(void)
   markRange(NTL_IRCCL, '\330', '\336');
 
   moveMacro(NTL_ALNUM, NTL_IRCHN);
-  markString(NTL_IRCHN, "-_.");	/* Some DNS might allow '_' per RFC 1033 ! */
+  markString(NTL_IRCHN, "-_.:");	/* Some DNS might allow '_' per RFC 1033 ! */
 
   moveMacro(NTL_DIGIT, NTL_IRCIP);
   markString(NTL_IRCIP, ".");
@@ -161,7 +161,7 @@ int main(void)
   printf("#include <limits.h>\n");
 
   /* NTL_tolower_tab */
-  printf("const char ToLowerTab_8859_1[] = {\n");
+  printf("const char ToLowerTab_8859_1[256] = {\n");
   printf("#if (CHAR_MIN<0)\n");
   i = (int)((char)SCHAR_MIN);
   dumphb(NTL_tolower_tab, i);
@@ -177,7 +177,7 @@ int main(void)
   printf("  };\n\n");
 
   /* NTL_toupper_tab */
-  printf("const char ToUpperTab_8859_1[] = {\n");
+  printf("const char ToUpperTab_8859_1[256] = {\n");
   printf("#if (CHAR_MIN<0)\n");
   i = (int)((char)SCHAR_MIN);
   dumphb(NTL_toupper_tab, i);
@@ -193,7 +193,7 @@ int main(void)
   printf("  };\n\n");
 
   /* NTL_char_attrib */
-  printf("const unsigned int IRCD_CharAttrTab[] = {\n");
+  printf("const unsigned int IRCD_CharAttrTab[256] = {\n");
   printf("#if (CHAR_MIN<0)\n");
   i = (int)((char)SCHAR_MIN);
   dumphw(NTL_char_attrib, i);

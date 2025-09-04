@@ -1,5 +1,5 @@
 /*
- * IRC - Internet Relay Chat, ircd/m_webirc.c
+ * IRC - Internet Relay Chat, ircd/m_create.c
  * Copyright (C) 1990 Jarkko Oikarinen and
  *                    University of Oulu, Computing Center
  *
@@ -20,7 +20,7 @@
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
  *
- * $Id: m_webirc.c,v 1.25 2005/09/13 15:17:46 entrope Exp $
+ * $Id$
  */
 
 /*
@@ -81,45 +81,57 @@
  */
 #include "config.h"
 
-#include "channel.h"
 #include "client.h"
-#include "hash.h"
 #include "ircd.h"
 #include "ircd_features.h"
-#include "ircd_log.h"
 #include "ircd_reply.h"
 #include "ircd_string.h"
-#include "list.h"
-#include "msg.h"
-#include "numeric.h"
-#include "numnicks.h"
-#include "s_user.h"
 #include "s_auth.h"
+#include "s_conf.h"
 #include "s_misc.h"
-#include "send.h"
-#include "struct.h"
+#include "s_user.h"
 
-/* #include <assert.h> -- Now using assert in ircd_log.h */
+#include <string.h>
 
 /*
- * ms_webirc - server message handler
+ * m_webirc
  *
- *   parv[0] - sender prefix
- *   parv[1] - password
- *   parv[2] - fake username
- *   parv[3] - fake hostname
- *   parv[4] - fake ip address
- *
+ * parv[0] = sender prefix
+ * parv[1] = password
+ * parv[2] = ident
+ * parv[3] = hostname
+ * parv[4] = ip
  */
-int m_webirc(struct Client* cptr, struct Client* sptr, int parc, char* parv[])
+int m_webirc(struct Client *cptr, struct Client *sptr, int parc, char *parv[])
 {
-  struct irc_in_addr ip;
-  
-  if (parc < 5 || EmptyString(parv[4]))
-    return need_more_params(sptr,"WEBIRC");
+  const struct wline *wline;
+  const char *passwd;
+  const char *hostname;
+  const char *ip;
 
-  if (!ircd_aton(&ip, parv[4]))
-    return exit_client(cptr, cptr, &me, "Invalid IP address specified for WEBIRC");
+  if (!IsWebircPort(cptr))
+    return exit_client(cptr, cptr, &me, "Use a different port");
 
-  return auth_set_webirc(cli_auth(cptr), parv[1], parv[2], parv[3], &ip);
+  if (parc < 5)
+    return need_more_params(sptr, "WEBIRC");
+
+  passwd = parv[1];
+  hostname = parv[3];
+  ip = parv[4];
+
+  if (EmptyString(ip))
+    return exit_client(cptr, cptr, &me, "WEBIRC needs IP address");
+
+  if (!(wline = find_webirc(&cli_ip(sptr), passwd)))
+    return exit_client_msg(cptr, cptr, &me, "WEBIRC not authorized");
+  cli_wline(sptr) = wline;
+
+  /* Treat client as a normally connecting user from now on. */
+  cli_status(sptr) = STAT_UNKNOWN_USER;
+
+  int res = auth_spoof_user(cli_auth(cptr), NULL, hostname, ip);
+
+  if (res > 0)
+    return exit_client(cptr, cptr, &me, "WEBIRC invalid spoof");
+  return res;
 }

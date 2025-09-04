@@ -49,6 +49,20 @@ struct Message;
  * Structures
  */
 
+
+
+/** Webirc authorization structure. */
+struct wline
+{
+  struct wline *next;    /**< Next wline in #GlobalWebircList. */
+  struct irc_in_addr ip; /**< IP of webirc service. */
+  unsigned char bits;    /**< Number of bits used in #ip. */
+  unsigned char stale;   /**< Non-zero during config re-read. */
+  unsigned char hidden;  /**< If non-zero, hide IP in /stats webirc. */
+  char *passwd;          /**< Password field. */
+  char *description;     /**< Text description, e.g. for provider. */
+};
+
 /** Configuration item to limit peer or client access. */
 struct ConfItem
 {
@@ -178,7 +192,9 @@ extern struct ConfItem* GlobalConfList;
 extern int              GlobalConfCount;
 extern struct s_map*    GlobalServiceMapList;
 extern struct qline*    GlobalQuarantineList;
+extern struct wline*    GlobalWebircList;
 extern struct sline*	GlobalSList;
+extern int              DoIdentLookups;
 
 /*
  * Proto types
@@ -196,6 +212,7 @@ extern struct ConfItem* attach_confs_byhost(struct Client* cptr, const char* hos
 extern struct ConfItem* find_conf_byhost(struct SLink* lp, const char* host, int statmask);
 extern struct ConfItem* find_conf_byname(struct SLink* lp, const char *name, int statmask);
 extern struct ConfItem* conf_find_server(const char* name);
+extern const struct wline *find_webirc(const struct irc_in_addr *addr, const char *passwd);
 
 extern void det_confs_butmask(struct Client *cptr, int mask);
 extern enum AuthorizationCheckResult attach_conf(struct Client *cptr, struct ConfItem *aconf);
