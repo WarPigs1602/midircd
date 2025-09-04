@@ -1,5 +1,7 @@
 # midircd – Modern IRC Server (based on ircu, fork of snircd)
 
+Last updated: 2025-09-04
+
 **midircd** is a powerful, highly configurable IRC daemon offering modern features and extensive control for channels and users. Its goal is to provide a secure, flexible, and feature-rich IRC server.
 
 ---
@@ -207,3 +209,19 @@ See LICENSE file in the repository.
 
 **Contact/Support:**  
 Questions and contributions via GitHub issue or directly to the project maintainers.
+
+## Build (quick)
+
+This project uses the GNU Autotools build system. A minimal quick build sequence is:
+
+```bash
+./configure
+make
+# optionally, as root: make install
+```
+
+Ensure you have a C compiler (gcc/clang), make, and the autotools toolchain available if you need to re-run `./configure` from source (autoconf/automake). For TLS support, install OpenSSL development headers (libssl-dev or similar).
+
+## Contributing
+
+Small documentation fixes, patches and issues are welcome. Please open a GitHub issue or pull request. For code changes, follow the repository coding style and include a short description and a test or smoke-check where practicable.

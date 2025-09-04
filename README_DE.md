@@ -1,5 +1,7 @@
 # midircd � Moderner IRC-Server (basiert auf ircu, Fork von snircd)
 
+Zuletzt aktualisiert: 2025-09-04
+
 **midircd** ist ein leistungsstarker, hoch konfigurierbarer IRC-Daemon mit modernen Funktionen und umfangreicher Kontrolle f�r Channels und Benutzer. Ziel ist es, einen sicheren, flexiblen und funktionsreichen IRC-Server bereitzustellen.
 
 ---
@@ -119,6 +121,24 @@ Alle Befehle verwenden die `/BEFEHL`-Syntax. G�ngige Befehle (siehe `/HELP` im
 - Maximale Channels pro Nutzer: 10
 - Maximale Nickl�nge: 15
 - Maximale Bans pro Channel: 45
+
+---
+
+## Build (kurz)
+
+Dieses Projekt verwendet GNU Autotools. Eine minimale Build-Sequenz:
+
+```bash
+./configure
+make
+# optional als root: make install
+```
+
+Benötigt werden ein C-Compiler (gcc/clang), make und die Autotools (autoconf/automake). Für TLS-Unterstützung installiert die OpenSSL-Entwicklerpakete (z.B. libssl-dev).
+
+## Mitwirken
+
+Kleine Dokumentationsänderungen, Patches und Issues sind willkommen. Bitte eröffne ein GitHub-Issue oder einen Pull Request. Für Code-Änderungen beschreibe kurz die Änderung und füge, wenn möglich, einen Test oder eine kurze Prüfung bei.
 - Maximale Ban-L�nge: 40 Zeichen
 - Klon-Limit pro IP: 4
 - Channel-L�nge: 200 Zeichen
